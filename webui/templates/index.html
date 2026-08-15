@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scooter 5 Pro — панель</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // Синхронно, до отрисовки — иначе будет вспышка не той темы при перезагрузке.
+  (function () {
+    try {
+      var t = localStorage.getItem("scooter_theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <h1>Scooter 5 Pro</h1>
+  <span id="badge" class="badge idle">idle</span>
+  <span id="conn" class="conn">—</span>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+</header>
+
+<section class="panel controls">
+  <label>
+    Режим
+    <select id="mode">
+      <option value="poll" selected>poll</option>
+      <option value="once">once</option>
+      <option value="push">push</option>
+    </select>
+  </label>
+  <label>
+    Интервал, с
+    <input id="interval" type="number" min="1" max="60" step="0.5" value="3">
+  </label>
+  <label>
+    Static-интервал, с
+    <input id="static_interval" type="number" min="10" max="600" step="5" value="60">
+  </label>
+  <button id="start">Старт</button>
+  <button id="stop" disabled>Стоп</button>
+  <span class="spacer"></span>
+  <span class="stat">режим: <b id="mode-val">—</b></span>
+  <span class="stat">пуши: <b id="pushes">0</b></span>
+  <span class="stat">rx: <span id="rx">∅</span></span>
+  <span class="stat">обновлено: <b id="updated">—</b></span>
+</section>
+<div id="msg" class="msg"></div>
+
+<main>
+  <div id="groups" class="groups"></div>
+
+  <section class="panel">
+    <h2>История (раунды) <span id="histcount" class="dim"></span></h2>
+    <div id="history" class="log"></div>
+  </section>
+
+  <section class="panel">
+    <h2>События</h2>
+    <div id="events" class="log"></div>
+  </section>
+</main>
+
+<footer class="dim">
+  Только чтение · bind 127.0.0.1 · секреты (OOB_CODE/SN) скрыты
+</footer>
+
+<script src="{{ url_for('static', filename='theme.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

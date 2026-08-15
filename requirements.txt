@@ -1,0 +1,10 @@
+bleak>=3.0
+cryptography>=42.0
+flask>=3.0
+requests>=2.31
+Pillow>=10.0
+colorama>=0.4
+
+capstone>=5.0
+unicorn>=2.0
+keystone-engine>=0.9

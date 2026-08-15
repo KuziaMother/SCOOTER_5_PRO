@@ -1,0 +1,20 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["zip_archives", "research_bin/rtl8762c-gcc-examples"]
+
+[tool.ruff.lint]
+# Фокус на реальных ошибках (E9 — синтаксис, F — pyflakes: неопределённые имена,
+# неиспользуемые импорты/переменные), не на стиле — codebase это не библиотека,
+# а набор research-скриптов с намеренным порядком импортов (sys.path перед import).
+select = ["E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Разовые scratch-скрипты статического анализа (research_bin/REPORT.md их так и
+# описывает) — не претендуют на чистоту импортов/переменных.
+"research_bin/*.py" = ["F401", "F841", "F821"]
