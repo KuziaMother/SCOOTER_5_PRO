@@ -30,6 +30,20 @@ from scooter_device import ScooterDevice
 # --- общий эмулируемый экземпляр устройства (один на прогон) ---
 DEVICE = {"obj": None}
 
+# Эмулятору НЕ нужен настоящий ключ устройства — оба конца (клиент и
+# ScooterDevice) видят одно и то же значение, реальный ECDH round-trip
+# работает с любым 32-байтным ltmk. secrets/ltmk.hex — реальный секретный
+# ключ живого самоката, гитигнорится и НЕ существует в CI/на чистом
+# чекауте; если его нет — используем фиксированное тестовое значение
+# (только для этого прогона, не для реального устройства).
+_TEST_LTMK = bytes(range(32))
+
+
+def _load_ltmk():
+    if os.path.exists(da.LTMK_HEX):
+        return bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    return _TEST_LTMK
+
 
 def make_device():
     return DEVICE["obj"]
@@ -55,7 +69,7 @@ async def scenario_login():
     print("СЦЕНАРИЙ 1: login (крипто round-trip)")
     print("=" * 60)
     import dreame_flasher as df
-    ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
     try:
         await df.login(t, ltmk)
@@ -67,7 +81,7 @@ async def scenario_login():
 
 async def flash_via_tools(target, image_path, commit):
     import dreame_flasher as df
-    ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
     try:
         await df.login(t, ltmk)
@@ -163,7 +177,7 @@ async def scenario_telemetry():
     print("=" * 60)
     import dreame_flasher as df
     import spec_read as sr
-    ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
     try:
         await df.login(t, ltmk)
@@ -200,7 +214,7 @@ async def scenario_push():
     import dreame_flasher as df
     import spec_read as sr
     dev = DEVICE["obj"]
-    ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
     try:
         await df.login(t, ltmk)
@@ -245,7 +259,7 @@ async def scenario_push():
 async def main():
     install_fake()
     # устройство на СТАРОЙ версии, чтобы можно было показать апгрейд
-    ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
+    ltmk = _load_ltmk()
     DEVICE["obj"] = ScooterDevice(ltmk, ble_version="2.7.0_0015",
                                   mcu_version="0007", verbose=True)
     await scenario_login()
