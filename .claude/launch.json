@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["webui/app.py"],
       "port": 8321
+    },
+    {
+      "name": "apk-pwa",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8322", "--directory", "APK_build/pwa"],
+      "port": 8322
     }
   ]
 }

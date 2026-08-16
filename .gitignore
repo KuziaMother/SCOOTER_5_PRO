@@ -33,3 +33,15 @@ tmp/
 .pytest_cache/
 .ruff_cache/
 androguard.db
+
+# APK_build/twa — генерируется Bubblewrap (Android/Gradle-проект TWA-обёртки).
+# *.keystore/*.jks — подписывающий ключ APK, ни в коем случае не коммитить.
+APK_build/twa/
+*.keystore
+*.jks
+APK_build/test/*.log
+APK_build/test/ccm_vectors.json
+APK_build/test/crc32_vectors.json
+APK_build/test/hkdf_vectors.json
+APK_build/test/ecdh_setup.json
+APK_build/test/ecdh_step1.json

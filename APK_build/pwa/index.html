@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e14">
+<title>Scooter 5 Pro</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="stylesheet" href="./css/style.css">
+<script>
+  // Синхронно, до отрисовки — иначе будет вспышка не той темы при перезагрузке.
+  (function () {
+    try {
+      var t = localStorage.getItem("scooter_theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <h1>Scooter 5 Pro</h1>
+  <span id="badge" class="badge idle">idle</span>
+  <div class="topbar-actions">
+    <span id="conn" class="conn">—</span>
+    <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
+    <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  </div>
+</header>
+
+<section class="panel controls">
+  <button id="connect">Подключиться</button>
+  <button id="disconnect" disabled>Отключиться</button>
+  <span class="spacer"></span>
+  <span class="stat">обновлено: <b id="updated">—</b></span>
+</section>
+<div id="msg" class="msg"></div>
+
+<section id="hero" class="hero" hidden></section>
+
+<main>
+  <div id="groups" class="groups"></div>
+
+  <section class="panel">
+    <h2 data-icon="🛰️">События</h2>
+    <div id="events" class="log"></div>
+  </section>
+</main>
+
+<footer class="dim">
+  BLE напрямую из браузера (Web Bluetooth) · без сервера · секреты (OOB_CODE/SN) скрыты
+</footer>
+
+<section id="ridemode" class="ridemode" hidden>
+  <div id="rm-fault-banner" class="rm-fault-banner" hidden></div>
+  <div class="rm-topbar">
+    <button id="ridemode-exit" class="rm-exit" type="button" aria-label="Выйти из режима езды">✕</button>
+    <div id="rm-chips" class="rm-chips"></div>
+  </div>
+  <div class="rm-body">
+    <aside class="rm-sidebar">
+      <div class="rm-side-stat"><span class="rm-stat-label">Пробег</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label">Время в пути</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
+    </aside>
+    <div class="rm-main">
+      <div id="rm-mode" class="rm-mode" hidden></div>
+      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit">км/ч</span></div>
+    </div>
+  </div>
+  <div class="rm-footer">
+    <div class="rm-stat"><span class="rm-stat-label">Заряд</span><span id="rm-battery" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
+  </div>
+</section>
+
+<script src="./js/theme.js"></script>
+<script type="module" src="./js/app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  }
+</script>
+</body>
+</html>
