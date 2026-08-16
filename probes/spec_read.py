@@ -137,19 +137,30 @@ def parse_reply(pt):
     lenflag, tid, b2, count = struct.unpack("<HHBB", pt[:6])
     out = [f"заголовок: len={lenflag & 0x0FFF} flag=0x{lenflag & 0xF000:04x} "
            f"id={tid} b2={b2} объектов={count}"]
-    # В ОТВЕТЕ у объекта на 2 байта больше, чем в запросе — есть поле статуса:
-    #   [u8 siid][u16 LE piid][u16 LE status][u16 LE (type<<12)|len][value]
+    # Раскладка объекта в ОТВЕТЕ зависит от статуса (docs/FACTS.md «Формат кадра spec»):
+    #   status==0 (ok):     [u8 siid][u16 piid][u16 status][u16 (type<<12)|len][value] = 7 + len
+    #   status!=0 (ошибка): [u8 siid][u16 piid][u16 status]                            = 5
+    # Ошибочные записи (напр. 0xf05d/0xf05f у 2-го+ объекта в batch — устройство обслуживает
+    # только первый) КОРОЧЕ на tl+value; раньше парсер всегда читал 7+len и десинхронизировался.
     off = 6
     for _ in range(count):
+        if off + 5 > len(pt):
+            out.append(f"  обрыв на {off}")
+            break
+        siid, piid, status = struct.unpack("<BHH", pt[off:off + 5])
+        if status != 0:                       # ошибочная запись — ровно 5 байт, без tl/value
+            out.append("  " + fmt_value(siid, piid, 0, b"")
+                       + f"  [status={status} 0x{status:04x}]")
+            off += 5
+            continue
         if off + 7 > len(pt):
             out.append(f"  обрыв на {off}")
             break
-        siid, piid, status, tl = struct.unpack("<BHHH", pt[off:off + 7])
+        tl = struct.unpack_from("<H", pt, off + 5)[0]
         tcode, vlen = tl >> 12, tl & 0x0FFF
         val = pt[off + 7: off + 7 + vlen]
         off += 7 + vlen
-        err = "" if status == 0 else f"  [status={status}]"
-        out.append("  " + fmt_value(siid, piid, tcode, val) + err)
+        out.append("  " + fmt_value(siid, piid, tcode, val))
     if off < len(pt):
         out.append(f"  хвост: {pt[off:].hex()}")
     return out

@@ -72,11 +72,34 @@ def test_parse_reply_roundtrip_single_object():
 
 
 def test_parse_reply_reports_error_status():
+    # Ошибочная запись — ровно 5 байт: [siid][piid][status], без tl/value (FACTS).
     siid, piid, status = 1, 4, 0xF05D  # -4003, multi-object
-    body = struct.pack("<BHHH", siid, piid, status, 0)  # пустое значение
+    body = struct.pack("<BHH", siid, piid, status)
     total = 6 + len(body)
     pt = struct.pack("<HHBB", (total | 0x2000) & 0xFFFF, 1, 3, 1) + body
 
     lines = sr.parse_reply(pt)
     joined = "\n".join(lines)
     assert "status=61533" in joined or "61533" in joined
+    assert "хвост" not in joined  # 5-байтная ошибка должна разобраться без остатка
+
+
+def test_parse_reply_mixed_batch_no_desync():
+    """Регрессия: смешанный батч ok+ошибка+ok. Раньше parse_reply всегда читал
+    7+len на объект и десинхронизировался на 5-байтных ошибочных записях."""
+    def ok(siid, piid, tcode, value):
+        return struct.pack("<BHHH", siid, piid, 0, (tcode << 12) | len(value)) + value
+
+    def err(siid, piid, status=0xF05D):
+        return struct.pack("<BHH", siid, piid, status)
+
+    body = ok(2, 3, 0, b"\x00") + err(0, 0x200) + ok(2, 7, 1, b"\x05")
+    total = 6 + len(body)
+    pt = struct.pack("<HHBB", (total | 0x2000) & 0xFFFF, 1, 3, 3) + body
+
+    lines = sr.parse_reply(pt)
+    joined = "\n".join(lines)
+    assert "CRUISE_IS_ON" in joined            # 1-й объект (ok) разобран
+    assert "status=61533" in joined            # 2-й объект — ошибка
+    assert "IS_RIDING" in joined and "= 5" in joined  # 3-й объект (ok) не потерян
+    assert "хвост" not in joined               # точное выравнивание, без остатка

@@ -32,3 +32,4 @@ zip_archives/
 tmp/
 .pytest_cache/
 .ruff_cache/
+androguard.db
