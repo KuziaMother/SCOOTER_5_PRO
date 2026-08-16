@@ -55,6 +55,28 @@ NAMES = {
     (6, 1): "LOG_1", (6, 2): "LOG_2", (6, 3): "LOG_3", (6, 4): "LOG_4", (6, 5): "LOG_5",
 }
 
+# Человекочитаемые подписи для UI (техническое имя остаётся в NAMES как ключ/тултип).
+LABELS = {
+    (1, 1): "Режим", (1, 2): "Заряд", (1, 3): "Остаток заряда",
+    (1, 4): "Напряжение", (1, 5): "Ток", (1, 6): "Мощность",
+    (1, 7): "Запас хода", (1, 8): "Ошибка", (1, 9): "Пробег (сессия)",
+    (2, 1): "Средняя скорость", (2, 2): "Замок", (2, 3): "Круиз",
+    (2, 4): "Задний фонарь", (2, 5): "Рекуперация", (2, 6): "Общий пробег",
+    (2, 7): "Движение", (2, 8): "Время в пути", (2, 9): "Макс. скорость",
+    (2, 10): "ASR", (2, 11): "Алгоритм запаса", (2, 12): "Автосвет",
+    (2, 13): "TCS", (2, 14): "Умный спуск", (2, 15): "Уклон-парковка",
+    (2, 16): "Подсветка", (2, 17): "BT-поиск", (2, 18): "Ложное выкл.",
+    (3, 1): "Статус батареи", (3, 2): "Темп. батареи", (3, 3): "Темп. самоката",
+    (3, 4): "Сигнал замка", (3, 5): "Единицы", (3, 6): "OOB",
+    (3, 7): "ТО шин", (3, 8): "Активация", (3, 9): "Записи поездок",
+    (3, 10): "Зарядка", (3, 11): "Циклы заряда", (3, 12): "Здоровье батареи",
+    (4, 1): "Дата производства", (4, 2): "SN батареи", (4, 3): "Прошивка BMS",
+    (4, 4): "SN самоката", (4, 5): "Прошивка", (4, 6): "Сброс настроек",
+    (4, 7): "Батарея (детально)", (4, 8): "Батарея (экстрим)", (4, 10): "Поиск самоката",
+    (6, 1): "Журнал 1", (6, 2): "Журнал 2", (6, 3): "Журнал 3",
+    (6, 4): "Журнал 4", (6, 5): "Журнал 5",
+}
+
 # Подтверждённые единицы (docs/FACTS.md). Живые скорости: raw * 0.01 = км/ч.
 UNITS = {
     "VOLTAGE": (0.01, "В"), "CURRENT": (1.0, "А"), "POWER": (1.0, "Вт"),
@@ -70,6 +92,33 @@ UNITS = {
 SENSITIVE = {(3, 6), (4, 2), (4, 4)}
 # Опасные action-свойства: даже read-only дамп их не трогает без отдельного решения.
 DANGEROUS_EXCLUDED = {(4, 6)}
+
+# Записываемые (SET, op=0) переключатели — только безопасные BOOL-настройки.
+# RESTORE_SCOOTER_SETTINGS (4,6) исключён; IS_LOCKED (2,2) — только с подтверждением.
+# Значения/типы подтверждены разбором всех setPropertys в плагине (не угаданы, §3).
+WRITABLE = {
+    # BOOL-переключатели
+    (2, 2): {"type": 0, "confirm": "Заблокировать/разблокировать самокат?"},  # IS_LOCKED
+    (2, 3): {"type": 0},   # CRUISE_IS_ON
+    (2, 4): {"type": 0},   # TAIL_LIGHT_IS_ON
+    (2, 12): {"type": 0},  # AUTO_LIGHT
+    (2, 13): {"type": 0},  # TCS
+    (2, 14): {"type": 0},  # INTELLIGENT_DOWNHILL
+    (2, 15): {"type": 0},  # HILL_PARKING
+    (2, 17): {"type": 0},  # BLUETOOTH_SEARCH_ON
+    # UINT8-уровни/режимы (клик циклит по списку значений)
+    (2, 5): {"type": 1, "values": [30, 60, 90]},   # ENERGY_RECOVERY weak/middle/strong
+    (2, 16): {"type": 1, "values": [0, 1, 2]},     # ATMOSPHERE_LIGHT выкл/вкл/активна
+    (3, 5): {"type": 1, "values": [1, 0]},         # MILEAGE_UNIT KM/MI
+}
+
+
+def is_writable(key):
+    """Разрешено ли менять свойство из UI (SET op=0)."""
+    if isinstance(key, str) and "." in key:
+        a, b = key.split(".", 1)
+        key = (int(a), int(b))
+    return key in WRITABLE and key not in DANGEROUS_EXCLUDED and key not in SENSITIVE
 
 BOOL_PROPS = {
     (2, 2), (2, 3), (2, 4), (2, 10), (2, 12), (2, 13),
@@ -311,6 +360,37 @@ def _fmt_ride_log(v, unit_mult=1.0):
     return "; ".join(recs) if recs else "пусто"
 
 
+def ride_records(v, unit_mult=1.0):
+    """Структурированные записи поездок (для списка в UI). Каждая — dict строк колонок."""
+    s = str(v).strip()
+    out = []
+    for i in range(0, len(s), 16):
+        chunk = s[i:i + 16]
+        if len(chunk) < 16:
+            break
+        try:
+            dur = int(chunk[0:4]) / 10.0
+            dist = int(chunk[4:8]) / 10.0 * unit_mult
+            avg = int(chunk[8:12]) / 10.0 * unit_mult
+            top = int(chunk[12:16]) / 10.0 * unit_mult
+        except (ValueError, IndexError):
+            continue
+        if dur == 0 and dist == 0 and avg == 0 and top == 0:
+            continue
+        dunit = "mi" if unit_mult != 1.0 else "км"
+        sunit = "mph" if unit_mult != 1.0 else "км/ч"
+        if dur >= 60:
+            h, rem = divmod(int(round(dur)), 60)
+            dtxt = f"{h}ч {rem:02d}м"
+        else:
+            dtxt = f"{int(dur)} мин"
+        out.append({
+            "dur": dtxt, "dist": f"{dist:.1f} {dunit}",
+            "avg": f"{avg:.1f} {sunit}", "top": f"{top:.1f} {sunit}",
+        })
+    return out
+
+
 def format_property(siid, piid, tcode, val, unit_mult=1.0):
     """Безопасный человекочитаемый вид одного свойства (секреты маскируются)."""
     key = f"{siid}.{piid}"
@@ -331,6 +411,13 @@ def format_property(siid, piid, tcode, val, unit_mult=1.0):
 
     v = decode_value(tcode, val)
     base["raw"] = val[:64].hex()
+    # числовое (масштабированное) значение — для гейджей/спарклайнов на фронте
+    if _is_num(v):
+        if name in UNITS:
+            mul, unit = UNITS[name]
+            base["num"] = v * mul * (unit_mult if unit in ("км", "км/ч") else 1.0)
+        else:
+            base["num"] = v
     text = None
 
     if (siid, piid) == (3, 7):
@@ -340,7 +427,9 @@ def format_property(siid, piid, tcode, val, unit_mult=1.0):
     elif (siid, piid) == (4, 8):
         text = _fmt_more_battery2(v)
     elif siid == 6 and 1 <= piid <= 5:
-        text = _fmt_ride_log(v, unit_mult)
+        recs = ride_records(v, unit_mult)
+        base["rides"] = recs
+        text = f"{len(recs)} поездк(и)" if recs else "пусто"
     elif (siid, piid) == (2, 8):
         text = _fmt_riding_time(v)
     elif (siid, piid) in ENUM_LABELS:

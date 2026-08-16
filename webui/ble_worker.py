@@ -143,6 +143,104 @@ async def read_props(t, sk, prop_list, on_event, unit_mult, app_cnt, should_stop
     return app_cnt
 
 
+def _set_frame(siid, piid, type_code, value, tid=1):
+    """SET-кадр spec: op=0, объект [siid][piid][(type<<12)|vlen][value] (docs/FACTS.md)."""
+    vlen = len(value)
+    obj = struct.pack("<BHH", siid & 0xFF, piid & 0xFFFF,
+                      ((type_code & 0xF) << 12) | (vlen & 0xFFF)) + value
+    total = 6 + len(obj)
+    return struct.pack("<HHBB", (total | 0x2000) & 0xFFFF, tid & 0xFFFF, 0, 1) + obj
+
+
+async def spec_write(t, sk, siid, piid, type_code, value, app_cnt, timeout=8.0):
+    """SET одного свойства (op=0). Возвращает (ok, status). Один кадр, без повторов."""
+    frame = _set_frame(siid, piid, type_code, value)
+    payload = sr.enc_app(sk, app_cnt, frame)
+    fs = 18
+    frames = [payload[i:i + fs] for i in range(0, len(payload), fs)] or [b""]
+    while not t.rx.empty():
+        t.rx.get_nowait()
+    await t.write(CH_WRITE, struct.pack("<HBBH", 0, 0x00, sr.SPEC_CHANNEL, len(frames)))
+
+    async def send_seq(n):
+        if 1 <= n <= len(frames):
+            await t.write(CH_WRITE, struct.pack("<H", n) + frames[n - 1])
+
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    sent = False
+    while loop.time() < deadline:
+        try:
+            s, b = await asyncio.wait_for(t.rx.get(), timeout=deadline - loop.time())
+        except asyncio.TimeoutError:
+            break
+        if len(b) >= 3 and b[0] == 0 and b[1] == 0 and b[2] == 0x01:
+            st = b[3] if len(b) > 3 else None
+            if st == 0x01 and not sent:
+                sent = True
+                for n in range(1, len(frames) + 1):
+                    await send_seq(n)
+                    await asyncio.sleep(0.03)
+            elif st == 0x05:
+                for i in range(0, len(b) - 4, 2):
+                    await send_seq(struct.unpack_from("<H", b, 4 + i)[0])
+                    await asyncio.sleep(0.03)
+        elif len(b) >= 6 and b[0] == 0 and b[1] == 0 and b[2] == 0x00 and s == CH_NOTIFY:
+            fc = struct.unpack("<H", b[4:6])[0]
+            await t.write(CH_NOTIFY, struct.pack("<HBB", 0, 0x01, 0x01))
+            parts = {}
+            rdl = loop.time() + 6.0
+            while len(parts) < fc and loop.time() < rdl:
+                try:
+                    s2, b2 = await asyncio.wait_for(t.rx.get(), timeout=max(0.1, rdl - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                if s2 == CH_NOTIFY and len(b2) >= 2:
+                    seq = struct.unpack("<H", b2[:2])[0]
+                    if 1 <= seq <= fc:
+                        parts[seq] = b2[2:]
+            await t.write(CH_NOTIFY, struct.pack("<HBB", 0, 0x01, 0x00))
+            if len(parts) != fc:
+                return False, None
+            pl = b"".join(parts[i] for i in sorted(parts))
+            try:
+                rpt = sr.dec_dev(sk, struct.unpack("<H", pl[:2])[0], pl[2:])
+            except Exception:
+                return False, None
+            # ответ op=1: заголовок(6) + [siid][piid][status u16]
+            status = struct.unpack_from("<H", rpt, 9)[0] if len(rpt) >= 11 else None
+            return (status == 0), status
+    return False, None
+
+
+async def apply_pending_sets(t, sk, set_queue, on_event, unit_mult, app_cnt):
+    """Выполнить накопленные SET-команды из очереди (тред-безопасно). §5 — только whitelist."""
+    if set_queue is None:
+        return app_cnt
+    while True:
+        try:
+            cmd = set_queue.get_nowait()
+        except Exception:
+            break
+        key = (cmd["siid"], cmd["piid"])
+        if not props.is_writable(key):
+            on_event({"type": "log", "message": f"SET {key} отклонён (не в whitelist)"})
+            continue
+        value = cmd["value"]
+        name = props.LABELS.get(key, f"{key[0]}.{key[1]}")
+        vtxt = "вкл" if value == b"\x01" else "выкл"
+        ok, status = await spec_write(t, sk, key[0], key[1], cmd["type"], value, app_cnt)
+        app_cnt += 1
+        if ok:
+            on_event({"type": "log", "message": f"SET {name} → {vtxt}: принято (status 0)"})
+            await read_one(t, sk, key, app_cnt, on_event, unit_mult)  # перечитать реальное состояние
+            app_cnt += 1
+        else:
+            on_event({"type": "log", "message": f"SET {name} → {vtxt}: ОТКАЗ (status={status})"})
+        await asyncio.sleep(0.3)
+    return app_cnt
+
+
 async def _emit_push_items(t, sk, pt, pushes, rx_counts, on_event, unit_mult):
     items, _op = parse_spec_payload(pt)
     if not items:
@@ -229,7 +327,7 @@ async def listen_push(t, sk, on_event, unit_mult, should_stop):
                 on_event({"type": "log", "message": f"push: получено {len(parts)}/{fc} кадров"})
 
 
-async def _run_once(mac, mode, interval, static_interval, on_event, should_stop):
+async def _run_once(mac, mode, interval, static_interval, on_event, should_stop, set_queue=None):
     t, sk = await establish(mac, on_event)
     unit_mult = [1.0]
     app_cnt = 0
@@ -268,6 +366,9 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop)
             last_static = 0.0
             while not should_stop():
                 round_start = loop.time()
+                app_cnt = await apply_pending_sets(
+                    t, sk, set_queue, on_event, unit_mult, app_cnt
+                )
                 app_cnt = await read_props(
                     t, sk, dynamic_no_unit, on_event, unit_mult, app_cnt, should_stop,
                     emit_round=True
@@ -311,7 +412,7 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop)
             pass
 
 
-async def run_session(mac, mode, interval, static_interval, on_event, should_stop):
+async def run_session(mac, mode, interval, static_interval, on_event, should_stop, set_queue=None):
     """Внешняя обёртка: одна попытка переподключения при необработанном обрыве."""
     if mode not in {"once", "poll", "push"}:
         raise WorkerError(f"неизвестный режим: {mode}")
@@ -320,7 +421,7 @@ async def run_session(mac, mode, interval, static_interval, on_event, should_sto
         if should_stop():
             return
         try:
-            await _run_once(mac, mode, interval, static_interval, on_event, should_stop)
+            await _run_once(mac, mode, interval, static_interval, on_event, should_stop, set_queue)
             return
         except WorkerError as e:
             on_event({"type": "status", "status": "error", "message": str(e)})

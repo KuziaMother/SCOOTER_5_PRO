@@ -57,8 +57,16 @@ h1, h2 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px 14px;
   padding: 4px 2px 20px;
+  flex-wrap: wrap;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 .topbar h1 {
   font-size: 21px;
@@ -109,7 +117,7 @@ h1, h2 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   50% { opacity: .4; transform: scale(1.3); }
 }
 
-.conn { margin-left: auto; font: 500 12px/1 var(--mono); color: var(--text-faint); }
+.conn { font: 500 12px/1 var(--mono); color: var(--text-faint); white-space: nowrap; }
 .conn.bad { color: var(--bad); }
 
 /* --- controls toolbar --- */
@@ -203,7 +211,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   margin-bottom: 16px;
 }
 
-.group h2 {
+/* Единый стиль заголовков секций (группы свойств + История/События) */
+.panel > h2[data-icon] {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -213,26 +222,29 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   letter-spacing: .04em;
   margin-bottom: 14px;
 }
-.group h2::before {
+.panel > h2[data-icon]::before {
   content: attr(data-icon);
   font-size: 15px;
   filter: grayscale(0.15);
 }
 
+/* Список свойств: без карточек — компактные строки в несколько колонок
+   (newspaper-flow), разделённые тонкой линией снизу. Тот же язык, что и
+   у .ride-row (список поездок): подпись + значение, без фона/рамки/тени. */
 .cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-  gap: 10px;
+  column-width: 210px;
+  column-gap: 26px;
 }
 
 .prop {
-  background: var(--bg-card);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  transition: background .15s, border-color .15s, transform .1s;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  padding: 9px 2px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  transition: background .15s;
+  position: relative;
 }
-.prop:hover { background: var(--bg-card-hover); border-color: var(--border); }
+.prop:hover { background: var(--bg-card-hover); }
 .prop.secret { opacity: .5; }
 
 .prop .name {
@@ -246,20 +258,33 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   text-overflow: ellipsis;
 }
 .prop .value {
-  font: 700 21px/1.15 var(--mono);
+  font: 700 18px/1.2 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 .prop .value { color: var(--text); }
+/* описательные/длинные строки (прошивка, журналы, батарея-детально) */
+.prop .value.val-text {
+  font: 600 13px/1.4 var(--sans);
+  letter-spacing: 0;
+}
 .prop .meta {
-  font: 500 10.5px/1.4 var(--mono);
-  margin-top: 5px;
+  font: 500 10px/1.4 var(--mono);
+  margin-top: 4px;
   min-height: 13px;
   color: var(--text-faint);
 }
 
-/* пустая карточка (нет данных ещё) — приглушаем крупное тире */
+/* пустая строка (нет данных ещё) — приглушаем крупное тире */
 .prop:not(.has-data) .value { color: var(--text-faint); font-weight: 600; }
+
+/* живой индикатор: короткая вспышка при смене значения (не на первом заполнении) */
+@keyframes cardFlash {
+  0% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+.prop.flash { animation: cardFlash 900ms ease-out; }
 
 /* --- logs (history / events) --- */
 
@@ -365,11 +390,321 @@ html[data-theme="light"] #start { color: #04222c; }
 }
 .theme-toggle:hover { color: var(--text); }
 
+/* --- кнопка режима езды --- */
+.ridemode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+}
+.ridemode-toggle:hover { color: var(--text); }
+
+/* --- режим езды: полноэкранный, максимальный контраст, для крепления на руль ---
+   Цвета захардкожены (не через --bg/--text) — сунлайт-читаемость не должна
+   зависеть от выбранной темы дашборда. */
+.ridemode {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+           max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  font-family: var(--sans);
+}
+.ridemode[hidden] { display: none; }
+
+.rm-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rm-exit {
+  flex: 0 0 auto;
+  width: 46px; height: 46px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.rm-exit:active { background: rgba(255,255,255,0.16); }
+
+.rm-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.rm-chip {
+  font: 700 13px/1 var(--sans);
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+}
+.rm-chip.bad { background: rgba(255,100,112,0.2); border-color: rgba(255,100,112,0.55); color: #ffb0b7; }
+.rm-chip.ok { background: rgba(62,224,140,0.18); border-color: rgba(62,224,140,0.45); color: #8bf5bd; }
+
+/* замок в ride mode — рабочая кнопка, не просто индикатор: явный тап-фидбек */
+.rm-lock-btn {
+  font-family: inherit;
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .1s, filter .15s;
+}
+.rm-lock-btn:active { transform: scale(.95); filter: brightness(1.15); }
+.rm-lock-btn:disabled { opacity: .5; cursor: default; }
+
+/* Компоновка тела: 3 колонки грида — боковая панель / скорость / пустой
+   зеркальный спейсер той же ширины. Пустая правая колонка нужна, чтобы
+   скорость центрировалась ПО ВСЕМУ экрану, а не по остатку места после
+   sidebar (иначе она визуально уезжает вправо от истинного центра). */
+.rm-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 104px 1fr 104px;
+  gap: 16px;
+  min-height: 0;
+}
+
+.rm-sidebar {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 30px;
+  min-height: 0;
+}
+.rm-side-stat { display: flex; flex-direction: column; gap: 6px; }
+.rm-stat-label {
+  font: 700 11px/1 var(--sans);
+  text-transform: uppercase; letter-spacing: .06em;
+  color: rgba(255,255,255,0.45);
+}
+.rm-stat-value {
+  font: 800 clamp(22px, 6vw, 32px)/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.rm-main {
+  grid-column: 2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 0; min-height: 0;
+  /* контейнер для cqw/cqh ниже: шрифт скорости считается от РЕАЛЬНЫХ
+     ширины И высоты этой колонки (не только ширины) — на короткой альбомной
+     высоте цифры не должны раздуться выше доступного места и вытолкнуть
+     соседний label (flexbox иначе сжимает его до нуля). */
+  container-type: size;
+}
+.rm-mode {
+  flex-shrink: 0;
+  font: 750 clamp(12px, 8cqw, 18px)/1 var(--sans);
+  color: rgba(255,255,255,0.55);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin-bottom: 10px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rm-mode[hidden] { display: none; }
+/* unit — ПОД числом (не сбоку): не делит горизонтальное место с цифрами,
+   не переносится и не сжимает их на узкой средней колонке. */
+.rm-speed { display: flex; flex-direction: column; align-items: center; min-width: 0; flex-shrink: 0; }
+#rm-speed-val {
+  font: 800 clamp(48px, min(64cqw, 52cqh), 220px)/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: #fff;
+  text-shadow: 0 0 46px rgba(79, 214, 255, 0.28);
+}
+.rm-speed-unit {
+  font: 700 clamp(12px, 4.5cqw, 22px)/1 var(--sans);
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-top: 6px;
+  letter-spacing: .04em;
+}
+
+.rm-footer { display: flex; justify-content: space-around; gap: 12px; padding-top: 6px; }
+.rm-footer .rm-stat { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.rm-footer .rm-stat-value { font-size: clamp(30px, 8vw, 54px); }
+
+.rm-fault-banner {
+  background: #ff3b30; color: #fff; text-align: center;
+  font: 800 16px/1 var(--sans);
+  padding: 12px;
+  margin: -14px -14px 10px;
+  animation: rmFaultPulse 1s ease-in-out infinite;
+}
+@keyframes rmFaultPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .rm-body { grid-template-columns: 104px 1fr 104px; }
+  .rm-sidebar { gap: 16px; }
+  .rm-stat-value { font-size: clamp(18px, 6vh, 28px); }
+  .rm-footer .rm-stat-value { font-size: clamp(22px, 8vh, 36px); }
+  .rm-footer { padding-top: 2px; }
+}
+@media (max-width: 400px) {
+  .rm-body { grid-template-columns: 100px 1fr 100px; gap: 10px; }
+}
+
+/* --- кнопка режима управления (SET) --- */
+.write-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-dim); font: 650 12px/1 var(--sans); cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.write-toggle:hover { color: var(--text); }
+.write-toggle.on {
+  color: var(--warn); background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+}
+
+/* карточки, доступные для управления (клик = SET) */
+body.write-on .prop.writable { cursor: pointer; }
+body.write-on .prop.writable:hover {
+  border-bottom-color: var(--accent);
+  background: var(--bg-card-hover);
+}
+body.write-on .prop.writable::after {
+  content: "⇄"; position: absolute; top: 9px; right: 2px;
+  font-size: 12px; color: var(--accent); opacity: .65;
+}
+
 @media (max-width: 480px) {
   body { padding: 14px 12px 28px; }
   .topbar h1 { font-size: 18px; white-space: nowrap; }
+  .topbar-actions { margin-left: 0; width: 100%; gap: 8px; }
+  .conn { font-size: 11px; }
+  .write-toggle { padding: 5px 10px; font-size: 11px; }
   .panel { padding: 14px; }
-  .cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .prop { padding: 10px 11px; }
-  .prop .value { font-size: 18px; }
+  .cards { column-width: 130px; column-gap: 16px; }
+  .prop { padding: 8px 2px 9px; }
+  .prop .value { font-size: 16px; }
+}
+
+/* --- hero-сводка --- */
+.hero {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  background:
+    radial-gradient(420px 180px at 12% 0%, var(--accent-soft), transparent 70%),
+    var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+}
+.hero[hidden] { display: none; }
+
+.hero-battery { position: relative; width: 118px; height: 118px; flex: 0 0 auto; }
+.ring { width: 118px; height: 118px; display: block; }
+.ring-bg { fill: none; stroke: var(--border); stroke-width: 9; }
+.ring-fg { fill: none; stroke-width: 9; stroke-linecap: round;
+  transition: stroke-dasharray .6s cubic-bezier(.4,0,.2,1), stroke .3s; }
+.ring-label { position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; }
+.ring-pct { font: 800 30px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.ring-pct span { font-size: 15px; opacity: .6; margin-left: 1px; }
+.ring-sub { font: 600 10px/1 var(--sans); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+
+.hero-right { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.hero-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  font: 650 12px/1 var(--sans);
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text-dim);
+  white-space: nowrap;
+}
+.chip.mode { color: var(--accent); background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.chip.ok { color: var(--ok); background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
+.chip.warn { color: var(--warn); background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+.chip.bad { color: var(--bad); background: var(--bad-soft);
+  border-color: color-mix(in srgb, var(--bad) 35%, var(--border)); }
+
+/* Типографический stat-бар: без карточек/фонов — подпись + крупное число,
+   разделены тонкой вертикальной линией. Живёт прямо на фоне hero-панели. */
+.stat-row { display: flex; }
+.stat-item {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 16px;
+  border-left: 1px solid var(--border-soft);
+}
+.stat-item:first-child { padding-left: 0; border-left: none; }
+.sl { font: 650 10px/1.1 var(--sans); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: 7px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.sv { font: 800 22px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: -.01em; }
+.su { font-size: 11px; font-weight: 600; color: var(--text-faint); margin-left: 3px; }
+
+@media (max-width: 720px) {
+  .hero { flex-direction: column; align-items: stretch; gap: 16px; }
+  .hero-battery { align-self: center; }
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 14px; }
+  .stat-item { border-left: none; padding: 0; }
+}
+@media (max-width: 480px) {
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* булевы карточки — индикатор вкл/выкл */
+.prop.bool-on .value { color: var(--ok); }
+.prop.bool-off .value { color: var(--text-faint); font-weight: 600; }
+.prop.bool-on { border-bottom-color: color-mix(in srgb, var(--ok) 40%, var(--border-soft)); }
+
+/* --- список поездок --- */
+.ridelog { display: flex; flex-direction: column; }
+.ride-row {
+  display: grid;
+  grid-template-columns: 30px 1.2fr 1fr 1.3fr 1.3fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  font: 600 13px/1.25 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.ride-row:not(.ride-head):nth-child(odd) { background: var(--bg-card); }
+.ride-row.ride-head {
+  font: 700 10px/1 var(--sans);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-faint);
+  padding: 2px 10px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: 0;
+  margin-bottom: 3px;
+}
+.ride-idx { color: var(--text-faint); font-weight: 700; }
+.ride-row span:nth-child(4)::before,
+.ride-row:not(.ride-head) span:nth-child(4) { color: var(--accent); }
+.ride-empty { color: var(--text-faint); font-size: 13px; padding: 8px 2px; }
+
+@media (max-width: 480px) {
+  .ride-row { grid-template-columns: 22px 1fr 1fr 1fr 1fr; gap: 6px; font-size: 11.5px; padding: 8px 6px; }
 }

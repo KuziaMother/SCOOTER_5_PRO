@@ -21,6 +21,7 @@
 """
 import asyncio
 import os
+import queue
 import sys
 import threading
 from datetime import datetime
@@ -57,6 +58,8 @@ class WebState:
         self.lock = threading.RLock()
         self.thread = None
         self.stop_event = threading.Event()
+        self.set_queue = queue.Queue()
+        self.write_enabled = False   # управление (SET) выключено по умолчанию (§5)
         self.reset()
 
     def reset(self):
@@ -102,7 +105,8 @@ class WebState:
                 data["ts"] = ts
                 self.properties[key] = data
                 push_mark = " [push]" if evt.get("push") else ""
-                self._add_event(f"{data.get('name', key)} = {data.get('text', '—')}{push_mark}")
+                label = props.LABELS.get((data.get("siid"), data.get("piid"))) or data.get("name", key)
+                self._add_event(f"{label} = {data.get('text', '—')}{push_mark}")
 
             elif typ == "round":
                 self._hid += 1
@@ -141,10 +145,24 @@ class WebState:
                     for g in props.GROUPS
                 ],
                 "names": {f"{s}.{p}": n for (s, p), n in props.NAMES.items()},
+                "labels": {f"{s}.{p}": n for (s, p), n in props.LABELS.items()},
                 "history": list(self.history[-100:]),
                 "events": list(self.events[-200:]),
                 "counters": dict(self.counters),
                 "last_update": self.last_update,
+                "write_enabled": self.write_enabled,
+                "writable": [f"{s}.{p}" for (s, p) in props.WRITABLE],
+                "writable_confirm": {
+                    f"{s}.{p}": props.WRITABLE[(s, p)]["confirm"]
+                    for (s, p) in props.WRITABLE if props.WRITABLE[(s, p)].get("confirm")
+                },
+                "writable_values": {
+                    f"{s}.{p}": [
+                        [v, props.ENUM_LABELS.get((s, p), {}).get(v, str(v))]
+                        for v in props.WRITABLE[(s, p)]["values"]
+                    ]
+                    for (s, p) in props.WRITABLE if "values" in props.WRITABLE[(s, p)]
+                },
             }
 
 
@@ -163,6 +181,7 @@ def _worker(mac, mode, interval, static_interval):
             static_interval=static_interval,
             on_event=STATE.handle,
             should_stop=STATE.stop_event.is_set,
+            set_queue=STATE.set_queue,
         ))
     except Exception as e:
         STATE.handle({"type": "status", "status": "error",
@@ -236,6 +255,63 @@ def api_stop():
     STATE.stop_event.set()
     STATE.handle({"type": "status", "status": "stopping", "message": "остановка по запросу…"})
     return jsonify(ok=True, status="stopping")
+
+
+@app.post("/api/write_mode")
+def api_write_mode():
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled"))
+    with STATE.lock:
+        STATE.write_enabled = enabled
+    STATE.handle({"type": "log", "message": f"режим управления: {'ВКЛ' if enabled else 'выкл'}"})
+    return jsonify(ok=True, write_enabled=enabled)
+
+
+@app.post("/api/set")
+def api_set():
+    """SET одного разрешённого свойства (§5: только при включённом режиме управления)."""
+    if not STATE.running:
+        return jsonify(ok=False, error="сессия не запущена"), 409
+    with STATE.lock:
+        if not STATE.write_enabled:
+            return jsonify(ok=False, error="режим управления выключен"), 403
+        if STATE.mode != "poll":
+            return jsonify(ok=False, error="управление доступно только в режиме poll"), 409
+
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("key", ""))
+    if not props.is_writable(key):
+        return jsonify(ok=False, error="свойство не разрешено для записи"), 403
+    try:
+        siid, piid = (int(x) for x in key.split("."))
+    except ValueError:
+        return jsonify(ok=False, error="неверный key"), 400
+
+    spec = props.WRITABLE[(siid, piid)]
+    tcode = spec["type"]
+    val = data.get("value")
+    if tcode == 0:                                   # BOOL
+        if val not in (0, 1, True, False):
+            return jsonify(ok=False, error="value должен быть 0/1"), 400
+        iv = 1 if val in (1, True) else 0
+        value = bytes([iv])
+    elif tcode == 1:                                 # UINT8 (enum-уровень)
+        try:
+            iv = int(val)
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="value должен быть числом"), 400
+        allowed = spec.get("values")
+        if allowed and iv not in allowed:
+            return jsonify(ok=False, error=f"value должен быть один из {allowed}"), 400
+        if not (0 <= iv <= 255):
+            return jsonify(ok=False, error="UINT8 вне диапазона"), 400
+        value = bytes([iv])
+    else:
+        return jsonify(ok=False, error="неподдерживаемый тип"), 400
+
+    STATE.set_queue.put({"siid": siid, "piid": piid, "type": tcode, "value": value})
+    STATE.handle({"type": "log", "message": f"SET {key} = {iv} — в очереди"})
+    return jsonify(ok=True, queued=key)
 
 
 def main():

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "scooter-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["webui/app.py"],
+      "port": 8321
+    }
+  ]
+}

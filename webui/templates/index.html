@@ -19,8 +19,12 @@
 <header class="topbar">
   <h1>Scooter 5 Pro</h1>
   <span id="badge" class="badge idle">idle</span>
-  <span id="conn" class="conn">—</span>
-  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  <div class="topbar-actions">
+    <span id="conn" class="conn">—</span>
+    <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
+    <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  </div>
 </header>
 
 <section class="panel controls">
@@ -50,16 +54,18 @@
 </section>
 <div id="msg" class="msg"></div>
 
+<section id="hero" class="hero" hidden></section>
+
 <main>
   <div id="groups" class="groups"></div>
 
   <section class="panel">
-    <h2>История (раунды) <span id="histcount" class="dim"></span></h2>
+    <h2 data-icon="📜">История (раунды) <span id="histcount" class="dim"></span></h2>
     <div id="history" class="log"></div>
   </section>
 
   <section class="panel">
-    <h2>События</h2>
+    <h2 data-icon="🛰️">События</h2>
     <div id="events" class="log"></div>
   </section>
 </main>
@@ -67,6 +73,28 @@
 <footer class="dim">
   Только чтение · bind 127.0.0.1 · секреты (OOB_CODE/SN) скрыты
 </footer>
+
+<section id="ridemode" class="ridemode" hidden>
+  <div id="rm-fault-banner" class="rm-fault-banner" hidden></div>
+  <div class="rm-topbar">
+    <button id="ridemode-exit" class="rm-exit" type="button" aria-label="Выйти из режима езды">✕</button>
+    <div id="rm-chips" class="rm-chips"></div>
+  </div>
+  <div class="rm-body">
+    <aside class="rm-sidebar">
+      <div class="rm-side-stat"><span class="rm-stat-label">Пробег</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label">Время в пути</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
+    </aside>
+    <div class="rm-main">
+      <div id="rm-mode" class="rm-mode" hidden></div>
+      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit">км/ч</span></div>
+    </div>
+  </div>
+  <div class="rm-footer">
+    <div class="rm-stat"><span class="rm-stat-label">Заряд</span><span id="rm-battery" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
+  </div>
+</section>
 
 <script src="{{ url_for('static', filename='theme.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
