@@ -56,7 +56,7 @@ def test_decode_value_empty_is_none():
 
 def test_parse_reply_roundtrip_single_object():
     """Собираем ответное тело так же, как это делает устройство (см.
-    REPORT.md §8: [siid][piid][status][type|len][value] — на 2Б больше
+    REPORT.md §6.13: [siid][piid][status][type|len][value] — на 2Б больше
     запроса из-за поля статуса), затем разбираем parse_reply и сверяем."""
     siid, piid, tcode, status = 1, 2, 1, 0
     value = bytes([100])  # BATTERY_LEVEL = 100%
