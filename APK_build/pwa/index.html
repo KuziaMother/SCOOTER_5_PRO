@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e14">
+<title>Scooter 5 Pro</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="stylesheet" href="./css/style.css">
+<script>
+  // Синхронно, до отрисовки — иначе будет вспышка не той темы при перезагрузке.
+  (function () {
+    try {
+      var t = localStorage.getItem("scooter_theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<div class="corner-actions">
+  <button id="pin-toggle" class="pin-toggle" type="button" title="PIN для разблокировки">🔑</button>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+</div>
+
+<header class="topbar">
+  <h1>Scooter 5 Pro</h1>
+  <span id="badge" class="badge idle">idle</span>
+  <div class="topbar-actions">
+    <span id="conn" class="conn">—</span>
+    <button id="scooter-toggle" class="scooter-toggle" type="button" title="Мои самокаты — сохранённые профили (имя + LTMK)">📡 —</button>
+    <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
+    <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
+  </div>
+</header>
+
+<section class="panel controls">
+  <button id="connect">Подключиться</button>
+  <button id="disconnect" disabled>Отключиться</button>
+  <span class="spacer"></span>
+  <span class="stat">обновлено: <b id="updated">—</b></span>
+</section>
+<div id="msg" class="msg"></div>
+
+<section id="hero" class="hero" hidden></section>
+
+<main>
+  <div id="groups" class="groups"></div>
+
+  <section class="panel">
+    <h2 data-icon="🛰️">События</h2>
+    <div id="events" class="log"></div>
+  </section>
+</main>
+
+<footer class="dim">
+  BLE напрямую из браузера (Web Bluetooth) · без сервера · секреты (OOB_CODE/SN) скрыты
+</footer>
+
+<section id="ridemode" class="ridemode" hidden>
+  <div id="rm-fault-banner" class="rm-fault-banner" hidden></div>
+  <div class="rm-topbar">
+    <button id="ridemode-exit" class="rm-exit" type="button" aria-label="Выйти из режима езды">✕</button>
+    <div id="rm-chips" class="rm-chips"></div>
+  </div>
+  <div class="rm-body">
+    <aside class="rm-sidebar">
+      <div class="rm-side-stat"><span class="rm-stat-label">Пробег</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label">Время в пути</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
+    </aside>
+    <div class="rm-main">
+      <div id="rm-mode" class="rm-mode" hidden></div>
+      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit">км/ч</span></div>
+    </div>
+  </div>
+  <div class="rm-footer">
+    <div class="rm-stat"><span class="rm-stat-label">Заряд</span><span id="rm-battery" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
+  </div>
+</section>
+
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div id="modal-title" class="modal-title"></div>
+    <div id="modal-msg" class="modal-msg"></div>
+    <input id="modal-input" class="modal-input" type="password" inputmode="numeric" autocomplete="off" hidden>
+    <div class="modal-actions">
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<div id="qrscan-overlay" class="modal-overlay" hidden>
+  <div class="modal qrscan-modal">
+    <div class="modal-title">Сканирование QR</div>
+    <video id="qrscan-video" class="qrscan-video" playsinline muted></video>
+    <div class="modal-actions">
+      <button id="qrscan-cancel" type="button" class="modal-btn">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<div id="scooters-overlay" class="modal-overlay" hidden>
+  <div class="modal scooters-modal">
+    <div class="modal-title">Мои самокаты</div>
+    <div id="scooters-list" class="scooters-list"></div>
+    <div class="modal-actions scooters-modal-actions">
+      <button id="scooters-add" type="button" class="modal-btn">+ Добавить</button>
+      <button id="scooters-close" type="button" class="modal-btn modal-ok">Готово</button>
+    </div>
+  </div>
+</div>
+
+<script src="./js/theme.js"></script>
+<script type="module" src="./js/app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  }
+</script>
+</body>
+</html>
