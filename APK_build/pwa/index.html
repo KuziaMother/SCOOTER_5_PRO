@@ -18,14 +18,19 @@
 </script>
 </head>
 <body>
+<div class="corner-actions">
+  <button id="pin-toggle" class="pin-toggle" type="button" title="PIN для разблокировки">🔑</button>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+</div>
+
 <header class="topbar">
   <h1>Scooter 5 Pro</h1>
   <span id="badge" class="badge idle">idle</span>
   <div class="topbar-actions">
     <span id="conn" class="conn">—</span>
+    <button id="scooter-toggle" class="scooter-toggle" type="button" title="Мои самокаты — сохранённые профили (имя + LTMK)">📡 —</button>
     <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
     <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
-    <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
   </div>
 </header>
 
@@ -73,6 +78,39 @@
     <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
   </div>
 </section>
+
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div id="modal-title" class="modal-title"></div>
+    <div id="modal-msg" class="modal-msg"></div>
+    <input id="modal-input" class="modal-input" type="password" inputmode="numeric" autocomplete="off" hidden>
+    <div class="modal-actions">
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<div id="qrscan-overlay" class="modal-overlay" hidden>
+  <div class="modal qrscan-modal">
+    <div class="modal-title">Сканирование QR</div>
+    <video id="qrscan-video" class="qrscan-video" playsinline muted></video>
+    <div class="modal-actions">
+      <button id="qrscan-cancel" type="button" class="modal-btn">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<div id="scooters-overlay" class="modal-overlay" hidden>
+  <div class="modal scooters-modal">
+    <div class="modal-title">Мои самокаты</div>
+    <div id="scooters-list" class="scooters-list"></div>
+    <div class="modal-actions scooters-modal-actions">
+      <button id="scooters-add" type="button" class="modal-btn">+ Добавить</button>
+      <button id="scooters-close" type="button" class="modal-btn modal-ok">Готово</button>
+    </div>
+  </div>
+</div>
 
 <script src="./js/theme.js"></script>
 <script type="module" src="./js/app.js"></script>

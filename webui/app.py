@@ -20,8 +20,12 @@
   python probes/spec_listen_web.py   # тонкий compatibility launcher
 """
 import asyncio
+import base64
+import io
+import json
 import os
 import queue
+import re
 import sys
 import threading
 from datetime import datetime
@@ -37,6 +41,9 @@ from flask import Flask, jsonify, render_template, request  # noqa: E402
 import dreame_auth as da  # noqa: E402
 import props  # noqa: E402
 import ble_worker  # noqa: E402
+import micloud_ltmk as ml  # noqa: E402
+import firmware_ota as fo  # noqa: E402
+import firmware_worker as fw  # noqa: E402
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -45,6 +52,31 @@ RUNNING_STATUSES = {
     "connecting", "login", "ready", "baseline", "reading",
     "polling", "listening", "stopping",
 }
+
+# ---- профили самокатов (§ несколько устройств) -----------------------------
+# secrets/ целиком в .gitignore — файл со списком name+MAC (без ключей)
+# уместно хранить там же, отдельного правила не нужно. LTMK для конкретного
+# MAC резолвится отдельно, см. dreame_auth.ltmk_path_for_mac.
+SCOOTERS_FILE = os.path.join(_ROOT, "secrets", "scooters.json")
+MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+
+
+def load_scooters():
+    if os.path.exists(SCOOTERS_FILE):
+        try:
+            with open(SCOOTERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+    return [{"name": "Scooter 5 Pro", "mac": da.MAC_DEFAULT}]
+
+
+def save_scooters(lst):
+    os.makedirs(os.path.dirname(SCOOTERS_FILE), exist_ok=True)
+    with open(SCOOTERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(lst, f, ensure_ascii=False, indent=2)
 
 
 def _ts():
@@ -199,9 +231,289 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/service")
+def service_page():
+    return render_template("service.html")
+
+
 @app.get("/api/state")
 def api_state():
     return jsonify(STATE.snapshot())
+
+
+@app.get("/api/scooters")
+def api_scooters():
+    return jsonify(ok=True, scooters=load_scooters())
+
+
+@app.post("/api/scooters")
+def api_scooters_add():
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    mac = str(data.get("mac", "")).strip().upper()
+    if not name:
+        return jsonify(ok=False, error="имя не может быть пустым"), 400
+    if not MAC_RE.match(mac):
+        return jsonify(ok=False, error="MAC должен быть в формате AA:BB:CC:DD:EE:FF"), 400
+
+    scooters = load_scooters()
+    if any(s["mac"].upper() == mac for s in scooters):
+        return jsonify(ok=False, error="самокат с таким MAC уже сохранён"), 409
+    scooters.append({"name": name, "mac": mac})
+    save_scooters(scooters)
+    return jsonify(ok=True, scooters=scooters)
+
+
+def _scan_worker(timeout, result):
+    """Скан в отдельном потоке со своим event loop (тот же паттерн, что _worker)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result["devices"] = loop.run_until_complete(ble_worker.scan_devices(timeout))
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        loop.close()
+
+
+@app.post("/api/scooters/scan")
+def api_scooters_scan():
+    """Пассивный скан эфира (§4: только слушает рекламу, ничего не пишет на устройство)."""
+    if STATE.running:
+        return jsonify(ok=False, error="сессия уже запущена — сначала остановите"), 409
+
+    data = request.get_json(silent=True) or {}
+    try:
+        timeout = float(data.get("timeout", 5))
+    except (TypeError, ValueError):
+        timeout = 5.0
+    timeout = min(15.0, max(2.0, timeout))
+
+    result = {}
+    t = threading.Thread(target=_scan_worker, args=(timeout, result), daemon=True)
+    t.start()
+    t.join(timeout + 5.0)
+    if t.is_alive():
+        return jsonify(ok=False, error="скан завис (таймаут)"), 504
+    if "error" in result:
+        return jsonify(ok=False, error=result["error"]), 500
+    return jsonify(ok=True, devices=result.get("devices", []))
+
+
+@app.post("/api/scooters/delete")
+def api_scooters_delete():
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    scooters = load_scooters()
+    remaining = [s for s in scooters if s["mac"].upper() != mac]
+    if len(remaining) == len(scooters):
+        return jsonify(ok=False, error="не найден"), 404
+    save_scooters(remaining)
+    return jsonify(ok=True, scooters=remaining)
+
+
+@app.get("/api/ltmk/status")
+def api_ltmk_status():
+    return jsonify(ok=True, logged_in=ml.has_session(), qr=ml.qr_login_status())
+
+
+@app.post("/api/ltmk/qr_start")
+def api_ltmk_qr_start():
+    """Начинает QR-логин в Mi Cloud — сам вход идёт в фоновом потоке (ожидание
+    скана может занять минуты), эндпоинт сразу отдаёт картинку QR-кода и
+    альтернативную ссылку (если браузер на этом же компьютере уже залогинен
+    в аккаунт Xiaomi, переход по ней завершает вход без сканирования)."""
+    try:
+        png, login_url = ml.start_qr_login()
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 409
+    return jsonify(ok=True, qr_png_b64=base64.b64encode(png).decode("ascii"), login_url=login_url)
+
+
+@app.get("/api/ltmk/qr_status")
+def api_ltmk_qr_status():
+    return jsonify(ok=True, **ml.qr_login_status())
+
+
+@app.get("/api/ltmk/devices")
+def api_ltmk_devices():
+    try:
+        devices = ml.list_devices()
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 409
+    return jsonify(ok=True, devices=devices)
+
+
+@app.post("/api/ltmk/fetch")
+def api_ltmk_fetch():
+    """Тянет LTMK из облака и сохраняет в secrets/ltmk_<MAC>.hex. Сам ключ
+    НИКОГДА не возвращается в JSON — только факт успеха и длина (§6)."""
+    data = request.get_json(silent=True) or {}
+    did = str(data.get("did", "")).strip()
+    country = str(data.get("country", "ru")).strip() or "ru"
+    mac = str(data.get("mac", "")).strip().upper()
+    pincode = data.get("pin") or None
+    if not did or not MAC_RE.match(mac):
+        return jsonify(ok=False, error="нужны did и корректный mac"), 400
+    try:
+        ltmk = ml.fetch_ltmk(did, country=country, pincode=pincode)
+    except ml.LtmkError as e:
+        if str(e) == "PIN_REQUIRED":
+            return jsonify(ok=False, error="PIN_REQUIRED"), 428
+        return jsonify(ok=False, error=str(e)), 502
+    path = ml.save_ltmk(mac, ltmk)
+    STATE.handle({"type": "log", "message":
+                  f"LTMK получен и сохранён для {mac} ({os.path.relpath(path, _ROOT)}), {len(ltmk)} Б"})
+    return jsonify(ok=True, mac=mac, length=len(ltmk))
+
+
+@app.post("/api/ltmk/reveal_qr")
+def api_ltmk_reveal_qr():
+    """QR-картинка с LTMK для переноса на телефон (сканируется в PWA) — только
+    по явному запросу пользователя, сам ключ не логируется и не пишется в
+    STATE.events. Отдаёт ТОЛЬКО точный per-MAC файл, без fallback на общий
+    secrets/ltmk.hex — иначе для нового устройства без своего файла можно
+    было бы случайно показать чужой ключ."""
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    if not MAC_RE.match(mac):
+        return jsonify(ok=False, error="неверный MAC"), 400
+    hex_ltmk = ml.load_saved_ltmk_hex_exact(mac)
+    if not hex_ltmk:
+        return jsonify(ok=False, error="LTMK для этого MAC не найден локально — сначала получите его"), 404
+    import qrcode
+    img = qrcode.make(hex_ltmk)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return jsonify(ok=True, qr_png_b64=base64.b64encode(buf.getvalue()).decode("ascii"))
+
+
+# соответствие типа записи в firmware_ota (как в облачном ответе) и target'а dreame_flasher
+FW_TYPE_TO_TARGET = {"upd": "ble", "mcu": "mcu"}
+
+
+@app.get("/api/firmware/installed")
+def api_firmware_installed():
+    """Последняя известная версия из телеметрии главной страницы (если там
+    шёл поллинг) — своей BLE-сессии эта страница не открывает."""
+    with STATE.lock:
+        ble = STATE.properties.get("4.5")   # FIRMWARE_VERSION
+        bms = STATE.properties.get("4.3")   # BMS_FIRMWARE_VERSION
+    return jsonify(ok=True,
+                   ble=(ble or {}).get("text"),
+                   bms=(bms or {}).get("text"))
+
+
+@app.post("/api/firmware/check")
+def api_firmware_check():
+    """Ищет did по MAC среди устройств аккаунта (та же сессия, что LTMK) и
+    спрашивает Mi Cloud про последнюю версию. Помечает каждую запись,
+    скачана ли она уже локально (по MD5)."""
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    if not MAC_RE.match(mac):
+        return jsonify(ok=False, error="неверный MAC"), 400
+    try:
+        devices = ml.list_devices()
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 409
+    dev = next((d for d in devices if d.get("mac") == mac), None)
+    if not dev:
+        return jsonify(ok=False, error="устройство с этим MAC не найдено в аккаунте Mi Cloud"), 404
+    try:
+        entries = fo.check_latest(dev["did"], country=dev["country"])
+    except fo.FirmwareError as e:
+        return jsonify(ok=False, error=str(e)), 502
+    local = {it["md5"]: it for it in fo.local_firmware_list() if it.get("md5")}
+    for e in entries:
+        e["downloaded"] = bool(e.get("md5") and e["md5"].lower() in local)
+        e["target"] = FW_TYPE_TO_TARGET.get(e["type"])
+    return jsonify(ok=True, entries=entries)
+
+
+@app.get("/api/firmware/local")
+def api_firmware_local():
+    items = fo.local_firmware_list()
+    for it in items:
+        it["target"] = FW_TYPE_TO_TARGET.get(it["type"])
+    return jsonify(ok=True, items=items)
+
+
+@app.post("/api/firmware/download")
+def api_firmware_download():
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url", "")).strip()
+    md5 = str(data.get("md5", "")).strip()
+    fw_type = str(data.get("type", "")).strip()
+    if not url or fw_type not in FW_TYPE_TO_TARGET:
+        return jsonify(ok=False, error="нужны url и type (upd|mcu)"), 400
+    try:
+        item = fo.download_firmware(url, md5, fw_type)
+    except fo.FirmwareError as e:
+        return jsonify(ok=False, error=str(e)), 502
+    item["target"] = FW_TYPE_TO_TARGET.get(item["type"])
+    STATE.handle({"type": "log", "message": f"прошивка скачана: {item['filename']} ({item['size']} Б)"})
+    return jsonify(ok=True, item=item)
+
+
+@app.post("/api/firmware/flash/start")
+def api_firmware_flash_start():
+    """Заливка образа (без переключения) — commit=False. §5: необратимая
+    часть (switchFirmware) в отдельном эндпоинте /commit, только по явному
+    следующему запросу пользователя."""
+    if STATE.running:
+        return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
+                                        "— одно BLE-соединение на процесс"), 409
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    filename = str(data.get("filename", "")).strip()
+    target = str(data.get("target", "")).strip()
+    if not MAC_RE.match(mac) or not filename or target not in ("ble", "mcu"):
+        return jsonify(ok=False, error="нужны mac, filename и target (ble|mcu)"), 400
+    try:
+        fw.start_flash(mac, filename, target, commit=False)
+    except fw.FlashError as e:
+        return jsonify(ok=False, error=str(e)), 409
+    return jsonify(ok=True)
+
+
+@app.post("/api/firmware/flash/commit")
+def api_firmware_flash_commit():
+    """switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Резюм по CRC
+    внутри dreame_flasher.flash сам проверит, что все фрагменты на месте,
+    прежде чем реально переключать; если чего-то не хватает — сначала
+    докачает. Вызывается только по явному подтверждению в UI (модалка)."""
+    if STATE.running:
+        return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
+                                        "— одно BLE-соединение на процесс"), 409
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    filename = str(data.get("filename", "")).strip()
+    target = str(data.get("target", "")).strip()
+    if not MAC_RE.match(mac) or not filename or target not in ("ble", "mcu"):
+        return jsonify(ok=False, error="нужны mac, filename и target (ble|mcu)"), 400
+    try:
+        fw.start_flash(mac, filename, target, commit=True)
+    except fw.FlashError as e:
+        return jsonify(ok=False, error=str(e)), 409
+    STATE.handle({"type": "log", "message": f"switchFirmware ({target}, {filename}) — запущено пользователем"})
+    return jsonify(ok=True)
+
+
+@app.get("/api/firmware/flash/status")
+def api_firmware_flash_status():
+    # без ok=True-обёртки: FLASH_STATE уже несёт своё поле "ok" (счётчик удачных
+    # фрагментов) — jsonify(ok=True, **fw.status()) падал с "got multiple values
+    # for keyword argument 'ok'" (500, не JSON). Фронтенд читает поля напрямую
+    # (st.phase/st.ok/...), обёртка ему не нужна.
+    return jsonify(fw.status())
+
+
+@app.get("/api/firmware/flash/log")
+def api_firmware_flash_log():
+    """Постоянный лог заливок/переключений (logs/flash_log.jsonl) — переживает
+    перезапуск сервера, в отличие от FLASH_STATE (только память)."""
+    return jsonify(ok=True, entries=fw.read_log(limit=300))
 
 
 @app.post("/api/start")

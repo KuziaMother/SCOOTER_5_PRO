@@ -35,6 +35,7 @@ switchFirmware НЕОБРАТИМ (риск кирпича) — шлётся т�
         только опрос версии MCU (read-only) — проверить, применилась ли установка
 """
 
+import os
 import sys
 import time
 import zlib
@@ -195,14 +196,24 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
     return 0 if transport_done else None
 
 
-async def flash(t, path, target, commit=False, frame_size=None, limit=None):
+async def flash(t, path, target, commit=False, frame_size=None, limit=None, on_progress=None):
+    """on_progress(dict), если задан, вызывается на тех же контрольных точках,
+    что уже печатаются в консоль — для UI-прогресса (webui/firmware_worker.py),
+    без изменения существующего консольного поведения CLI."""
+    def _emit(**kw):
+        if on_progress:
+            on_progress(kw)
+
     op = OPS[target]
     fw = open(path, "rb").read()
     print(f"\n=== FLASH {target.upper()} : {path} ({len(fw)} байт) ===")
+    _emit(phase="starting", message=f"{target.upper()}: {os.path.basename(path)} ({len(fw)} байт)")
 
     frag = await get_fragment_size(t, op)
     if not frag:
-        print("[!] getFragmentSize не ответил — прерываю"); return False
+        print("[!] getFragmentSize не ответил — прерываю")
+        _emit(phase="error", success=False, message="getFragmentSize не ответил")
+        return False
     last, dev_crc = await get_last_index(t, op)
     N = -(-len(fw) // frag)          # ceil
     # Безопасность резюма (аналог MeshDfuManager.checkLastFragmentIndex):
@@ -219,6 +230,8 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
     print(f"[i] fragmentSize={frag}, lastFragmentIndex={last}, всего фрагментов={N}")
     if last >= N:
         print("[i] устройство уже имеет все фрагменты — сразу к switchFirmware")
+    _emit(phase="uploading", index=last, total=N, ok=0, bad=0,
+          message=f"fragmentSize={frag}, уже загружено {last}/{N}")
 
     t0 = time.time()
     n_ok = n_bad = 0
@@ -231,6 +244,8 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
         st = await send_fragment(t, index, data, frame_size=frame_size)
         if st is None:
             print(f"\n[!] фрагмент {index}/{N}: сбой транспорта (нет ACK 00 / нет события)")
+            _emit(phase="error", success=False,
+                  message=f"фрагмент {index}/{N}: сбой транспорта")
             return False
         if st == 0:
             n_ok += 1
@@ -243,12 +258,17 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
             # если ПОДРЯД много не-нулевых и ни одного OK — это реальный отказ
             if n_bad >= 8 and n_ok == 0:
                 print(f"\n[!] {n_bad} фрагментов подряд со статусом !=0 и ни одного OK — отказ, прерываю")
+                _emit(phase="error", success=False,
+                      message=f"{n_bad} фрагментов подряд отклонены, ни одного OK")
                 return False
         if index % 10 == 0 or index == N:
             spd = index / max(time.time() - t0, 0.1)
             eta = (N - index) / max(spd, 0.1)
             print(f"\r  фрагмент {index}/{N} ({100*index//N}%) ok={n_ok} bad={n_bad} "
                   f"{spd:.1f}фр/с ETA {eta:.0f}s   ", end="", flush=True)
+            _emit(phase="uploading", index=index, total=N, ok=n_ok, bad=n_bad,
+                  speed_kbps=spd * frag / 1024, eta_sec=eta,
+                  message=f"{index}/{N} ({100*index//N}%) ok={n_ok} bad={n_bad}")
     dt = time.time() - t0
     sent = max(stop_at - last, 0)
     kbps = (sent * frag) / max(dt, 0.001) / 1024
@@ -257,6 +277,7 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
           f"= {kbps:.2f} КБ/с ({sent/max(dt,0.001):.2f} фрагм/с)")
     if stop_at < N:
         print("[i] --limit задан: образ залит частично, switchFirmware не отправляю.")
+        _emit(phase="done", success=True, message="частичная заливка (--limit)")
         return True
 
     # ФИНАЛЬНАЯ ПРОВЕРКА: устройство реально приняло весь образ?
@@ -273,14 +294,17 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
     else:
         print(f"[!] образ НЕ подтверждён: lastIndex={last2}, device-crc={crc2}, "
               f"ожидали полный {full_crc:08x}.")
+        _emit(phase="error", success=False, message="образ не подтверждён устройством после загрузки")
         return False
 
     if not commit:
         print("[i] --commit не задан: switchFirmware НЕ отправляю. Образ загружен в буфер;\n"
               "    незавершённый DFU устройство сбросит само. Перезапуск с --commit завершит.")
+        _emit(phase="done", success=True, message="образ загружен и подтверждён, ждёт переключения")
         return True
 
     print("\n[!!!] switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Отправляю…")
+    _emit(phase="committing", message="отправляю switchFirmware (необратимо)")
     r = await dfu_cmd(t, op["switch"], struct.pack("<I", 1))  # k81.OooOO0(1) = 01 00 00 00
     print(f"    switchFirmware resp: {r.hex() if r else None}")
 
@@ -288,18 +312,25 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None):
         # Установка MCU асинхронная: BLE-чип ретранслирует образ в контроллер по USART3,
         # MCU прошивает себя сам. Mi Home на этом шаге опрашивает версию MCU до её смены
         # (MeshDfuManager->pollMcuVersion: кадр [01] на 0x001c). Повторяем это же.
+        _emit(phase="committing", message="switchFirmware отправлен — жду смены версии MCU (до 3 мин)")
         ok = await poll_mcu_version(t, expected_before=None)
         if ok is True:
             print("[+] MCU сообщил НОВУЮ версию — прошивка применена.")
+            _emit(phase="done", success=True, message="MCU сообщил новую версию — прошивка применена")
         elif ok is False:
             print("[!] версия MCU не изменилась за отведённое время. Это НЕ значит провал:\n"
                   "    установка могла продолжаться дольше таймаута. Проверь версию позже\n"
                   "    (python probes/mcu_opcode_sweep.py --max 1 --repeat 0).")
+            _emit(phase="done", success=None,
+                  message="switchFirmware отправлен, но версия MCU не сменилась за таймаут — проверьте позже")
         else:
             print("[!] MCU не отвечал на опрос версии (мог перезагружаться).")
+            _emit(phase="done", success=None,
+                  message="switchFirmware отправлен, MCU не отвечал на опрос (мог перезагружаться)")
         return True
 
     print("[+] Команда переключения отправлена. Устройство перезагрузится и применит прошивку.")
+    _emit(phase="done", success=True, message="switchFirmware отправлен, устройство перезагрузится")
     return True
 
 

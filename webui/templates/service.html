@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scooter 5 Pro — сервис</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem("scooter_theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+
+<div class="corner-actions">
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+</div>
+
+<header class="topbar">
+  <h1>Сервис — прошивка</h1>
+  <div class="topbar-actions">
+    <a href="/" class="write-toggle" style="text-decoration:none;">← Панель</a>
+  </div>
+</header>
+
+<div id="fw-session-banner" class="fw-session-banner" hidden>
+  <span id="fw-session-text"></span>
+  <button id="fw-session-stop" type="button" class="modal-btn danger">Остановить поллинг</button>
+</div>
+
+<section class="panel">
+  <h2 data-icon="🔧">Текущая прошивка</h2>
+  <div class="cards">
+    <div class="prop has-data"><div class="name">BLE</div><div class="value" id="fw-installed-ble">—</div></div>
+    <div class="prop has-data"><div class="name">BMS</div><div class="value" id="fw-installed-bms">—</div></div>
+  </div>
+  <div class="scooter-mac" style="margin-top:10px;">
+    Целевой самокат: <b id="fw-target-mac">—</b>
+    (сменить — «Мои самокаты» на <a href="/">главной странице</a>)
+  </div>
+</section>
+
+<section class="panel">
+  <h2 data-icon="☁️">Проверить обновление</h2>
+  <button id="fw-check-btn" type="button" class="modal-btn scooter-select">Проверить в Mi Cloud</button>
+  <div id="fw-check-results" class="scooters-list" style="margin-top:12px;"></div>
+</section>
+
+<section class="panel">
+  <h2 data-icon="💾">Скачанные образы</h2>
+  <div id="fw-local-list" class="scooters-list"></div>
+</section>
+
+<section id="fw-progress-panel" class="panel" hidden>
+  <h2 data-icon="⏳">Заливка</h2>
+  <div id="fw-progress-body"></div>
+  <div id="fw-log" class="log" style="margin-top:12px;"></div>
+</section>
+
+<section class="panel">
+  <h2 data-icon="📜">История заливок/переключений</h2>
+  <div class="scooter-mac" style="margin-bottom:8px;">
+    Пишется в файл (logs/flash_log.jsonl) — переживает перезапуск сервера.
+  </div>
+  <div id="fw-history-log" class="log"></div>
+</section>
+
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div id="modal-title" class="modal-title"></div>
+    <div id="modal-msg" class="modal-msg"></div>
+    <div class="modal-actions">
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='theme.js') }}"></script>
+<script src="{{ url_for('static', filename='service.js') }}"></script>
+</body>
+</html>

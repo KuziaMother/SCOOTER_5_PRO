@@ -54,11 +54,29 @@ h1, h2 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 
 /* --- top bar --- */
 
+/* PIN и тема живут отдельно от топбара — фиксированы в углу экрана, чтобы
+   не участвовать в переносе строк .topbar-actions на узких окнах/телефоне
+   и оставаться на одном месте независимо от того, сколько кнопок в топбаре. */
+.corner-actions {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  /* ниже .ridemode (1000) — полноэкранный режим езды перекрывает угол
+     собственным фоном, кнопки PIN/тема там не нужны и не должны всплывать
+     поверх; ниже всех наших модалок (2000+) по той же логике. */
+  z-index: 900;
+  display: flex;
+  gap: 8px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   gap: 10px 14px;
   padding: 4px 2px 20px;
+  /* место под .corner-actions (PIN/тема, фиксированы в правом верхнем углу) —
+     иначе правый край топбара (напр. "← Панель" на /service) заезжает под них */
+  padding-right: 96px;
   flex-wrap: wrap;
 }
 .topbar-actions {
@@ -201,6 +219,24 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   color: var(--warn);
   font: 500 12px/1.4 var(--sans);
 }
+
+/* --- баннер "занята BLE-сессия" на странице «Сервис», с кнопкой остановки
+   прямо тут же — не заставлять уходить на главную страницу --- */
+.fw-session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  color: var(--warn);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font: 600 13px/1.4 var(--sans);
+}
+.fw-session-banner[hidden] { display: none; }
 
 /* --- property groups --- */
 
@@ -390,6 +426,18 @@ html[data-theme="light"] #start { color: #04222c; }
 }
 .theme-toggle:hover { color: var(--text); }
 
+/* --- кнопка выбора самоката --- */
+.scooter-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-dim); font: 650 12px/1 var(--sans); cursor: pointer;
+  white-space: nowrap; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.scooter-toggle:hover { color: var(--text); }
+
 /* --- кнопка режима езды --- */
 .ridemode-toggle {
   display: inline-flex;
@@ -425,6 +473,9 @@ html[data-theme="light"] #start { color: #04222c; }
 .ridemode[hidden] { display: none; }
 
 .rm-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* .rm-chips (замок) остаётся у правого края, даже если .rm-exit скрыт
+   (space-between с одним видимым элементом прижал бы его влево). */
+.rm-chips { margin-left: auto; }
 .rm-exit {
   flex: 0 0 auto;
   width: 46px; height: 46px;
@@ -437,6 +488,10 @@ html[data-theme="light"] #start { color: #04222c; }
   cursor: pointer;
 }
 .rm-exit:active { background: rgba(255,255,255,0.16); }
+/* .rm-exit сам задаёт display:flex (авторский уровень) — это перебивает
+   стандартное [hidden]{display:none} от браузера (юзер-агентский уровень,
+   слабее по каскаду), поэтому нужно явное правило. */
+.rm-exit[hidden] { display: none; }
 
 .rm-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .rm-chip {
@@ -448,10 +503,14 @@ html[data-theme="light"] #start { color: #04222c; }
   color: rgba(255,255,255,0.85);
   white-space: nowrap;
 }
-.rm-chip.bad { background: rgba(255,100,112,0.2); border-color: rgba(255,100,112,0.55); color: #ffb0b7; }
-.rm-chip.ok { background: rgba(62,224,140,0.18); border-color: rgba(62,224,140,0.45); color: #8bf5bd; }
+.rm-chip.bad { background-color: rgba(255,100,112,0.2); border-color: rgba(255,100,112,0.55); color: #ffb0b7; }
+.rm-chip.ok { background-color: rgba(62,224,140,0.18); border-color: rgba(62,224,140,0.45); color: #8bf5bd; }
 
-/* замок в ride mode — рабочая кнопка, не просто индикатор: явный тап-фидбек */
+/* замок в ride mode — рабочая кнопка, не просто индикатор: жест "удержать"
+   вместо модального confirm() (тот не вписывается в полноэкранный ride mode
+   и требует точного тапа по OK/Cancel — плохо на ходу/в перчатке).
+   background-image отдельным слоем поверх background-color (.bad/.ok выше) —
+   заливка прогресса растёт слева направо, пока держишь палец/курсор. */
 .rm-lock-btn {
   font-family: inherit;
   min-height: 40px;
@@ -459,9 +518,19 @@ html[data-theme="light"] #start { color: #04222c; }
   font-size: 14px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform .1s, filter .15s;
+  touch-action: none;
+  transition: transform .1s, filter .15s, background-size .15s ease-out;
+  background-image: linear-gradient(rgba(255,255,255,.4), rgba(255,255,255,.4));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
 }
-.rm-lock-btn:active { transform: scale(.95); filter: brightness(1.15); }
+.rm-lock-btn.holding {
+  /* 800ms должно совпадать с LOCK_HOLD_MS в app.js — иначе заливка
+     дойдёт до края раньше/позже, чем реально сработает действие. */
+  transition: background-size 800ms linear;
+  background-size: 100% 100%;
+}
+.rm-lock-btn:active { transform: scale(.97); }
 .rm-lock-btn:disabled { opacity: .5; cursor: default; }
 
 /* Компоновка тела: 3 колонки грида — боковая панель / скорость / пустой
@@ -577,15 +646,43 @@ html[data-theme="light"] #start { color: #04222c; }
   border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
 }
 
+/* --- кнопка PIN на разблокировку --- */
+.pin-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+}
+.pin-toggle:hover { color: var(--text); }
+.pin-toggle.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
 /* карточки, доступные для управления (клик = SET) */
-body.write-on .prop.writable { cursor: pointer; }
+/* лёгкая подсказка, что карточка кликабельна, ДАЖЕ при выключенном режиме
+   управления — иначе непонятно, почему клик "ничего не делает" (было
+   полностью незаметно: ни курсора, ни значка, пока не включишь режим) */
+.prop.writable { cursor: pointer; }
+.prop.writable::after {
+  content: "⇄"; position: absolute; top: 9px; right: 2px;
+  font-size: 12px; color: var(--text-faint); opacity: .5;
+}
 body.write-on .prop.writable:hover {
   border-bottom-color: var(--accent);
   background: var(--bg-card-hover);
 }
 body.write-on .prop.writable::after {
-  content: "⇄"; position: absolute; top: 9px; right: 2px;
-  font-size: 12px; color: var(--accent); opacity: .65;
+  color: var(--accent); opacity: .65;
 }
 
 @media (max-width: 480px) {
@@ -598,6 +695,181 @@ body.write-on .prop.writable::after {
   .cards { column-width: 130px; column-gap: 16px; }
   .prop { padding: 8px 2px 9px; }
   .prop .value { font-size: 16px; }
+}
+
+/* --- модалка подтверждения SET (обычный режим, не ride mode) ---
+   Свой стиль вместо нативного confirm(): тот выбивается из тёмного дизайна
+   и не поддерживает форматирование (перенос строк с описанием опасного
+   действия слипался в одну строку). */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(4, 7, 12, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: modalFadeIn .15s ease-out;
+}
+.modal-overlay[hidden] { display: none; }
+/* #modal-overlay (confirm/prompt) может открыться ПОВЕРХ #scooters-overlay
+   (например "+ Добавить" внутри списка самокатов) — тот же .modal-overlay
+   класс у обоих, порядок в DOM иначе решал бы, кто сверху. Явный z-index
+   нужен, чтобы модалка ввода всегда была видна поверх списка. */
+#qrscan-overlay { z-index: 2150; }
+#modal-overlay { z-index: 2100; }
+#ltmk-overlay { z-index: 2050; }
+#scooters-overlay { z-index: 2000; }
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 20px 22px;
+  max-width: 360px;
+  width: 100%;
+  animation: modalPop .15s ease-out;
+}
+@keyframes modalPop {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.modal-title {
+  font: 700 15px/1.3 var(--sans);
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.modal-msg {
+  font: 500 13px/1.5 var(--sans);
+  color: var(--text-dim);
+  white-space: pre-line;
+  margin-bottom: 18px;
+}
+.modal-input {
+  display: block;
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  font: 650 15px/1 var(--mono);
+  letter-spacing: .12em;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.modal-input:focus {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.modal-input[hidden] { display: none; }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.modal-btn.modal-ok {
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  border-color: transparent;
+  color: #04141c;
+}
+.modal-btn.modal-ok.danger,
+.modal-btn.danger {
+  background: var(--bad);
+  color: #2a0509;
+}
+
+/* --- список самокатов (свой модальный экран, не showModal — свободная
+   компоновка со списком и действиями на строку) --- */
+.scooters-modal { max-width: 420px; }
+.scooters-modal-actions { justify-content: space-between; }
+.scooters-add-actions { display: flex; gap: 8px; }
+#scooters-scan-results { margin-top: -6px; }
+#scooters-scan-results:not(:empty) { padding-top: 8px; border-top: 1px solid var(--border-soft); }
+.scooters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.scooter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+}
+.scooter-row.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft));
+  background: var(--accent-soft);
+}
+.scooter-info { min-width: 0; }
+.scooter-name {
+  font: 650 13px/1.3 var(--sans);
+  color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scooter-mac {
+  font: 500 11px/1.4 var(--mono);
+  color: var(--text-faint);
+}
+.scooter-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.scooter-select {
+  padding: 6px 12px; font-size: 12px;
+}
+.scooter-select:disabled {
+  color: var(--accent); opacity: 1; background: transparent; border-color: transparent;
+  cursor: default;
+}
+.scooter-del {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-faint);
+}
+.scooter-del:hover { color: var(--bad); }
+
+.scooter-ltmk {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-faint); font-size: 13px;
+}
+.scooter-ltmk:hover { color: var(--accent); }
+
+/* --- получение LTMK (Mi Cloud QR-логин + перенос ключа на телефон) --- */
+.ltmk-modal { max-width: 420px; }
+#ltmk-body { margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+#ltmk-body a { color: var(--accent); }
+.ltmk-qr-img {
+  display: block;
+  margin: 4px auto;
+  width: 220px; height: 220px;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 10px;
+}
+
+/* --- сканирование QR камерой (PWA — добавление самоката по ключу из webui) --- */
+.qrscan-modal { max-width: 360px; }
+.qrscan-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: #000;
+  margin-bottom: 16px;
 }
 
 /* --- hero-сводка --- */

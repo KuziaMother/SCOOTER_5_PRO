@@ -4,6 +4,7 @@ flask>=3.0
 requests>=2.31
 Pillow>=10.0
 colorama>=0.4
+qrcode>=7.4
 
 capstone>=5.0
 unicorn>=2.0

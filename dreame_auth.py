@@ -340,6 +340,17 @@ async def stage_a_pubkey_exchange(t: Transport):
 
 
 LTMK_HEX = os.path.join(BASE, "secrets", "ltmk.hex")
+
+
+def ltmk_path_for_mac(mac):
+    """Путь к LTMK для конкретного MAC — secrets/ltmk_<MAC без ':'>.hex, если
+    есть, иначе legacy secrets/ltmk.hex (единственный самокат проекта до
+    появления поддержки нескольких профилей)."""
+    safe = (mac or "").upper().replace(":", "")
+    per_mac = os.path.join(BASE, "secrets", f"ltmk_{safe}.hex")
+    return per_mac if os.path.exists(per_mac) else LTMK_HEX
+
+
 LOGIN_SALT = b"smartcfg-login-salt"
 LOGIN_INFO = b"smartcfg-login-info"
 CCM_NONCE = bytes(range(0x10, 0x1c))     # 10 11 ... 1b (12 байт)

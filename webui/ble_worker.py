@@ -12,12 +12,34 @@ BLE-воркер для модульного web UI: login, paced read-only оп
 import asyncio
 import struct
 
+from bleak import BleakScanner
+
 import dreame_auth as da
 import spec_read as sr
 import props
 
 CH_WRITE = sr.CH_WRITE
 CH_NOTIFY = sr.CH_NOTIFY
+
+# Имена, по которым узнаём "наши" устройства среди шума эфира — показываем
+# их первыми в списке скана (§4: сам скан ничего не пишет на устройство,
+# только слушает рекламные пакеты — безопасен для повтора).
+LIKELY_NAME_HINTS = ("scooter", "dreame", "xiaomi", "ninebot", "mi ")
+
+
+async def scan_devices(timeout=5.0):
+    """Пассивный скан эфира — список рядом стоящих BLE-устройств (имя+MAC+RSSI).
+    Не подключается и не отправляет ничего устройству, только слушает рекламу."""
+    found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    devices = []
+    for mac, (dev, adv) in found.items():
+        name = adv.local_name or dev.name
+        if not name:
+            continue
+        likely = any(h in name.lower() for h in LIKELY_NAME_HINTS)
+        devices.append({"name": name, "mac": mac, "rssi": adv.rssi, "likely": likely})
+    devices.sort(key=lambda d: (not d["likely"], -d["rssi"]))
+    return devices
 
 
 class WorkerError(Exception):
@@ -50,11 +72,12 @@ def parse_spec_payload(pt):
 
 async def establish(mac, on_event):
     """connect + A4 + stage A/B. Возвращает (Transport, sk)."""
+    ltmk_path = da.ltmk_path_for_mac(mac)
     try:
-        with open(da.LTMK_HEX, "r", encoding="utf-8") as f:
+        with open(ltmk_path, "r", encoding="utf-8") as f:
             ltmk = bytes.fromhex(f.read().strip())
     except Exception as e:
-        raise WorkerError(f"нет/не читается {da.LTMK_HEX}: {type(e).__name__}")
+        raise WorkerError(f"нет/не читается {ltmk_path}: {type(e).__name__}")
 
     on_event({"type": "status", "status": "connecting", "message": "подключение к самокату…"})
     t = da.Transport(mac)
@@ -125,12 +148,20 @@ async def read_one(t, sk, key, app_cnt, on_event, unit_mult):
 
 
 async def read_props(t, sk, prop_list, on_event, unit_mult, app_cnt, should_stop,
-                     emit_round=False):
-    """Paced-чтение списка свойств по одному. Возвращает новый app_cnt."""
+                     emit_round=False, set_queue=None):
+    """Paced-чтение списка свойств по одному. Возвращает новый app_cnt.
+
+    Если задан set_queue — подхватывает накопленные SET-команды ПЕРЕД каждым
+    отдельным чтением (не только в начале батча). Иначе клик по настройке
+    ждёт конца всего текущего батча чтений (~13 свойств × 0.35с ≈ 4.5с) —
+    заметная и ненужная задержка между нажатием и реальной отправкой на
+    самокат (проверено живьём — см. журнал реверса)."""
     vals = {}
     for key in prop_list:
         if should_stop():
             break
+        if set_queue is not None and not set_queue.empty():
+            app_cnt = await apply_pending_sets(t, sk, set_queue, on_event, unit_mult, app_cnt)
         if not props.is_safe(key):
             continue
         text = await read_one(t, sk, key, app_cnt, on_event, unit_mult)
@@ -371,17 +402,25 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
                 )
                 app_cnt = await read_props(
                     t, sk, dynamic_no_unit, on_event, unit_mult, app_cnt, should_stop,
-                    emit_round=True
+                    emit_round=True, set_queue=set_queue
                 )
                 if loop.time() - last_static >= static_interval:
                     app_cnt = await read_props(
-                        t, sk, props.STATIC_SET, on_event, unit_mult, app_cnt, should_stop
+                        t, sk, props.STATIC_SET, on_event, unit_mult, app_cnt, should_stop,
+                        set_queue=set_queue
                     )
                     last_static = loop.time()
                 elapsed = loop.time() - round_start
                 wait = max(0.2, interval - elapsed)
                 end = loop.time() + wait
                 while not should_stop() and loop.time() < end:
+                    # простой между раундами — не ждать сложа руки, если за это
+                    # время накопился клик: сразу отправляем и завершаем простой.
+                    if set_queue is not None and not set_queue.empty():
+                        app_cnt = await apply_pending_sets(
+                            t, sk, set_queue, on_event, unit_mult, app_cnt
+                        )
+                        break
                     await asyncio.sleep(0.2)
             on_event({"type": "status", "status": "done", "message": "поллинг остановлен"})
 
