@@ -791,9 +791,10 @@ async def main():
             print("\n=== Сбор информации (read-only) ===")
             report = [f"Dreame Scooter 5 Pro — info dump ({mac})"]
             await collect_info(t, report)
-            with open(os.path.join(BASE, "docs", "scooter_info.txt"), "w", encoding="utf-8") as f:
+            info_path = os.path.join(BASE, "docs", "scooter_info.txt")
+            with open(info_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(report) + "\n")
-            print("\n[*] отчёт сохранён: D:\\MIJIA\\scooter_info.txt")
+            print(f"\n[*] отчёт сохранён: {info_path}")
         return 0 if ok else 1
     except Exception:
         import traceback

@@ -41,9 +41,12 @@ plugins/                Скачанный плагин Mi Home + распако
 research_bin/           Статический реверс прошивок: REPORT.md, decryptor.py, analyze*.py, mcu_*.py,
                         functions_ble/, functions_mcu/, .bin (образы для анализа)
 zip_archives/           Вендорские SDK/тулы (rtltool, rtl8762c-gcc-examples, MP Tool) — вне git
-docs/                   Справка: telemetry.txt (дамп), SUMMARY.md (архив), spec/info JSON, todo.md, protocol.md
+docs/                   Справка: telemetry.txt (дамп), scooter_info.txt, scooter_spec.json,
+                        SUMMARY.md + dreame_dfu_protocol.md (исторические разборы, устаревшие места помечены)
+tests/                  Юнит-тесты (pytest); CI — .gitea/workflows/ci.yml (ruff + pytest)
 secrets/                🔒 Ключи устройства (НЕ публиковать) — см. .gitignore
-emulator/               Эмулятор устройства (тест dreame_auth/dreame_flasher без BLE)
+emulator/               Эмулятор устройства (тест dreame_auth/dreame_flasher без BLE);
+                        mcu_emu.py — исполнение настоящей MCU-прошивки под Unicorn
 apk/                    Mi Home APK (источник DEX-анализа, 229 МБ)
 logs/                   btsnoop_hci.log (снуп сессии Mi Home — ВАЖЕН) + логи прогонов флешера
 ```
@@ -138,6 +141,9 @@ PWA-клиенте при добавлении нового самоката.
 - **BLE (RTL8762C):** открытый bootloader/OTA + **AES-зашифрованный APP** (ключ в OTP, XIP-decrypt)
   + RSA/Mijia-подпись → из `.bin` не расшифровать.
 - **MCU (GD32/STM32F1 Cortex-M4F):** открытый код BLDC-контроллера (TIM1+Холл, ADC, USART3↔BLE, OTA).
+  Протокол MCU⇄BLE разобран полностью (два UART'а, кадры, 32 подкоманды данных-канала —
+  [`research_bin/REPORT.md`](research_bin/REPORT.md) §31): MCU = поставщик сырых значений,
+  слой спецификации Mi Home (siid/piid) живёт в BLE-чипе.
 - **Телеметрии нет ни в одном стандартном пути:** канал `0x001c` = 4 опкода (версии/железо/серийник,
   и это канал BLE-чипа, а не проброс к MCU); в публичной MIoT-спеке свойств нет; MiBeacon-реклама
   несёт только идентификацию.
