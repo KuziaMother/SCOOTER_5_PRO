@@ -34,7 +34,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import mcu_uart_flash as muf  # noqa: E402
 from mcu_keygen import sign_rand  # noqa: E402
 
-FW_PATH = ROOT / "firmware_ota" / "c0f78c49f322bd3d71fea19c90241882_mcu_xiaomi.scooter.5pro_v0007.bin"
+# Образ MCU: локальный firmware_ota/ (gitignored) — если есть, иначе закоммиченный
+# фикстура-дубликат (официальная прошивка, нужна для known-vector и полного цикла).
+_FW_LOCAL = ROOT / "firmware_ota" / "c0f78c49f322bd3d71fea19c90241882_mcu_xiaomi.scooter.5pro_v0007.bin"
+FW_PATH = _FW_LOCAL if _FW_LOCAL.exists() else ROOT / "tests" / "fixtures" / "mcu_0007.bin"
 LIVE_UID = bytes.fromhex("4a77555935567448353632797064474f")
 LIVE_KEY_01_10 = bytes.fromhex("7049273de6bd8383fbf33c3a128eb946")
 
