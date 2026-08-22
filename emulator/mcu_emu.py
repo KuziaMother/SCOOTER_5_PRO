@@ -25,7 +25,7 @@ from unicorn.arm_const import (UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC,
                                UC_ARM_REG_R3)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FW = os.path.join(os.path.dirname(HERE), "research_bin", "mcu_0007.bin")
+FW = os.path.join(os.path.dirname(HERE), "research", "images", "mcu_0007.bin")
 
 FLASH0 = 0x00000000          # база 0 (адрес == смещение в файле)
 FLASH1 = 0x08000000          # зеркало (некоторые литералы могут ждать эту базу)

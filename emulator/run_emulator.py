@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(ROOT, "core"))
 sys.path.insert(0, os.path.join(ROOT, "probes"))
 
 import dreame_auth as da

@@ -3,7 +3,7 @@
 Полный дамп телеметрии Dreame/Xiaomi Scooter 5 Pro по MIoT-spec поверх BLE.
 
 Читает всю карту свойств (siid 1..4 + логи siid 6) и печатает таблицу.
-Протокол и раскладка — см. research_bin/REPORT.md; реализация в probes/spec_read.py.
+Протокол и раскладка — см. research/REPORT.md; реализация в probes/spec_read.py.
 
 ВАЖНО: читаем ПО ОДНОМУ свойству за запрос. Устройство обслуживает только первый
 объект в запросе, остальным ставит статус 0xf05d (-4003) — проверено тремя опытами
@@ -22,6 +22,7 @@ from datetime import datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "core"))
 sys.path.insert(0, os.path.join(ROOT, "probes"))
 
 import dreame_auth as da                     # noqa: E402

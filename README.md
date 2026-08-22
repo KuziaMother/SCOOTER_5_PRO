@@ -1,162 +1,132 @@
-# Dreame / Xiaomi Scooter 5 Pro — BLE tooling & firmware research
+# Xiaomi Scooter 5 Pro — реверс протоколов и инструменты
 
-Реверс BLE-протокола, DFU-флешер и статический анализ прошивок самоката
-`xiaomi.scooter.5pro` (MAC `2C:19:5C:DE:DE:88`).
+Исследовательский проект по электросамокату `xiaomi.scooter.5pro`
+(MAC `2C:19:5C:DE:DE:88`): реверс BLE-протокола, чтение телеметрии по
+Mi Home spec, прошивка обоих чипов (RTL8762C — по воздуху, GD32 MCU —
+по воздуху и по проводу), локальный веб-интерфейс и мобильный клиент.
 
-> **Начинать здесь:** проверенные константы протокола — [`docs/FACTS.md`](docs/FACTS.md)
-> (не выводить их заново из дизасма); рабочие правила — [`CLAUDE.md`](CLAUDE.md);
-> статус и план — [`todo.md`](todo.md).
+В самокате два «мозга»:
 
----
-
-## Оглавление
-
-- [Структура проекта](#структура-проекта)
-- [Быстрый старт](#быстрый-старт)
-- [Веб-интерфейс (webui/)](#веб-интерфейс-webui)
-- [Мобильный клиент (APK_build/)](#мобильный-клиент-apk_build)
-- [Ключевые факты](#ключевые-факты)
-- [⚠️ Безопасность](#-безопасность)
-
----
+- **BLE-чип (Realtek RTL8762C)** — GATT-сервис `FE95`, Mijia security-chip
+  login, слой спецификации Mi Home (siid/piid);
+- **MCU (GD32, Cortex-M4F)** — BLDC-контроллер мотора/батареи; говорит с
+  BLE-чипом по UART @19200.
 
 ## Структура проекта
 
-```
-dreame_auth.py          Ядро: BLE-транспорт (A4/MNG), security-chip login, DFU-команды, сбор инфо
-dreame_flasher.py       Флешер прошивки (BLE/MCU) поверх dreame_auth
-docs/FACTS.md           ★ Проверенные константы протокола — единственный источник истины
-CLAUDE.md               Рабочие правила проекта (иерархия доказательств, секреты, безопасность)
-todo.md                 Что сделано / стены / дальнейшие шаги
-docs/dreame_dfu_protocol.md  Исторический разбор протокола §6.1–6.17 (устаревшие места помечены)
+Иерархия: **код и исследования** — верхний уровень; **данные** (gitignored) —
+отдельные каталоги в корне; **все логи — в `logs/`**.
 
-webui/                  Локальный веб-дашборд (Flask): телеметрия, режим езды, режим управления (SET),
-                        «Мои самокаты» (профили + скан эфира + получение LTMK через Mi Cloud QR-логин),
-                        страница /service — проверка/скачивание/заливка прошивки с прогрессом
-APK_build/              Мобильный клиент: тот же функционал через Web Bluetooth (PWA → Android APK)
-firmware_ota/           Официальные образы из Mi Cloud (BLE + MCU) + latest_ver JSON
-probes/                 On-device пробы (read-only): перебор опкодов, скан рекламы, прослушка сессии
-tools/                  Mi Cloud + бандлы: fetch_plugin.py, fetch_firmware.py, unpack_rambundle.py, xct/
-plugins/                Скачанный плагин Mi Home + распакованные JS-модули (карта телеметрии)
-research_bin/           Статический реверс прошивок: REPORT.md, decryptor.py, analyze*.py, mcu_*.py,
-                        functions_ble/, functions_mcu/, .bin (образы для анализа)
-zip_archives/           Вендорские SDK/тулы (rtltool, rtl8762c-gcc-examples, MP Tool) — вне git
-docs/                   Справка: telemetry.txt (дамп), scooter_info.txt, scooter_spec.json,
-                        SUMMARY.md + dreame_dfu_protocol.md (исторические разборы, устаревшие места помечены)
-tests/                  Юнит-тесты (pytest); CI — .gitea/workflows/ci.yml (ruff + pytest)
-secrets/                🔒 Ключи устройства (НЕ публиковать) — см. .gitignore
-emulator/               Эмулятор устройства (тест dreame_auth/dreame_flasher без BLE);
-                        mcu_emu.py — исполнение настоящей MCU-прошивки под Unicorn
-apk/                    Mi Home APK (источник DEX-анализа, 229 МБ)
-logs/                   btsnoop_hci.log (снуп сессии Mi Home — ВАЖЕН) + логи прогонов флешера
+| Каталог | Назначение |
+|---|---|
+| `core/` | **Ядро протокола**: BLE-транспорт, security-chip login (`dreame_auth.py`), BLE-DFU флешер (`dreame_flasher.py`) — основа всего остального |
+| `webui/` | Локальный веб-интерфейс (Flask, 127.0.0.1): дашборд, управление, прошивка |
+| `mobile/` | Мобильный клиент: Web Bluetooth PWA → TWA/APK (`mobile/README.md`) |
+| `probes/` | Исследовательские пробы (BLE, read-only): spec read/push, телеметрия, MCU-гейты |
+| `tools/` | CLI-утилиты: UART (logger, baud-скан, MCU-флешер), скачивание прошивок из Mi Cloud |
+| `emulator/` | Софтверная модель стороны самоката — прогон настоящих инструментов без железа |
+| `tests/` | Тест-сьют (pytest) |
+| `docs/` | Документация: `BLE.md`, `MCU.md`, `DFU.md` |
+| `research/` | Статический реверс образов прошивок: `REPORT.md`; `scripts/` — анализ (BLE/MCU), `images/` — образы и сертификаты, `functions_*/` — сгенерированные разборы функций; `custom_mcu/` — патченный MCU-образ |
+
+Данные (в `.gitignore`, не коммитятся):
+
+| Каталог | Назначение |
+|---|---|
+| `firmware_ota/` | Официальные образы прошивок |
+| `secrets/` | Ключи и сессии (LTMK, Mi Cloud) |
+| `logs/` | **Все логи проекта** |
+| `plugins/` | Разобранные плагины/APK Mi Home |
+| `tmp/`, `zip_archives/`, `uart_raw/` | Рабочие артефакты (архивы, сырые UART-захваты) |
+
+## Документация
+
+| Файл | Содержание |
+|---|---|
+| `docs/BLE.md` | BLE-сторона: GATT, login, телеметрия |
+| `docs/MCU.md` | MCU: образ прошивки, UART-протокол |
+| `docs/DFU.md` | Обновление прошивок (по воздуху и по проводу) |
+| `research/REPORT.md` | Статический реверс образов прошивок (самый подробный разбор) |
+| `mobile/README.md` | Мобильный клиент (Web Bluetooth → TWA/APK) |
+
+## Установка
+
+Python 3.11+ (проверено на Windows).
+
+```bash
+pip install -r requirements-dev.txt   # зависимости (вкл. pyserial) + pytest/ruff
 ```
+
+### Секреты (`secrets/`, в .gitignore)
+
+| Файл | Назначение |
+|---|---|
+| `ltmk.hex` / `ltmk_<MAC>.hex` | LTMK — ключ логина конкретного самоката |
+| `scooters.json` | Профили самокатов (name + MAC) для веб-интерфейса |
+| `micloud_session.json` | Сессия Mi Cloud (QR-логин; общая с `tools/xct/`) |
+
+Для нового самоката LTMK получается через Mi Cloud — страница «Мои
+самокаты» в веб-интерфейсе (`webui/micloud_ltmk.py`).
 
 ## Быстрый старт
 
-Зависимости: `bleak`, `cryptography` (Python 3.11+, Windows/WinRT BLE).
+### Веб-интерфейс (дашборд, управление, прошивка)
 
 ```bash
-# Логин + сбор информации с самоката (read-only)
-python dreame_auth.py
-
-# Прошивка (БЕЗ коммита — только загрузка фрагментов, безопасно):
-python dreame_flasher.py ble firmware_ota/<image>.bin
-python dreame_flasher.py mcu firmware_ota/<image>.bin
-
-# Полная прошивка с необратимым переключением (только на версии НОВЕЕ установленной!):
-python dreame_flasher.py ble firmware_ota/<image>.bin --commit --yes
-
-# Проверить, применилась ли установка MCU (read-only, ничего не шьёт):
-python dreame_flasher.py poll-mcu --poll-timeout=60
+python webui/app.py        # http://127.0.0.1:8321  (только localhost)
 ```
 
-Для MCU установка асинхронная: после `switchFirmware` флешер опрашивает версию кадром
-`[01]` на `0x001c` до её смены — так же делает штатный `MeshDfuManager` в Mi Home.
+Несколько самокатов, чтение свойств, SET по клику, режим езды, загрузка
+прошивок на сервисной странице. Журнал заливок — `logs/flash_log.jsonl`.
 
-On-device пробы (read-only, самокат должен быть включён):
+### Телеметрия (BLE, read-only)
 
 ```bash
-python probes/beacon_scan.py --secs 30              # что самокат вещает в рекламе (без подключения)
-python probes/mcu_opcode_sweep.py --max 255         # перебор опкодов инфо-канала 0x001c
-python probes/telemetry_listen.py --secs 40         # логин + пассивная прослушка нотификаций
-
-# ТЕЛЕМЕТРИЯ: полный дамп в docs/telemetry.txt
-python tools/dump_telemetry.py                      # батарея + поездка
-python tools/dump_telemetry.py --all                # + настройки, SN, версии
-
-# одно свойство
-python probes/spec_read.py --siid 1 --piid 2        # BATTERY_LEVEL, %
-python probes/spec_read.py --siid 2 --piid 6        # TOTAL_MILEAGE
+python probes/spec_read.py               # быстрое чтение свойств
+python tools/dump_telemetry.py           # полный дамп в таблицу (docs/telemetry.txt)
+python probes/spec_listen.py --secs 120  # слушать ПУШИ: меняй состояние (газ/свет/движение)
 ```
 
-Читать надо **по одному свойству**: устройство обслуживает только первый объект
-в запросе, остальным возвращает статус −4003.
-
-Карта свойств (siid/piid) — в [`research_bin/REPORT.md`](research_bin/REPORT.md); она
-извлечена из плагина Mi Home и в публичной MIoT-спеке отсутствует.
-
-Логин требует `secrets/ltmk.hex` и `secrets/scooter_keys.json`
-(извлекаются QR-логином в Mi Cloud — см. `tools/fetch_firmware.py` / `tools/xct/`).
-Сессия Mi Cloud кэшируется в `secrets/micloud_session.json`, повторный QR не нужен.
-
-## Веб-интерфейс (webui/)
-
-Локальный дашборд на Flask — то же самое, что дают скрипты выше, но с UI:
-живая телеметрия, полноэкранный «режим езды» для крепления на руль, режим
-управления (SET разрешённых свойств) с подтверждением и PIN на разблокировку.
+### Прошивка
 
 ```bash
-pip install -r requirements.txt
-python webui/app.py            # http://127.0.0.1:8321, только localhost
+# BLE-чип по воздуху (канал FE95/0x0018):
+python core/dreame_flasher.py ble firmware_ota/…_upd_xiaomi.scooter.5pro_v2.7.0_0015.bin
+
+# MCU по воздуху:
+python core/dreame_flasher.py mcu firmware_ota/c0f78c49…_mcu_xiaomi.scooter.5pro_v0007.bin
+
+# MCU по проводу (USB-TTL, 19200, протокол bw-flasher):
+python tools/mcu_uart_flash.py --port COM3 \
+    --fw firmware_ota/c0f78c49…_mcu_xiaomi.scooter.5pro_v0007.bin \
+    --md5 c0f78c49f322bd3d71fea19c90241882
 ```
 
-**«Мои самокаты»** — несколько сохранённых профилей (имя + MAC), не завязано
-на единственный `secrets/ltmk.hex`: LTMK резолвится персонально по MAC
-(`secrets/ltmk_<MAC>.hex`, `dreame_auth.ltmk_path_for_mac`). Добавить самокат
-можно сканом эфира (пассивно, `bleak.BleakScanner`) или вручную по MAC.
+⚠️ `switchFirmware` необратим (риск кирпича) — флешер шлёт его только с
+флагом `--commit`; без флага заливает фрагменты, но не переключает.
 
-**Получение LTMK через Mi Cloud** прямо из UI (кнопка 🔑) — QR-логин в
-аккаунт Xiaomi (без пароля, как `tools/fetch_firmware.py`), выбор устройства
-из списка аккаунта, `askbluetoothkey` + расшифровка при заданном PIN
-шаринга. Ключ можно перенести на телефон QR-кодом — сканируется камерой в
-PWA-клиенте при добавлении нового самоката.
+### Эмулятор и тесты (без железа)
 
-**`/service`** — отдельная страница обслуживания прошивки: текущая версия,
-проверка обновлений в Mi Cloud, скачивание образов с проверкой MD5, заливка
-по BLE с прогресс-баром, отдельная кнопка переключения (`switchFirmware`,
-необратимо — своя модалка-подтверждение). Лог операций пишется в
-`logs/flash_log.jsonl`, переживает перезапуск сервера.
+```bash
+python emulator/run_emulator.py   # настоящие core/dreame_auth + dreame_flasher против софтверной модели
+pytest                            # тест-сьют (вкл. полный цикл прошивки на эмуляторе)
+ruff check .                      # линтер (E9+F — codebase это research-скрипты, не библиотека)
+```
 
-## Мобильный клиент (APK_build/)
+## Логи
 
-Тот же протокол и UI, но напрямую с телефона через Web Bluetooth — без ПК.
-Подробности и инструкция сборки APK — [`APK_build/README.md`](APK_build/README.md).
+Все `.log`-файлы лежат в `logs/`:
 
-## Ключевые факты
+- `tools/uart_logger.py` — по умолчанию пишет в `logs/uart_activity.log`
+  (сырые захваты байтов — в `uart_raw/`); анализ: `python tools/uart_logger.py --show logs/uart_activity.log`;
+- `probes/spec_listen.py` — `logs/push_capture_*.txt`;
+- веб-интерфейс — журнал заливок `logs/flash_log.jsonl`.
 
-- **Login:** ECDH P-256 + HKDF + AES-CCM; пин `12****`.
-- **DFU data-канал (0x0018):** окно=1, кадры 18 Б, pull по ACK `05`, `switchFirmware` — необратим.
-  «Защита от дурака» срабатывает на разных этапах: BLE принимает все фрагменты и отвергает
-  переключение (`status 6`), MCU отсекает на первом фрагменте (`status 5`) и закрывает сессию.
-- **BLE (RTL8762C):** открытый bootloader/OTA + **AES-зашифрованный APP** (ключ в OTP, XIP-decrypt)
-  + RSA/Mijia-подпись → из `.bin` не расшифровать.
-- **MCU (GD32/STM32F1 Cortex-M4F):** открытый код BLDC-контроллера (TIM1+Холл, ADC, USART3↔BLE, OTA).
-  Протокол MCU⇄BLE разобран полностью (два UART'а, кадры, 32 подкоманды данных-канала —
-  [`research_bin/REPORT.md`](research_bin/REPORT.md) §31): MCU = поставщик сырых значений,
-  слой спецификации Mi Home (siid/piid) живёт в BLE-чипе.
-- **Телеметрии нет ни в одном стандартном пути:** канал `0x001c` = 4 опкода (версии/железо/серийник,
-  и это канал BLE-чипа, а не проброс к MCU); в публичной MIoT-спеке свойств нет; MiBeacon-реклама
-  несёт только идентификацию.
-- **✅ Телеметрия читается** (`probes/spec_read.py`): приватная спека найдена в плагине Mi Home,
-  протокол — **MIoT-spec поверх BLE**: `0x001a` write / `0x001b` notify, **канал 0**, кадры 18 Б,
-  `op=2` для чтения, полезная нагрузка в AES-CCM с префиксом счётчика.
-  Проверено на живом самокате: батарея 100 %, 53.44 В, пробег 4.4 км, остаток хода 60.5 км,
-  темп. батареи 25 °C, SOH 100 %. Пробег/остаток — в 0.01 км, ток в А, мощность в Вт, напряжение в 0.01 В.
+## Тесты
 
-Подробности — [`docs/dreame_dfu_protocol.md`](docs/dreame_dfu_protocol.md) и [`research_bin/REPORT.md`](research_bin/REPORT.md).
+```bash
+pytest
+```
 
-## ⚠️ Безопасность
-
-- `secrets/` содержит ltmk/token устройства — **не коммитить, не публиковать**.
-- `switchFirmware` необратим (риск кирпича). На той же версии бесполезен и отвергается устройством.
-- Прошивать только официальные подписанные образы (`firmware_ota/`, MD5 сверены).
+Скрипты намеренно используют `sys.path.insert` до импортов (research-код,
+не пакет) — ruff настроен только на реальные ошибки (`E9`, `F`).

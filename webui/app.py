@@ -32,8 +32,9 @@ from datetime import datetime
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _WEBUI = os.path.dirname(os.path.abspath(__file__))
+_CORE = os.path.join(_ROOT, "core")
 _PROBES = os.path.join(_ROOT, "probes")
-for _p in (_ROOT, _WEBUI, _PROBES):
+for _p in (_ROOT, _WEBUI, _CORE, _PROBES):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

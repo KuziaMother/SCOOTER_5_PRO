@@ -6,7 +6,8 @@ apk/
 *.apk
 firmware_ota/
 
-research_bin/*.bin
+# Локальные копии образов для research-скриптов (оригиналы — в firmware_ota/).
+research/images/*.bin
 
 logs/
 *.log
@@ -30,18 +31,19 @@ zip_archives/
 *BeeMPTool*.zip
 
 tmp/
+uart_raw/
 .pytest_cache/
 .ruff_cache/
 androguard.db
 
-# APK_build/twa — генерируется Bubblewrap (Android/Gradle-проект TWA-обёртки).
+# mobile/twa — генерируется Bubblewrap (Android/Gradle-проект TWA-обёртки).
 # *.keystore/*.jks — подписывающий ключ APK, ни в коем случае не коммитить.
-APK_build/twa/
+mobile/twa/
 *.keystore
 *.jks
-APK_build/test/*.log
-APK_build/test/ccm_vectors.json
-APK_build/test/crc32_vectors.json
-APK_build/test/hkdf_vectors.json
-APK_build/test/ecdh_setup.json
-APK_build/test/ecdh_step1.json
+mobile/test/*.log
+mobile/test/ccm_vectors.json
+mobile/test/crc32_vectors.json
+mobile/test/hkdf_vectors.json
+mobile/test/ecdh_setup.json
+mobile/test/ecdh_step1.json

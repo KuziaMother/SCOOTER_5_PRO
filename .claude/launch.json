@@ -10,7 +10,7 @@
     {
       "name": "apk-pwa",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8322", "--directory", "APK_build/pwa"],
+      "runtimeArgs": ["-m", "http.server", "8322", "--directory", "mobile/pwa"],
       "port": 8322
     }
   ]

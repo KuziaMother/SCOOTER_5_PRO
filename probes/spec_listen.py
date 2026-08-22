@@ -26,7 +26,7 @@ FE95, включая spec-notify `0x001b`. Доказано на том же п�
 
 Запуск:
   python probes/spec_listen.py [--secs 120] [--pre 5] [--no-baseline] [--log ПУТЬ]
-Всё, что печатается (включая логин), дублируется в лог-файл (по умолчанию docs/).
+Всё, что печатается (включая логин), дублируется в лог-файл (по умолчанию logs/).
 """
 import argparse
 import asyncio
@@ -36,7 +36,9 @@ import struct
 import sys as _sys
 from datetime import datetime
 
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_sys.path.insert(0, _ROOT)
+_sys.path.insert(0, _os.path.join(_ROOT, "core"))
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
 import dreame_auth as da
@@ -113,7 +115,7 @@ async def read_baseline(t, sk):
 
 async def listen(mac, secs, pre=5.0, baseline=True, log_path=None, snoop=False):
     if log_path is None:
-        d = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "docs")
+        d = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "logs")
         _os.makedirs(d, exist_ok=True)
         log_path = _os.path.join(d, f"push_capture_{datetime.now():%Y%m%d_%H%M%S}.txt")
     logf = open(log_path, "w", encoding="utf-8", buffering=1)  # line-buffered: живой tail
@@ -249,7 +251,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-baseline", action="store_true", help="не читать базовые значения")
     ap.add_argument("--snoop", action="store_true",
                     help="логировать ВСЕ входящие кадры на ЛЮБЫХ характеристиках (диагностика, где идёт пуш)")
-    ap.add_argument("--log", default=None, help="путь к лог-файлу (по умолчанию docs/push_capture_*.txt)")
+    ap.add_argument("--log", default=None, help="путь к лог-файлу (по умолчанию logs/push_capture_*.txt)")
     a = ap.parse_args()
     raise SystemExit(asyncio.run(listen(a.mac, a.secs, pre=a.pre,
                                         baseline=not a.no_baseline, log_path=a.log, snoop=a.snoop)))

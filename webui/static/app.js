@@ -332,7 +332,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // ---- получение LTMK через Mi Cloud (QR-логин, без пароля) и перенос на
 // телефон QR-кодом (PWA его сканирует камерой — см. resolveProfile в
-// APK_build/pwa/js/app.js). Сам ключ никогда не попадает в alert/console —
+// mobile/pwa/js/app.js). Сам ключ никогда не попадает в alert/console —
 // только факт успеха и длина (§6 CLAUDE.md). ----
 function ltmkSetBody(html) { $("ltmk-body").innerHTML = html; }
 

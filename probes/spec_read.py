@@ -27,7 +27,9 @@ import os as _os
 import struct
 import sys as _sys
 
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_sys.path.insert(0, _ROOT)
+_sys.path.insert(0, _os.path.join(_ROOT, "core"))
 
 import dreame_auth as da
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
