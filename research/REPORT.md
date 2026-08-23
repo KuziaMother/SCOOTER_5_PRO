@@ -3720,3 +3720,88 @@ DMA1 = 0x40020000. Записи в CCR идут через базу 0x40012C40 (
 5. Блок «MI\xefTFOTA»+`xiaomi.scooter.5pro` — дескриптор FOTA (имя продукта, версии:
    MCU `00 48…00 07`, BLE `e8 53…02 07`; поле `d3 50 00 00` общее) — внутри подписанного
    контента, формат полей частично не расшифрован (не влияет на верификацию).
+
+## 43. A2 закрыт (отрицательно): дефолтного OTA AES-ключа Realtek не существует; КОРРЕКТИРОВКА §6.11 — точный decode BLE-хедера, 2026-08-24
+
+Задача A2 («проверить Realtek SDK default OTA AES-ключ») закрыта: **такого ключа нет** ни в
+SDK, ни в MP Tool, ни в прошивках самого Realtek. Но по пути сделан точный decode заголовка
+BLE-образа, который **исправляет §6.11** (там биты ctrl_flag считались неверно).
+
+### 43.1. Полное SDK RTL8762C (клон `tropicalshrimph/rtl8762c-sdk-gcc`, 424 МБ, в `zip_archives/`)
+
+- **`T_ENC_KEY_SELECT`** (`inc/platform/patch_header_check.h`):
+  ```c
+  ENC_KEY_SCEK = 0,            // eFuse SCEK
+  ENC_KEY_SCEK_WITH_RTKCONST,  // SCEK + константа Realtek (в boot ROM)
+  ENC_KEY_OCEK,                // eFuse OCEK
+  ENC_KEY_OCEK_WITH_OEMCONST,  // OCEK + OEM-константа
+  ENC_KEY_ON_FLASH,            // ключ в самом образе (dec_key[16] в хедере)
+  ```
+- **Ни одного зашитого ключа** в SDK: ни S-box-окрестностей, ни констант выведения.
+  `hw_aes_decrypt_code_init_slim(key, is256)` — библиотека принимает ключ явно (из eFuse).
+- Структура хедера **`T_IMG_HEADER_FORMAT`** содержит поле **`dec_key[16]`** — SDK поддерживает
+  режим «ключ в образе» (select=4), но у Dreame это поле = нули.
+- `IMG_HEADER_SIZE = 1024` — заголовок изображения = 1 КБ.
+- OTP-RAM-зеркало (`inc/platform/otp.h`, @0x200398): `aes_key[8]` «for OTA
+  encryption/decryption» — ключ в RAM-копии eFuse, не в flash.
+
+### 43.2. MP Tool v1.1.2.4 (BeeMPTool)
+
+- Тот же enum (5 значений); строки «Load Bee3 OCEK: Keys length error», «OCEK' INVALID/
+  VALID/not found» (в FW G/H-вариантов) — OCEK **валидируется в eFuse**, fallback-ключа нет.
+- XML-формат производства: `root.data_protection.key {type, key_gen, data, key_id}` — ключ
+  **генерируется/загружается per-chip** на линии (совпадает с §19.2: UUID+OCEK).
+- Свой AES S-box есть (для собственных нужд тула), констант выведения chip-ключа нет.
+
+### 43.3. КОРРЕКТИРОВКА §6.11 — точный decode заголовка `ble_2.7.0_0015.bin`
+
+Файл = **два изображения** (побайтово = FOTA-пакет Mi Home, §42):
+
+| | RomPatch @0x0000 | AppPatch @0xA000 |
+|---|---|---|
+| image_id | 0x2792 = **RomPatch** | 0x2793 = **AppPatch** |
+| ctrl_flag | 0x4196 | 0x2181 |
+| xip / enc / load_when_boot / enc_load | **0 / 1 / 1 / 0** | **1 / 0 / 0 / 0** |
+| **enc_key_select** | **1 = SCEK_WITH_RTKCONST** | **0 = SCEK** |
+| not_ready / not_obsolete / integrity | 1 / 1 / 0 | 1 / 1 / 0 |
+| payload_len | 39924 (0x9BF4) | 111104 (0x1B388) |
+| uuid[16] @+0x0C | `6d 67 de f1 3e 33 e8 11 b1 02 4d 2d f4 0c de 01` (одинаковый в обоих) | то же |
+| exe_base / load_base / load_len / img_base | **0x00203800 (RAM!)** / 0x01805FC8 / 11776 / 0x01803000 | — |
+| dec_key[16] @+0x34 | нули | (в зоне шифра) |
+
+**Исправления к §6.11:** «xip=1, enc_load=1, enc_key_select=7, integrity=1» было неверно —
+биты считались с другим порядком. Реально: xip=0, enc_load=0, **select=1 (не 7!)**,
+integrity=0.
+
+**Реальный layout файла (по энтропии + полям хедера):**
+```
+0x0000..0x03FF  RomPatch-хедер (1 КБ)
+0x0400..0x2FFF  RomPatch: плейнтекст-код (E~6.7; строки "Wrong Ctrl Header.", "dfuPacketWaitTimer" — DFU-логика)
+0x3000..~0x5E00  RomPatch: ШИФР-подблок «load» (11776 Б = load_len; E~7.8)
+0x5C00..0x9FF4  RomPatch: плейнтекст-код
+0xA000..~0xA3FF AppPatch-хедер (плейнтекст ~0x80+ Б)
+0xA400..0x25400 AppPatch payload: ШИФР целиком (~111 КБ; E~7.2, 0 строк, 0 ECB-повторов из 6912 блоков)
+0x2542D..       трейлер: PEM + ECDSA (§42)
+```
+
+**Парадокс флагов AppPatch:** xip=1, enc=0 — но payload на 100% шифр (строки-мусор,
+энтропия 7.2). Вывод: в этом OEM-билде флаги частично legacy; фактическое шифрование
+управляется иначе (по §19.2 — eFuse-ключ при boot). Два изображения используют **разные**
+select'ы: RomPatch-load → f(SCEK, RTKCONST), AppPatch → SCEK.
+
+### 43.4. Вердикт A2 и последствия
+
+1. **Дефолтного/публичного OTA AES-ключа не существует.** Ключ = eFuse SCEK (per-chip)
+   [+RTKCONST в boot ROM для RomPatch-load]. Проверены: полное SDK, MP Tool, собственные
+   FW Realtek, явные кандидаты (uuid/zero/"xiaomi"/"miot"/"realtek" × CBC/CTR) — 0.
+2. Программная расшифровка `.bin` невозможна (§6.2 подтверждён с точной механикой).
+3. **SWD-план уточнён (B/C-задачи):**
+   - AppPatch: SWD-чтение XIP-региона flash → inline-декрипт на шине → плейнтекст
+     (как и в §6.11);
+   - **НОВОЕ:** RomPatch-load (xip=0) после boot лежит **расшифрованным в RAM @0x203800**
+     (11776 Б) — SWD-дамп RAM даёт его без знания ключа даже если flash-чтение шифр.
+4. `dec_key[16]` в формате SDK (select=4 «ON_FLASH») — потенциальный вектор для будущих
+   прошивок: если Xiaomi когда-то включит «ключ в образе», расшифровка станет тривиальной.
+   Сейчас поле нулевое.
+5. RTKCONST/OEMCONST и формулы выведения — только в boot ROM (непублично); вытащить можно
+   лишь SWD-дамптом ROM-кода (folloup: при живом снупе).
