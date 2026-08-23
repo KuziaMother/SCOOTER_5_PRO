@@ -3805,3 +3805,49 @@ select'ы: RomPatch-load → f(SCEK, RTKCONST), AppPatch → SCEK.
    Сейчас поле нулевое.
 5. RTKCONST/OEMCONST и формулы выведения — только в boot ROM (непублично); вытащить можно
    лишь SWD-дамптом ROM-кода (folloup: при живом снупе).
+
+## 44. Mijia Root CA найден в APK Mi Home — цепочка FOTA верифицируется до trust anchor, 2026-08-24
+
+Вопрос «где корень?» закрыт: **корень вшит в APK Mi Home** — `assets/MijiaRootCert.der`
+(извлечён в `scripts/mcu/tmp_certs/mijia_root.der`). Это отвечает на вопрос, зачем приложению
+корень: Mi Home (или его FOTA-компонент) верифицирует пакеты обновления до своего trust anchor.
+
+### 44.1. Параметры корня
+
+| Поле | Значение |
+|---|---|
+| Subject = Issuer | `O=Mijia Root, C=CN` (self-signed) |
+| Serial | 0x03F50A60 |
+| Действителен | **2016-11-23 .. 2066-11-11** (50 лет — корень на весь срок жизни экосистемы) |
+| Ключ | ECDSA P-256 |
+| BasicConstraints | CA:TRUE |
+| **SKI** | **`96b7a27c39b1b96633a9f8d109b20060c8e6c511` = ровно AKI c0 (Mijia Open)** ✓ |
+
+### 44.2. Верификация полной цепочки
+
+```
+Mijia Root (APK, self-signed)
+   └─ Mijia Open (c0, sn=2)          ← подпись ВЕРНА (openssl verify OK + ручная проверка
+        └─ cert (c1, sn=1599478435085)  ключом root; SKI/AKI совпадают)
+             └─ ECDSA-подписи FOTA-пакетов MCU и BLE — ВЕРНЫ (§42)
+```
+
+`openssl verify -CAfile (root+c0) c1.pem → OK`. `verify_fota.py --self` теперь проверяет
+цепочку **до корня** для обоих пакетов: OK.
+
+Техническая заметка: Python `cryptography` 50.0 не парсит этот DER (`ExtraData at
+TbsCertificate::signature_alg` — баг/особенность Rust-парсера; OpenSSL 3.5 справляется).
+В верификаторе публичный ключ root извлекается вручную из BITSTR (64 Б XY) — подпись c0
+проверяется напрямую.
+
+### 44.3. Значение
+
+1. **A-задача «Mijia Root» закрыта** — класс A статических задач полностью закончен.
+2. FOTA-модель безопасности Xiaomi: приложение доверяет вшитому корню (50-летний срок —
+   корень общий для всей экосистемы Mijia, не per-продукт). Компрометация приватного ключа
+   root'а позволяла бы подменять прошивки всех устройств Mi Home — поэтому ключ root'а
+   почти наверняка в HSM, а leaf'ы (как наш c1, 2020-09-07) — рабочие ключи сборки.
+3. Для нас: любой FOTA-пакет любого Mi Home-устройства проверяется офлайн одной командой
+   (`verify_fota.py`), доверие заанкорожено в корень из APK.
+4. В APK также есть `assets/cert/miwifi_bundle.pem` (Mi WiFi, не наша цепочка) и
+   `assets/shshop.crt` (GoDaddy, web) — к FOTA отношения не имеют.
