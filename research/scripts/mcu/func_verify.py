@@ -1886,6 +1886,57 @@ def _(run, rng):
         f'bit {gbit}≠{exp_bit}, cnt {gc}≠{exp_cnt}'
 
 
+@t(0x19968, 'u32/u32 floor-деление (restore, 32 ит.): (num=r0, den=r1) → r0=num//den')
+def _(run, rng):
+    # фиксированные краевые
+    for n, d in [(10, 2), (5, 2), (7, 3), (0xFFFFFFFF, 2), (0xFFFFFFFF, 3), (1, 1), (0x12345678, 0x100)]:
+        r0, _ = run.call(0x19968, [n, d])
+        assert r0 == n // d, f'{n:#x}/{d}: {r0:#x} ≠ {n // d:#x}'
+    # случайные (den ≥ 1)
+    for _ in range(40):
+        n = rng.getrandbits(32)
+        d = rng.getrandbits(24) + 1
+        r0, _ = run.call(0x19968, [n, d])
+        assert r0 == n // d, f'{n:#x}/{d:#x}: {r0:#x} ≠ {n // d:#x}'
+
+
+@t(0x19994, 'signed-деление C-style (truncation toward zero): (a=r0, b=r1) → r0')
+def _(run, rng):
+    for a, b in [(10, 2), (-10, 2), (10, -2), (-10, -2), (-7, 3), (7, -3), (-1, 2), (-1 << 31, -3)]:
+        a32 = a if a > -(1 << 31) else a  # уже в i32
+        r0, _ = run.call(0x19994, [a & 0xFFFFFFFF, b & 0xFFFFFFFF])
+        got = r0 if r0 < (1 << 31) else r0 - (1 << 32)
+        exp = abs(a32) // abs(b) * (-1 if (a32 < 0) != (b < 0) else 1)
+        assert got == exp, f'{a}/{b}: {got} ≠ {exp}'
+    for _ in range(25):
+        a = rng.randint(-(1 << 30), (1 << 30))
+        b = rng.choice([-1, 1]) * (rng.getrandbits(20) + 1)
+        r0, _ = run.call(0x19994, [a & 0xFFFFFFFF, b & 0xFFFFFFFF])
+        got = r0 if r0 < (1 << 31) else r0 - (1 << 32)
+        exp = abs(a) // abs(b) * (-1 if (a < 0) != (b < 0) else 1)
+        assert got == exp, f'{a}/{b}: {got} ≠ {exp}'
+
+
+@t(0x199BC, 'u64/u64 → u64 unsigned-деление (64 ит., 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) → r1:r0')
+def _(run, rng):
+    # ВАЖНО: 4 аргумента — den_hi обязателен (иначе мусор в R3 из прошлого вызова)
+    for nlo, nhi, dlo, dhi in [(1000, 0, 3, 0), (0xFFFFFFFF, 1, 2, 0), (5, 0, 2, 0), (0, 1, 7, 0)]:
+        r0, r1 = run.call(0x199BC, [nlo, nhi, dlo, dhi], max_insn=300000)
+        num = (nhi << 32) | nlo
+        den = (dhi << 32) | dlo
+        q = num // den
+        assert (r1, r0) == ((q >> 32) & 0xFFFFFFFF, q & 0xFFFFFFFF), \
+            f'{num:#x}/{den}: {r1:#x}:{r0:#x} ≠ {q:#x}'
+    for _ in range(5):
+        num = rng.getrandbits(64)
+        den = rng.getrandbits(28) + 1
+        r0, r1 = run.call(0x199BC, [num & 0xFFFFFFFF, num >> 32,
+                                     den & 0xFFFFFFFF, den >> 32], max_insn=300000)
+        q = num // den
+        assert (r1, r0) == ((q >> 32) & 0xFFFFFFFF, q & 0xFFFFFFFF), \
+            f'{num:#x}/{den}: {r1:#x}:{r0:#x} ≠ {q:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
