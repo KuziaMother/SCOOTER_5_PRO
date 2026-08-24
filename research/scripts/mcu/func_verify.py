@@ -1937,6 +1937,108 @@ def _(run, rng):
             f'{num:#x}/{den}: {r1:#x}:{r0:#x} ≠ {q:#x}'
 
 
+# --- батч 9 (§56): window-gate 0xF010/0xF024 (motor, caller 0x7494) ----------
+# Чистые функции: (a=r0, b=r1, out_u16_ptr=r2) → strh result,[r2], bx lr.
+# Сравнения БЕСЗНАКОВЫЕ (cmp). Истинные таблицы:
+#   0xF010: a≥b → a;  b<a+8 → b;  иначе → a
+#   0xF024: a≤b → a;  a<b+8 → b;  иначе → a
+_OUT = 0x100  # RAM-относительный слот вывода
+
+
+def _gate(run, off, a, b):
+    run.ram_write(_OUT, struct.pack('<H', 0))
+    run.call(off, [a & M32, b & M32, RAM + _OUT])
+    return struct.unpack('<H', run.ram_read(_OUT, 2))[0]
+
+
+@t(0xF010, 'window-gate «up» (motor 0x7494): a≥b→a; b<a+8→b; иначе→a (u32-cmp)')
+def _(run, rng):
+    for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
+        for b in range(0, 24):
+            exp = a if (a >= b or b >= a + 8) else b
+            got = _gate(run, 0xF010, a, b)
+            assert got == (exp & 0xFFFF), f'0xf010({a},{b}): {got} ≠ {exp}'
+    for _ in range(20):
+        a = rng.getrandbits(16)
+        b = rng.choice([a - 3, a - 1, a, a + 1, a + 7, a + 8, a + 9,
+                        rng.getrandbits(16)]) & M32
+        exp = a if (a >= b or b >= a + 8) else b
+        got = _gate(run, 0xF010, a, b)
+        assert got == (exp & 0xFFFF), f'0xf010({a},{b}): {got} ≠ {exp}'
+
+
+@t(0xF024, 'window-gate «down» (motor 0x7494): a≤b→a; a<b+8→b; иначе→a (u32-cmp)')
+def _(run, rng):
+    for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
+        for b in range(0, 24):
+            exp = a if (a <= b or a >= b + 8) else b
+            got = _gate(run, 0xF024, a, b)
+            assert got == (exp & 0xFFFF), f'0xf024({a},{b}): {got} ≠ {exp}'
+    for _ in range(20):
+        a = rng.getrandbits(16)
+        b = rng.choice([a - 3, a - 1, a, a + 1, a + 7, a + 8, a + 9,
+                        rng.getrandbits(16)]) & M32
+        exp = a if (a <= b or a >= b + 8) else b
+        got = _gate(run, 0xF024, a, b)
+        assert got == (exp & 0xFFFF), f'0xf024({a},{b}): {got} ≠ {exp}'
+
+
+# cfg-байты @RAM+0xFC7: +1 → 0x8e70, +2 → 0x8e50; out-пул @RAM+0x300F (+0 / +2)
+@t(0x8E50, 'cfg×10 (motor): r1=s8[RAM+0xFC9] → u16[RAM+0x300F]=r1*10, return s16; аргумент игнорируется')
+def _(run, rng):
+    for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
+        run.ram_write(0xFC9, struct.pack('<B', v))
+        r0, _ = run.call(0x8E50, [0xDEAD])  # аргумент не используется
+        out = struct.unpack('<h', run.ram_read(0x300F, 2))[0]
+        sv = v if v < 128 else v - 256          # s8
+        assert r0 == (sv * 10) & M32 and out == sv * 10, \
+            f'cfg={v}: r0={r0:#x}, out={out}'
+
+
+@t(0x8E70, 'cfg×10 (motor): r1=s8[RAM+0xFC8] → u16[RAM+0x3011]=r1*10, return s16; аргумент игнорируется')
+def _(run, rng):
+    for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
+        run.ram_write(0xFC8, struct.pack('<B', v))
+        r0, _ = run.call(0x8E70, [0xDEAD])  # аргумент не используется
+        out = struct.unpack('<h', run.ram_read(0x3011, 2))[0]
+        sv = v if v < 128 else v - 256          # s8
+        assert r0 == (sv * 10) & M32 and out == sv * 10, \
+            f'cfg={v}: r0={r0:#x}, out={out}'
+
+
+@t(0x16BD4, '§56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash)')
+def _(run, rng):
+    # Фрейм: bl НЕ пушит lr → callee SP = caller SP; [SP]={ygrid, hdr, stride}
+    uc = run.uc
+    F1 = 0x08000000
+    C = STACK_TOP - 0x40
+    run.ram_write(C - RAM, struct.pack('<III',
+                   F1 + 0x1A4B0, F1 + 0x19F60, 5))
+    from unicorn import UC_HOOK_CODE
+    for v1 in (0, 100, 2002, 0xFFFFFFFB):      # s8-диапазон caller'а + граница
+        for v2 in (0, 500, 0x7FFF):
+            uc.reg_write(UC_ARM_REG_R0, v1)
+            uc.reg_write(UC_ARM_REG_R1, v2)
+            uc.reg_write(UC_ARM_REG_R2, F1 + 0x1A01C)   # xtab
+            uc.reg_write(UC_ARM_REG_R3, F1 + 0x19EB4)   # ystruct
+            uc.reg_write(UC_ARM_REG_SP, C)
+            uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)    # lr → flash (как после bl)
+            run.emu.insn = 0
+            ret = []
+            def h(u_, a, s, usr):
+                if (a & ~1) == 0x16D8A:      # эпилог: r0 = результат
+                    ret.append(u_.reg_read(UC_ARM_REG_R0))
+                    u_.emu_stop()
+            hook = uc.hook_add(UC_HOOK_CODE, h)
+            try:
+                uc.emu_start(0x16BD4 | 1, 0, count=50000)
+            except Exception:
+                pass
+            uc.hook_del(hook)
+            assert ret and ret[0] == 0x3A08, \
+                f'v1={v1:#x} v2={v2:#x}: {ret} ≠ [0x3a08]'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
