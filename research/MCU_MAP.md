@@ -176,7 +176,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x04e28`](functions_mcu/func_0x04e28.md) | 8 | код B | thunk → 0x5000 | §48 | ID | 25% |
 | [`0x04e30`](functions_mcu/func_0x04e30.md) | 8 | код B | thunk → 0x4fc0 | §48 | ID | 25% |
 | [`0x04e38`](functions_mcu/func_0x04e38.md) | 4 | код B | setter +4 (str r0,[r1,#4]) | §48 | разобран | 100% |
-| [`0x04f38`](functions_mcu/func_0x04f38.md) | 24 | код B | set/clear bit0 в *(u32@r0) | §49 | разобран | 100% |
+| [`0x04f38`](functions_mcu/func_0x04f38.md) | 24 | код B | set: *(u32@r0) \|= 1; clear: *(u32@r0) &= 0xFFFE (**трюнирует до u16!** асимметрия; mode=r1; §50.7) | §49/§50.7 | разобран | 100% |
 | [`0x04f50`](functions_mcu/func_0x04f50.md) | 8 | код B | getter u16 @+4 (uxth) | §48 | разобран | 100% |
 | [`0x04f58`](functions_mcu/func_0x04f58.md) | 20 | код B | проверка маски в u32: (*(u32@r1) & r0) != 0 | §49 | разобран | 100% |
 | [`0x04f70`](functions_mcu/func_0x04f70.md) | 60 | код B | merge u32-флагов: struct+8/12 → \| в r0 (для SPI/UART-конфига) | §49 | разобран | 100% |
@@ -204,7 +204,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x05888`](functions_mcu/func_0x05888.md) | 34 | код B | bit0x800: если 0x597c(0x800) && !byte@0x102 → @0x102=1; затем 0x5970(0x800) | §49 | разобран | 100% |
 | [`0x058b0`](functions_mcu/func_0x058b0.md) | 70 | код B | **NVIC IRQ3**: 0x5970(0x100000); struct {0x100000, 0, 8, 1} → 0x59a4; {3, 0, 0, r4} → 0xc0b4 (enable) | §50 | разобран | 100% |
 | [`0x058f6`](functions_mcu/func_0x058f6.md) | 18 | код B | bit0x10: если 0x597c(0x10) → 0x5970(0x10) | §49 | разобран | 100% |
-| [`0x05908`](functions_mcu/func_0x05908.md) | 92 | код B | merge u32-флагов: struct+8/12 → \| в r0 (вариант 0x4f70) | §49 | разобран | 100% |
+| [`0x05908`](functions_mcu/func_0x05908.md) | 92 | код B | AFIO/EXTI-setup: если 0x597c(0x200) ([0x40010400]&0x200 и [0x40010414]&0x200) → byte@RAM[0x100]=1; затем последовательно 0x80/0x100/0x200 → 0x40010414 (эмуляторно подтверждено §50.7) | §49/§50.7 | разобран | 100% |
 | [`0x05970`](functions_mcu/func_0x05970.md) | 6 | код B | запись r0 в регистр @0x40010414 (зона AFIO; EXTI-mapping?) | §48 | разобран | 100% |
 | [`0x05a38`](functions_mcu/func_0x05a38.md) | 30 | код B | I2C-прединициал: 0x15588() + 0x5134() + 0x109c4() | §49 | разобран | 100% |
 | [`0x05a68`](functions_mcu/func_0x05a68.md) | 32 | код B | u32 udiv (аппаратный + коррекция переполнения) | §49 | разобран | 100% |
@@ -303,7 +303,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x098ae`](functions_mcu/func_0x098ae.md) | 26 | код B | u32 из двух u16 (+0x14/+0x18), старший байт = 0 | §49 | разобран | 100% |
 | [`0x098c8`](functions_mcu/func_0x098c8.md) | 222 | код B | — | — | не начат | 0% |
 | [`0x099b4`](functions_mcu/func_0x099b4.md) | 8 | код B | getter byte из u16@+0x10 (uxtb ldrh) | §48 | разобран | 100% |
-| [`0x099bc`](functions_mcu/func_0x099bc.md) | 18 | код B | set/clear bit0 в *(u16@r0+0x10) | §49 | разобран | 100% |
+| [`0x099bc`](functions_mcu/func_0x099bc.md) | 18 | код B | *(u16@r0+0x10) = (r1\|1) if r2 else (r1&~1) — **r1 = входное значение**, не чтение из памяти; §50.7 | §49/§50.7 | разобран | 100% |
 | [`0x099ce`](functions_mcu/func_0x099ce.md) | 4 | код B | setter u16 @+0x10 (strh) | §48 | разобран | 100% |
 | [`0x099d4`](functions_mcu/func_0x099d4.md) | 6 | код B | запись r0 в @0x40003000+8 | §48 | разобран | 100% |
 | [`0x099e0`](functions_mcu/func_0x099e0.md) | 10 | код B | запись 0xCCCC в @0x40003000 | §48 | разобран | 100% |
@@ -437,7 +437,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0e3ec`](functions_mcu/func_0x0e3ec.md) | 24 | код B | поиск в flash-таблице строк @0x19FAC+0x8A через 0x16880/0x16aa2 | §49 | разобран | 100% |
 | [`0x0e408`](functions_mcu/func_0x0e408.md) | 566 | код B | slew-лимитер → u16@RAM[0x1357] (duty% = byte@0xFD3) | §39, §41 | разобран | 100% |
 | [`0x0e658`](functions_mcu/func_0x0e658.md) | 136 | код B | round-robin диспетчер 6 задач (TBB @0xE684) | §39.5b | разобран | 100% |
-| [`0x0e6ec`](functions_mcu/func_0x0e6ec.md) | 18 | код B | условный вызов: *(u32@RAM[0x1C]) != 0 → bl [r0] (function pointer) | §49 | разобран | 100% |
+| [`0x0e6ec`](functions_mcu/func_0x0e6ec.md) | 18 | код B | if byte@RAM[0x13C9]==1 → bl 0xf14c (не function-pointer; эмуляторно подтверждено §50.7) | §49/§50.7 | разобран | 100% |
 | [`0x0e704`](functions_mcu/func_0x0e704.md) | 54 | код B | **clamp \|v\|≤0xC8**: иначе обнулить byte@0x12BA+0x56; вызов 0x1654c; вызов из 0x07A30 (§41 slot-3) | §49 | разобран | 100% |
 | [`0x0e740`](functions_mcu/func_0x0e740.md) | 190 | код B | — | — | не начат | 0% |
 | [`0x0e808`](functions_mcu/func_0x0e808.md) | 592 | код B | — | — | не начат | 0% |

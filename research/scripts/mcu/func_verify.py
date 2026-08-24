@@ -89,6 +89,13 @@ class Run:
     def ram_read(self, off, size):
         return bytes(self.uc.mem_read(RAM + off, size))
 
+    # --- периферия (McuEmu мапит PERIPH/SYS как обычную память) ---
+    def periph_write(self, addr, val):
+        self.uc.mem_write(addr, struct.pack('<I', val & M32))
+
+    def periph_read(self, addr):
+        return struct.unpack('<I', bytes(self.uc.mem_read(addr, 4)))[0]
+
 
 # ---------------------------------------------------------------------------
 # референсы (независимые Python-модели задокументированного поведения)
@@ -521,6 +528,354 @@ def _(run, rng):
     v = rng.randint(0, 99)
     r0, _ = run.call(0xC9BE, (v,))
     assert r0 == ref_bin2bcd(v), f'({v}) → {r0:#x}, ждали {ref_bin2bcd(v):#x}'
+
+
+# ===========================================================================
+# БАТЧ 2: RAM-accessors, set/clear-биты, структуры, memset, периферия RCC/FLASH
+# ===========================================================================
+
+RCC = 0x40021000      # база RCC (CFGR0=+4, CTLR=+0, ext=+0x60)
+FLASH = 0x40022000    # база FLASH (CTLR=+0, SR=+0xC, SCBR=+0x10)
+
+# --- простые getter'ы/setter'ы по указателю ---
+
+@t(0x7FD4, 'getter byte: r0 = u8@r0')
+def _(run, rng):
+    b = rng.getrandbits(8)
+    run.ram_write(0x19400, bytes([b]))
+    r0, _ = run.call(0x7FD4, (RAM + 0x19400,))
+    assert r0 == b, f'({b:#x}) → {r0:#x}'
+
+
+@t(0xE3E4, 'setter u16 = 0: *(u16@r0) = 0')
+def _(run, rng):
+    run.ram_write(0x19410, struct.pack('<H', 0xABCD))
+    run.call(0xE3E4, (RAM + 0x19410,))
+    assert run.ram_read(0x19410, 2) == b'\x00\x00'
+
+
+@t(0x4F50, 'getter u16 @+4: r0 = u16*(base+4)')
+def _(run, rng):
+    v = rng.getrandbits(16)
+    run.ram_write(0x19420, struct.pack('<II', 0xDEADBEEF, v))
+    r0, _ = run.call(0x4F50, (RAM + 0x19420,))
+    assert r0 == v, f'({v:#x}) → {r0:#x}'
+
+
+@t(0x99B4, 'getter byte из u16@+0x10')
+def _(run, rng):
+    v = rng.getrandbits(16)
+    buf = bytearray(0x12)
+    struct.pack_into('<H', buf, 0x10, v)
+    run.ram_write(0x19430, bytes(buf))
+    r0, _ = run.call(0x99B4, (RAM + 0x19430,))
+    assert r0 == (v & 0xFF), f'({v:#x}) → {r0:#x}'
+
+
+@t(0x4E38, 'setter +4: *(u32*[r1+4]) = r0')
+def _(run, rng):
+    v = rng.getrandbits(32)
+    run.ram_write(0x19440, b'\x00' * 8)
+    run.call(0x4E38, (v, RAM + 0x19440))
+    assert struct.unpack_from('<I', run.ram_read(0x19440, 8), 4)[0] == v
+
+
+@t(0x4FBA, 'setter +4: *(u32*[r0+4]) = r1')
+def _(run, rng):
+    v = rng.getrandbits(32)
+    run.ram_write(0x19450, b'\x00' * 8)
+    run.call(0x4FBA, (RAM + 0x19450, v))
+    assert struct.unpack_from('<I', run.ram_read(0x19450, 8), 4)[0] == v
+
+
+@t(0x87E2, 'cond setter: r2 ? *[r0+0x18] : *[r0+0x28] = r1')
+def _(run, rng):
+    v = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.ram_write(0x19460, b'\x00' * 0x30)
+    run.call(0x87E2, (RAM + 0x19460, v, mode))
+    off = 0x18 if mode else 0x28
+    assert struct.unpack_from('<I', run.ram_read(0x19460, 0x30), off)[0] == v
+
+
+@t(0x4FAC, 'cond setter: *[r2+0x10] = (r3 ? r0 : 0)')
+def _(run, rng):
+    v = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.ram_write(0x19470, b'\x00' * 0x20)
+    run.call(0x4FAC, (v, 0, RAM + 0x19470, mode))
+    assert struct.unpack_from('<I', run.ram_read(0x19470, 0x20), 0x10)[0] == (v if mode else 0)
+
+
+# --- проверка масок (return 0/1) ---
+
+@t(0x87C8, 'mask check: (*(u32*[r0+0x10]) & r1) != 0')
+def _(run, rng):
+    val = rng.getrandbits(32)
+    mask = rng.getrandbits(32)
+    run.ram_write(0x19480, b'\x00' * 0x10 + struct.pack('<I', val))
+    r0, _ = run.call(0x87C8, (RAM + 0x19480, mask))
+    assert r0 == (1 if (val & mask) else 0), f'val={val:#x} mask={mask:#x} → {r0}'
+
+
+@t(0x4F58, 'mask check: (*(u32*r1) & r0) != 0')
+def _(run, rng):
+    val = rng.getrandbits(32)
+    mask = rng.getrandbits(32)
+    run.ram_write(0x19490, struct.pack('<I', val))
+    r0, _ = run.call(0x4F58, (mask, RAM + 0x19490))
+    assert r0 == (1 if (val & mask) else 0), f'val={val:#x} mask={mask:#x} → {r0}'
+
+
+# --- set/clear битов/масок ---
+
+# таблица set/clear-функций: адрес → маска (hardcoded; аргументы: r0=ptr, r1=mode)
+_SETCLR = {
+    0x97CA: 0x400,
+    0x982C: 0x001,
+    0x9844: 0x100,
+    0x985C: 0x200,
+}
+
+def _mk_setclear(off, mask):
+    def _(run, rng):
+        init = rng.getrandbits(16)
+        mode = rng.getrandbits(1)
+        run.ram_write(0x194A0, struct.pack('<H', init))
+        run.call(off, (RAM + 0x194A0, mode))
+        exp = (init | mask) if mode else (init & ~mask & 0xFFFF)
+        got = struct.unpack_from('<H', run.ram_read(0x194A0, 2))[0]
+        assert got == exp, f'init={init:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+    return _
+
+for _off, _mask in _SETCLR.items():
+    globals()['_t_' + format(_off, 'x')] = t(_off, f'set/clear {_mask:#x} в u16@r0 (mode=r1)')(_mk_setclear(_off, _mask))
+
+
+@t(0x97E2, 'set/clear mask в u16@+4 (mask=r1, mode=r2)')
+def _(run, rng):
+    init = rng.getrandbits(16)
+    mask = rng.getrandbits(16)
+    mode = rng.getrandbits(1)
+    run.ram_write(0x194B0, struct.pack('<I', 0) + struct.pack('<H', init))
+    run.call(0x97E2, (RAM + 0x194B0, mask, mode))
+    exp = (init | mask) if mode else (init & ~mask)
+    got = struct.unpack_from('<H', run.ram_read(0x194B0, 6), 4)[0]
+    assert got == (exp & 0xFFFF), f'init={init:#x} mask={mask:#x} mode={mode} → {got:#x}'
+
+
+@t(0x99BC, 'u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = ВХОДНОЕ значение!')
+def _(run, rng):
+    val = rng.getrandbits(16)
+    mode = rng.getrandbits(1)
+    run.ram_write(0x194C0, b'\x00' * 0x12)
+    run.call(0x99BC, (RAM + 0x194C0, val, mode))
+    exp = (val | 1) if mode else (val & ~1 & 0xFFFF)
+    got = struct.unpack_from('<H', run.ram_read(0x194C0, 0x12), 0x10)[0]
+    assert got == exp, f'val={val:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+
+
+@t(0x4F38, 'set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (ТРУНКИРОВАНИЕ до u16!)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.ram_write(0x194D0, struct.pack('<I', init))
+    run.call(0x4F38, (RAM + 0x194D0, mode))
+    # асимметрия: set — полное u32, clear — маска 0xFFFE (старшие 16 бит сбрасываются)
+    exp = (init | 1) if mode else (init & 0xFFFE)
+    got = struct.unpack_from('<I', run.ram_read(0x194D0, 4))[0]
+    assert got == (exp & M32), f'init={init:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+
+
+# --- структуры ---
+
+@t(0xC464, 'struct write {u32=r1,+4=0,+5=0,+6=r2,+7=r3} → 1')
+def _(run, rng):
+    a = rng.getrandbits(32)
+    b = rng.getrandbits(8)
+    c = rng.getrandbits(8)
+    run.ram_write(0x194E0, b'\xFF' * 8)
+    r0, _ = run.call(0xC464, (RAM + 0x194E0, a, b, c))
+    assert r0 == 1, f'return {r0}'
+    buf = run.ram_read(0x194E0, 8)
+    assert struct.unpack_from('<I', buf)[0] == a
+    assert buf[4] == 0 and buf[5] == 0 and buf[6] == b and buf[7] == c, f'buf={buf.hex()}'
+
+
+@t(0x87B0, 'struct init {u16=0xFFFF,+2=0,+3=0,+4=0,+8=0(u32),+0xC=0xF(u32)}')
+def _(run, rng):
+    run.ram_write(0x194F0, b'\xAA' * 16)
+    run.call(0x87B0, (RAM + 0x194F0,))
+    buf = run.ram_read(0x194F0, 16)
+    assert buf[0] == 0xFF and buf[1] == 0xFF, f'[{0:02x}..{1:02x}]={buf[:2].hex()}'
+    assert buf[2] == 0 and buf[3] == 0 and buf[4] == 0
+    assert struct.unpack_from('<I', buf, 8)[0] == 0
+    assert struct.unpack_from('<I', buf, 0xC)[0] == 0xF
+
+
+# --- memset ---
+
+@t(0x19A8C, 'memset(dst=r0, count=r1, val=r2)')
+def _(run, rng):
+    n = rng.randint(0, 40)
+    v = rng.getrandbits(8)
+    run.ram_write(0x19500, b'\x00' * 48)
+    run.call(0x19A8C, (RAM + 0x19500, n, v))
+    buf = run.ram_read(0x19500, 48)
+    assert buf[:n] == bytes([v]) * n, f'n={n} v={v:#x} buf={buf[:n].hex()}'
+    assert buf[n:] == b'\x00' * (48 - n)
+
+
+@t(0x19A9E, 'memset swap (dst=r0, val=r1, count=r2) → dst')
+def _(run, rng):
+    n = rng.randint(0, 40)
+    v = rng.getrandbits(8)
+    run.ram_write(0x19520, b'\x00' * 48)
+    r0, _ = run.call(0x19A9E, (RAM + 0x19520, v, n))
+    assert r0 == RAM + 0x19520, f'return {r0:#x}'
+    buf = run.ram_read(0x19520, 48)
+    assert buf[:n] == bytes([v]) * n
+
+
+# --- былые пути (без периферийных циклов) ---
+
+@t(0x6304, 'fast path: (r0&3)!=0 → 9')
+def _(run, rng):
+    base = rng.getrandbits(28) << 2
+    v = base + rng.choice([1, 2, 3])
+    r0, _ = run.call(0x6304, (v, 0))
+    assert r0 == 9, f'({v:#x}) → {r0}'
+
+
+@t(0x2E0C, 'arg0==0 или arg1==0 → 1')
+def _(run, rng):
+    r0, _ = run.call(0x2E0C, (0, rng.getrandbits(32)))
+    assert r0 == 1, f'(0, *) → {r0}'
+    r0, _ = run.call(0x2E0C, (rng.getrandbits(31) + 1, 0))
+    assert r0 == 1, f'(*, 0) → {r0}'
+
+
+# --- RCC (предзапись значений в PERIPH) ---
+
+@t(0xC894, 'RCC_CFGR0 & 0xC (AHB-прескалер)')
+def _(run, rng):
+    v = rng.getrandbits(32)
+    run.periph_write(RCC + 4, v)
+    r0, _ = run.call(0xC894, ())
+    assert r0 == (v & 0xC), f'({v:#x}) → {r0:#x}'
+
+
+@t(0xC4B4, 'RCC_CFGR0[7:4] = r0 (HPRE)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    new = rng.getrandbits(4) << 4
+    run.periph_write(RCC + 4, init)
+    run.call(0xC4B4, (new,))
+    exp = (init & ~0xF0) | new
+    assert run.periph_read(RCC + 4) == exp, f'init={init:#x} new={new:#x}'
+
+
+@t(0xC580, 'RCC_CFGR0[10:8] = r0 (PPRE1)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    new = rng.getrandbits(3) << 8
+    run.periph_write(RCC + 4, init)
+    run.call(0xC580, (new,))
+    exp = (init & ~0x700) | new
+    assert run.periph_read(RCC + 4) == exp
+
+
+@t(0xC60C, 'RCC_CFGR0[1:0] = r0 (SW)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    new = rng.getrandbits(2)
+    run.periph_write(RCC + 4, init)
+    run.call(0xC60C, (new,))
+    exp = (init & ~3) | new
+    assert run.periph_read(RCC + 4) == exp
+
+
+@t(0xC598, 'RCC_CFGR0[14:11] = r0<<3 (PPRE2)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    new = rng.getrandbits(4)
+    run.periph_write(RCC + 4, init)
+    run.call(0xC598, (new,))
+    exp = (init & ~0x3800) | ((new & 0xF) << 3)
+    assert run.periph_read(RCC + 4) == exp
+
+
+@t(0x225C4, 'set/clear mask в RCC_CTLR (mode=r1)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    mask = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.periph_write(RCC + 0, init)
+    run.call(0x225C4, (mask, mode))
+    exp = (init | mask) if mode else (init & ~mask)
+    assert run.periph_read(RCC + 0) == (exp & M32)
+
+
+@t(0x225DC, 'set/clear mask в RCC+0x60 (mode=r1)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    mask = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.periph_write(RCC + 0x60, init)
+    run.call(0x225DC, (mask, mode))
+    exp = (init | mask) if mode else (init & ~mask)
+    assert run.periph_read(RCC + 0x60) == (exp & M32)
+
+
+# --- FLASH (предзапись значений в PERIPH) ---
+
+@t(0x62D4, 'FLASH_SCBR |= 0x80')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    run.periph_write(FLASH + 0x10, init)
+    run.call(0x62D4, ())
+    assert run.periph_read(FLASH + 0x10) == (init | 0x80)
+
+
+@t(0x6360, 'FLASH_CTLR: keep[6:3], [5:3]=r0, clear[2:0]')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    new = rng.getrandbits(32)
+    run.periph_write(FLASH + 0, init)
+    run.call(0x6360, (new,))
+    exp = (init & 0xF8) | new
+    assert run.periph_read(FLASH + 0) == (exp & M32), f'init={init:#x} new={new:#x}'
+
+
+@t(0x61D4, 'FLASH_SR |= r0')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    v = rng.getrandbits(32)
+    run.periph_write(FLASH + 0xC, init)
+    run.call(0x61D4, (v,))
+    assert run.periph_read(FLASH + 0xC) == (init | v)
+
+
+def ref_flash_sr_code(sr):
+    if sr & 1:
+        return 1
+    if sr & 4:
+        return 3
+    if sr & 8:
+        return 4
+    if sr & 0x10:
+        return 5
+    if sr & 0x40:
+        return 7
+    return 6
+
+
+@t(0x6284, 'FLASH_SR → status code (1/3/4/5/7/6)')
+def _(run, rng):
+    sr = rng.getrandbits(32)
+    run.periph_write(FLASH + 0xC, sr)
+    r0, _ = run.call(0x6284, ())
+    assert r0 == ref_flash_sr_code(sr), f'sr={sr:#x} → {r0}'
 
 
 # ---------------------------------------------------------------------------
