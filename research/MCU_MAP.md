@@ -17,11 +17,11 @@ code-секций A–J; остальное — literal-пулы и данные
 
 | статус | функций | байт | % байт |
 |---|---|---|---|
-| разобран | 28 | 17478 | 18.0% |
+| разобран | 67 | 17776 | 18.3% |
 | частично | 10 | 6964 | 7.2% |
-| ID | 2 | 602 | 0.6% |
-| не начат | 638 | 71888 | 74.2% |
-| **всего** | **678** | **96932** | **21.8% декомпилировано** |
+| ID | 30 | 874 | 0.9% |
+| не начат | 571 | 71318 | 73.6% |
+| **всего** | **678** | **96932** | **22.2% декомпилировано** |
 
 Подробности по каждой функции: `functions_mcu/func_0x<off>.md` (дизассембляция,
 литералы, callees/callers). Разделы REPORT.md — где описана семантика.
@@ -54,16 +54,16 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x01984`](functions_mcu/func_0x01984.md) | 102 | код A | — | — | не начат | 0% |
 | [`0x019f4`](functions_mcu/func_0x019f4.md) | 100 | код A | — | — | не начат | 0% |
 | [`0x01a68`](functions_mcu/func_0x01a68.md) | 70 | код A | — | — | не начат | 0% |
-| [`0x01abc`](functions_mcu/func_0x01abc.md) | 12 | код A | — | — | не начат | 0% |
+| [`0x01abc`](functions_mcu/func_0x01abc.md) | 12 | код A | последовательность: 0x1a68 + 0x19f4 | §48 | ID | 25% |
 | [`0x01ac8`](functions_mcu/func_0x01ac8.md) | 268 | код A | — | — | не начат | 0% |
 | [`0x01bdc`](functions_mcu/func_0x01bdc.md) | 42 | код A | — | — | не начат | 0% |
 | [`0x01c1c`](functions_mcu/func_0x01c1c.md) | 42 | код A | — | — | не начат | 0% |
 | [`0x01c60`](functions_mcu/func_0x01c60.md) | 26 | код A | — | — | не начат | 0% |
 | [`0x01c7a`](functions_mcu/func_0x01c7a.md) | 52 | код A | — | — | не начат | 0% |
-| [`0x01cea`](functions_mcu/func_0x01cea.md) | 12 | код A | — | — | не начат | 0% |
+| [`0x01cea`](functions_mcu/func_0x01cea.md) | 12 | код A | последовательность: 0x1fe0 + 0x20d8 | §48 | ID | 25% |
 | [`0x01cf6`](functions_mcu/func_0x01cf6.md) | 54 | код A | — | — | не начат | 0% |
 | [`0x01d78`](functions_mcu/func_0x01d78.md) | 112 | код A | — | — | не начат | 0% |
-| [`0x01dec`](functions_mcu/func_0x01dec.md) | 8 | код A | — | — | не начат | 0% |
+| [`0x01dec`](functions_mcu/func_0x01dec.md) | 8 | код A | thunk → 0x29e8 | §48 | ID | 25% |
 | [`0x01df4`](functions_mcu/func_0x01df4.md) | 64 | код A | — | — | не начат | 0% |
 | [`0x01e34`](functions_mcu/func_0x01e34.md) | 30 | код A | — | — | не начат | 0% |
 | [`0x01e52`](functions_mcu/func_0x01e52.md) | 32 | код A | — | — | не начат | 0% |
@@ -105,7 +105,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x02a94`](functions_mcu/func_0x02a94.md) | 132 | код B | — | — | не начат | 0% |
 | [`0x02b2c`](functions_mcu/func_0x02b2c.md) | 124 | код B | — | — | не начат | 0% |
 | [`0x02bbc`](functions_mcu/func_0x02bbc.md) | 50 | код B | — | — | не начат | 0% |
-| [`0x02d14`](functions_mcu/func_0x02d14.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x02d14`](functions_mcu/func_0x02d14.md) | 8 | код B | thunk → 0x9678 | §48 | ID | 25% |
 | [`0x02d1c`](functions_mcu/func_0x02d1c.md) | 20 | код B | — | — | не начат | 0% |
 | [`0x02d34`](functions_mcu/func_0x02d34.md) | 36 | код B | — | — | не начат | 0% |
 | [`0x02d5c`](functions_mcu/func_0x02d5c.md) | 16 | код B | — | — | не начат | 0% |
@@ -126,7 +126,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x035ec`](functions_mcu/func_0x035ec.md) | 18 | код B | — | — | не начат | 0% |
 | [`0x03600`](functions_mcu/func_0x03600.md) | 96 | код B | — | — | не начат | 0% |
 | [`0x03668`](functions_mcu/func_0x03668.md) | 88 | код B | — | — | не начат | 0% |
-| [`0x036f4`](functions_mcu/func_0x036f4.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x036f4`](functions_mcu/func_0x036f4.md) | 12 | код B | последовательность: 0x10900 + 0x3b00 | §48 | ID | 25% |
 | [`0x03700`](functions_mcu/func_0x03700.md) | 54 | код B | — | — | не начат | 0% |
 | [`0x03740`](functions_mcu/func_0x03740.md) | 40 | код B | — | — | не начат | 0% |
 | [`0x03780`](functions_mcu/func_0x03780.md) | 78 | код B | — | — | не начат | 0% |
@@ -134,12 +134,12 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x03838`](functions_mcu/func_0x03838.md) | 174 | код B | — | — | не начат | 0% |
 | [`0x038ec`](functions_mcu/func_0x038ec.md) | 84 | код B | — | — | не начат | 0% |
 | [`0x03940`](functions_mcu/func_0x03940.md) | 22 | код B | — | — | не начат | 0% |
-| [`0x0395c`](functions_mcu/func_0x0395c.md) | 10 | код B | — | — | не начат | 0% |
-| [`0x03966`](functions_mcu/func_0x03966.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x0395c`](functions_mcu/func_0x0395c.md) | 10 | код B | thunk → 0xd298(r0=0) | §48 | ID | 25% |
+| [`0x03966`](functions_mcu/func_0x03966.md) | 10 | код B | thunk → 0xd298(r0=1) (пара с 0x395c: off/on) | §48 | ID | 25% |
 | [`0x03970`](functions_mcu/func_0x03970.md) | 28 | код B | — | — | не начат | 0% |
 | [`0x03994`](functions_mcu/func_0x03994.md) | 52 | код B | — | — | не начат | 0% |
 | [`0x03a6c`](functions_mcu/func_0x03a6c.md) | 22 | код B | — | — | не начат | 0% |
-| [`0x03b20`](functions_mcu/func_0x03b20.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x03b20`](functions_mcu/func_0x03b20.md) | 10 | код B | thunk → 0x1bdc(r0=0x9a) | §48 | ID | 25% |
 | [`0x03b2a`](functions_mcu/func_0x03b2a.md) | 20 | код B | — | — | не начат | 0% |
 | [`0x03b42`](functions_mcu/func_0x03b42.md) | 64 | код B | — | — | не начат | 0% |
 | [`0x03b82`](functions_mcu/func_0x03b82.md) | 66 | код B | — | — | не начат | 0% |
@@ -173,15 +173,15 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x04d48`](functions_mcu/func_0x04d48.md) | 138 | код B | — | — | не начат | 0% |
 | [`0x04de0`](functions_mcu/func_0x04de0.md) | 40 | код B | — | — | не начат | 0% |
 | [`0x04e08`](functions_mcu/func_0x04e08.md) | 32 | код B | — | — | не начат | 0% |
-| [`0x04e28`](functions_mcu/func_0x04e28.md) | 8 | код B | — | — | не начат | 0% |
-| [`0x04e30`](functions_mcu/func_0x04e30.md) | 8 | код B | — | — | не начат | 0% |
-| [`0x04e38`](functions_mcu/func_0x04e38.md) | 4 | код B | — | — | не начат | 0% |
+| [`0x04e28`](functions_mcu/func_0x04e28.md) | 8 | код B | thunk → 0x5000 | §48 | ID | 25% |
+| [`0x04e30`](functions_mcu/func_0x04e30.md) | 8 | код B | thunk → 0x4fc0 | §48 | ID | 25% |
+| [`0x04e38`](functions_mcu/func_0x04e38.md) | 4 | код B | setter +4 (str r0,[r1,#4]) | §48 | разобран | 100% |
 | [`0x04f38`](functions_mcu/func_0x04f38.md) | 24 | код B | — | — | не начат | 0% |
-| [`0x04f50`](functions_mcu/func_0x04f50.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x04f50`](functions_mcu/func_0x04f50.md) | 8 | код B | getter u16 @+4 (uxth) | §48 | разобран | 100% |
 | [`0x04f58`](functions_mcu/func_0x04f58.md) | 20 | код B | — | — | не начат | 0% |
 | [`0x04f70`](functions_mcu/func_0x04f70.md) | 60 | код B | — | — | не начат | 0% |
-| [`0x04fac`](functions_mcu/func_0x04fac.md) | 8 | код B | — | — | не начат | 0% |
-| [`0x04fba`](functions_mcu/func_0x04fba.md) | 4 | код B | — | — | не начат | 0% |
+| [`0x04fac`](functions_mcu/func_0x04fac.md) | 8 | код B | условный setter *[r2+0x10] = (r3 ? r0 : 0) | §48 | разобран | 100% |
+| [`0x04fba`](functions_mcu/func_0x04fba.md) | 4 | код B | setter +4 (str r1,[r0,#4]) | §48 | разобран | 100% |
 | [`0x04fc0`](functions_mcu/func_0x04fc0.md) | 52 | код B | — | — | не начат | 0% |
 | [`0x05000`](functions_mcu/func_0x05000.md) | 56 | код B | — | — | не начат | 0% |
 | [`0x05044`](functions_mcu/func_0x05044.md) | 38 | код B | — | — | не начат | 0% |
@@ -205,29 +205,29 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x058b0`](functions_mcu/func_0x058b0.md) | 70 | код B | — | — | не начат | 0% |
 | [`0x058f6`](functions_mcu/func_0x058f6.md) | 18 | код B | — | — | не начат | 0% |
 | [`0x05908`](functions_mcu/func_0x05908.md) | 92 | код B | — | — | не начат | 0% |
-| [`0x05970`](functions_mcu/func_0x05970.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x05970`](functions_mcu/func_0x05970.md) | 6 | код B | запись r0 в регистр @0x40010414 (зона AFIO; EXTI-mapping?) | §48 | разобран | 100% |
 | [`0x05a38`](functions_mcu/func_0x05a38.md) | 30 | код B | — | — | не начат | 0% |
 | [`0x05a68`](functions_mcu/func_0x05a68.md) | 32 | код B | — | — | не начат | 0% |
 | [`0x05b5a`](functions_mcu/func_0x05b5a.md) | 50 | код B | — | — | не начат | 0% |
-| [`0x05b8c`](functions_mcu/func_0x05b8c.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x05b8c`](functions_mcu/func_0x05b8c.md) | 10 | код B | thunk → 0x4de0 | §48 | ID | 25% |
 | [`0x05b98`](functions_mcu/func_0x05b98.md) | 30 | код B | — | — | не начат | 0% |
 | [`0x05bc4`](functions_mcu/func_0x05bc4.md) | 202 | код B | — | — | не начат | 0% |
 | [`0x05c9c`](functions_mcu/func_0x05c9c.md) | 26 | код B | — | — | не начат | 0% |
-| [`0x05cc0`](functions_mcu/func_0x05cc0.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x05cc0`](functions_mcu/func_0x05cc0.md) | 10 | код B | запись 0xAAAA в @0x40003000 (дубль 0x99f0) | §48 | разобран | 100% |
 | [`0x05cd0`](functions_mcu/func_0x05cd0.md) | 194 | код B | — | — | не начат | 0% |
 | [`0x05dbc`](functions_mcu/func_0x05dbc.md) | 22 | код B | — | — | не начат | 0% |
 | [`0x05dd8`](functions_mcu/func_0x05dd8.md) | 262 | код B | — | — | не начат | 0% |
 | [`0x05ee0`](functions_mcu/func_0x05ee0.md) | 146 | код B | — | — | не начат | 0% |
 | [`0x05fb4`](functions_mcu/func_0x05fb4.md) | 32 | код B | — | — | не начат | 0% |
 | [`0x06080`](functions_mcu/func_0x06080.md) | 312 | код B | — | — | не начат | 0% |
-| [`0x061d4`](functions_mcu/func_0x061d4.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x061d4`](functions_mcu/func_0x061d4.md) | 12 | код B | FLASH_SR @0x4002200C |= r0 — сброс флагов (caller OTA-код 0x06230) | §48 | разобран | 100% |
 | [`0x061e4`](functions_mcu/func_0x061e4.md) | 72 | код B | — | — | не начат | 0% |
 | [`0x06230`](functions_mcu/func_0x06230.md) | 78 | код B | — | — | не начат | 0% |
 | [`0x06284`](functions_mcu/func_0x06284.md) | 16 | код B | — | — | не начат | 0% |
 | [`0x062d4`](functions_mcu/func_0x062d4.md) | 14 | код B | — | — | не начат | 0% |
 | [`0x06304`](functions_mcu/func_0x06304.md) | 24 | код B | — | — | не начат | 0% |
 | [`0x06360`](functions_mcu/func_0x06360.md) | 18 | код B | — | — | не начат | 0% |
-| [`0x06378`](functions_mcu/func_0x06378.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x06378`](functions_mcu/func_0x06378.md) | 12 | код B | FLASH unlock: magic-ключи 0x45670123/0xCDEF89AB → FLASH_KEYR @0x40022004 | §48 | разобран | 100% |
 | [`0x06390`](functions_mcu/func_0x06390.md) | 38 | код B | — | — | не начат | 0% |
 | [`0x063b8`](functions_mcu/func_0x063b8.md) | 590 | код B | — | — | не начат | 0% |
 | [`0x06618`](functions_mcu/func_0x06618.md) | 526 | код B | — | — | не начат | 0% |
@@ -247,18 +247,18 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x07ed4`](functions_mcu/func_0x07ed4.md) | 18 | код B | — | — | не начат | 0% |
 | [`0x07ee8`](functions_mcu/func_0x07ee8.md) | 58 | код B | — | — | не начат | 0% |
 | [`0x07fb8`](functions_mcu/func_0x07fb8.md) | 28 | код B | — | — | не начат | 0% |
-| [`0x07fd4`](functions_mcu/func_0x07fd4.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x07fd4`](functions_mcu/func_0x07fd4.md) | 6 | код B | getter byte (ldrb r0,[r0]) | §48 | разобран | 100% |
 | [`0x07fdc`](functions_mcu/func_0x07fdc.md) | 56 | код B | — | — | не начат | 0% |
 | [`0x080ac`](functions_mcu/func_0x080ac.md) | 84 | код B | — | — | не начат | 0% |
 | [`0x081b4`](functions_mcu/func_0x081b4.md) | 212 | код B | — | — | не начат | 0% |
 | [`0x082b8`](functions_mcu/func_0x082b8.md) | 44 | код B | — | — | не начат | 0% |
-| [`0x082f0`](functions_mcu/func_0x082f0.md) | 12 | код B | — | — | не начат | 0% |
-| [`0x0833c`](functions_mcu/func_0x0833c.md) | 6 | код B | — | — | не начат | 0% |
-| [`0x08348`](functions_mcu/func_0x08348.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x082f0`](functions_mcu/func_0x082f0.md) | 12 | код B | guard: return если byte@0xC8D≠0 (r4-варинт; callers 0xd878/0x119e4/0x147ac) | §48 | разобран | 100% |
+| [`0x0833c`](functions_mcu/func_0x0833c.md) | 6 | код B | getter byte@RAM[0xC8D] — флаг инициализации 0x8xxx-драйвера | §48 | разобран | 100% |
+| [`0x08348`](functions_mcu/func_0x08348.md) | 10 | код B | one-time init (флаг byte@0xC8D==0): GPIOA + SPI1-команда 0xB9 + delay (продолжение — 0x8352) | §48 | разобран | 100% |
 | [`0x08380`](functions_mcu/func_0x08380.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x083e4`](functions_mcu/func_0x083e4.md) | 74 | код B | — | — | не начат | 0% |
 | [`0x08434`](functions_mcu/func_0x08434.md) | 46 | код B | — | — | не начат | 0% |
-| [`0x08468`](functions_mcu/func_0x08468.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x08468`](functions_mcu/func_0x08468.md) | 10 | код B | guard: return если byte@0xC8D≠0 (вариант №2, паттерн как 0x8348) | §48 | разобран | 100% |
 | [`0x084a0`](functions_mcu/func_0x084a0.md) | 22 | код B | — | — | не начат | 0% |
 | [`0x084fc`](functions_mcu/func_0x084fc.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x0851c`](functions_mcu/func_0x0851c.md) | 24 | код B | — | — | не начат | 0% |
@@ -266,29 +266,29 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x085c8`](functions_mcu/func_0x085c8.md) | 484 | код B | — | — | не начат | 0% |
 | [`0x087b0`](functions_mcu/func_0x087b0.md) | 24 | код B | — | — | не начат | 0% |
 | [`0x087c8`](functions_mcu/func_0x087c8.md) | 18 | код B | — | — | не начат | 0% |
-| [`0x087de`](functions_mcu/func_0x087de.md) | 4 | код B | — | — | не начат | 0% |
-| [`0x087e2`](functions_mcu/func_0x087e2.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x087de`](functions_mcu/func_0x087de.md) | 4 | код B | setter +0x18 (в init: GPIOA+0x18 = 0x10) | §48 | разобран | 100% |
+| [`0x087e2`](functions_mcu/func_0x087e2.md) | 10 | код B | условный setter: r2 ? *(r0+0x18) : *(r0+0x28) = r1 | §48 | разобран | 100% |
 | [`0x087f8`](functions_mcu/func_0x087f8.md) | 60 | код B | — | — | не начат | 0% |
 | [`0x08834`](functions_mcu/func_0x08834.md) | 50 | код B | — | — | не начат | 0% |
-| [`0x08878`](functions_mcu/func_0x08878.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x08878`](functions_mcu/func_0x08878.md) | 6 | код B | getter byte@RAM[0x128] | §48 | разобран | 100% |
 | [`0x08884`](functions_mcu/func_0x08884.md) | 168 | код B | — | — | не начат | 0% |
 | [`0x08938`](functions_mcu/func_0x08938.md) | 260 | код B | — | — | не начат | 0% |
-| [`0x08a44`](functions_mcu/func_0x08a44.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x08a44`](functions_mcu/func_0x08a44.md) | 8 | код B | getter *(u32@RAM[0xF64])+6 | §48 | разобран | 100% |
 | [`0x08a50`](functions_mcu/func_0x08a50.md) | 54 | код B | — | — | не начат | 0% |
 | [`0x08a90`](functions_mcu/func_0x08a90.md) | 94 | код B | — | — | не начат | 0% |
-| [`0x08af0`](functions_mcu/func_0x08af0.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x08af0`](functions_mcu/func_0x08af0.md) | 6 | код B | getter byte@RAM[0xA73] | §48 | разобран | 100% |
 | [`0x08afc`](functions_mcu/func_0x08afc.md) | 14 | код B | — | — | не начат | 0% |
 | [`0x08b10`](functions_mcu/func_0x08b10.md) | 56 | код B | — | — | не начат | 0% |
 | [`0x08b58`](functions_mcu/func_0x08b58.md) | 50 | код B | — | — | не начат | 0% |
 | [`0x08bec`](functions_mcu/func_0x08bec.md) | 388 | код B | — | — | не начат | 0% |
-| [`0x08d90`](functions_mcu/func_0x08d90.md) | 6 | код B | — | — | не начат | 0% |
-| [`0x08e14`](functions_mcu/func_0x08e14.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x08d90`](functions_mcu/func_0x08d90.md) | 6 | код B | getter u32@RAM[0x1344] | §48 | разобран | 100% |
+| [`0x08e14`](functions_mcu/func_0x08e14.md) | 6 | код B | getter byte@RAM[0x1378] (@0x1359+0x1f) | §48 | разобран | 100% |
 | [`0x08f58`](functions_mcu/func_0x08f58.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x08f7c`](functions_mcu/func_0x08f7c.md) | 198 | код B | — | — | не начат | 0% |
 | [`0x09048`](functions_mcu/func_0x09048.md) | 80 | код B | — | — | не начат | 0% |
 | [`0x090a0`](functions_mcu/func_0x090a0.md) | 60 | код B | — | — | не начат | 0% |
 | [`0x09134`](functions_mcu/func_0x09134.md) | 668 | код B | — | — | не начат | 0% |
-| [`0x09482`](functions_mcu/func_0x09482.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x09482`](functions_mcu/func_0x09482.md) | 12 | код B | последовательность: 0x9134 + 0x9480 | §48 | ID | 25% |
 | [`0x09678`](functions_mcu/func_0x09678.md) | 86 | код B | — | — | не начат | 0% |
 | [`0x096dc`](functions_mcu/func_0x096dc.md) | 52 | код B | — | — | не начат | 0% |
 | [`0x09714`](functions_mcu/func_0x09714.md) | 52 | код B | — | — | не начат | 0% |
@@ -302,23 +302,23 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x09874`](functions_mcu/func_0x09874.md) | 54 | код B | — | — | не начат | 0% |
 | [`0x098ae`](functions_mcu/func_0x098ae.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x098c8`](functions_mcu/func_0x098c8.md) | 222 | код B | — | — | не начат | 0% |
-| [`0x099b4`](functions_mcu/func_0x099b4.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x099b4`](functions_mcu/func_0x099b4.md) | 8 | код B | getter byte из u16@+0x10 (uxtb ldrh) | §48 | разобран | 100% |
 | [`0x099bc`](functions_mcu/func_0x099bc.md) | 18 | код B | — | — | не начат | 0% |
-| [`0x099ce`](functions_mcu/func_0x099ce.md) | 4 | код B | — | — | не начат | 0% |
-| [`0x099d4`](functions_mcu/func_0x099d4.md) | 6 | код B | — | — | не начат | 0% |
-| [`0x099e0`](functions_mcu/func_0x099e0.md) | 10 | код B | — | — | не начат | 0% |
-| [`0x099f0`](functions_mcu/func_0x099f0.md) | 10 | код B | — | — | не начат | 0% |
-| [`0x09a00`](functions_mcu/func_0x09a00.md) | 6 | код B | — | — | не начат | 0% |
-| [`0x09a0c`](functions_mcu/func_0x09a0c.md) | 6 | код B | — | — | не начат | 0% |
-| [`0x09a18`](functions_mcu/func_0x09a18.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x099ce`](functions_mcu/func_0x099ce.md) | 4 | код B | setter u16 @+0x10 (strh) | §48 | разобран | 100% |
+| [`0x099d4`](functions_mcu/func_0x099d4.md) | 6 | код B | запись r0 в @0x40003000+8 | §48 | разобран | 100% |
+| [`0x099e0`](functions_mcu/func_0x099e0.md) | 10 | код B | запись 0xCCCC в @0x40003000 | §48 | разобран | 100% |
+| [`0x099f0`](functions_mcu/func_0x099f0.md) | 10 | код B | запись 0xAAAA в @0x40003000 (кластер драйвера) | §48 | разобран | 100% |
+| [`0x09a00`](functions_mcu/func_0x09a00.md) | 6 | код B | запись r0 в @0x40003000+4 | §48 | разобран | 100% |
+| [`0x09a0c`](functions_mcu/func_0x09a0c.md) | 6 | код B | запись r0 в @0x40003000 | §48 | разобран | 100% |
+| [`0x09a18`](functions_mcu/func_0x09a18.md) | 8 | код B | thunk → 0x99f0 (запись 0xAAAA в @0x40003000) | §48 | ID | 25% |
 | [`0x09a20`](functions_mcu/func_0x09a20.md) | 34 | код B | — | — | не начат | 0% |
 | [`0x09a44`](functions_mcu/func_0x09a44.md) | 80 | код B | — | — | не начат | 0% |
 | [`0x09aa4`](functions_mcu/func_0x09aa4.md) | 86 | код B | — | — | не начат | 0% |
 | [`0x09b08`](functions_mcu/func_0x09b08.md) | 54 | код B | — | — | не начат | 0% |
 | [`0x09b44`](functions_mcu/func_0x09b44.md) | 24 | код B | — | — | не начат | 0% |
-| [`0x09f64`](functions_mcu/func_0x09f64.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x09f64`](functions_mcu/func_0x09f64.md) | 12 | код B | последовательность: 0x9b44 + 0x9f70 | §48 | ID | 25% |
 | [`0x09f70`](functions_mcu/func_0x09f70.md) | 28 | код B | — | — | не начат | 0% |
-| [`0x0a6a4`](functions_mcu/func_0x0a6a4.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x0a6a4`](functions_mcu/func_0x0a6a4.md) | 6 | код B | getter byte@RAM[0x40] | §48 | разобран | 100% |
 | [`0x0a788`](functions_mcu/func_0x0a788.md) | 96 | код B | — | — | не начат | 0% |
 | [`0x0a7ec`](functions_mcu/func_0x0a7ec.md) | 184 | код B | — | — | не начат | 0% |
 | [`0x0a8c4`](functions_mcu/func_0x0a8c4.md) | 66 | код B | — | — | не начат | 0% |
@@ -337,7 +337,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0b53a`](functions_mcu/func_0x0b53a.md) | 64 | код B | — | — | не начат | 0% |
 | [`0x0b582`](functions_mcu/func_0x0b582.md) | 72 | код B | — | — | не начат | 0% |
 | [`0x0b618`](functions_mcu/func_0x0b618.md) | 56 | код B | — | — | не начат | 0% |
-| [`0x0b854`](functions_mcu/func_0x0b854.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x0b854`](functions_mcu/func_0x0b854.md) | 10 | код B | запись 0x10000 в struct+0x108 (caller: struct@RAM[0xdd8]) | §48 | разобран | 100% |
 | [`0x0b860`](functions_mcu/func_0x0b860.md) | 94 | код B | — | — | не начат | 0% |
 | [`0x0b8dc`](functions_mcu/func_0x0b8dc.md) | 128 | код B | — | — | не начат | 0% |
 | [`0x0b978`](functions_mcu/func_0x0b978.md) | 32 | код B | — | — | не начат | 0% |
@@ -348,14 +348,14 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0bd50`](functions_mcu/func_0x0bd50.md) | 280 | код B | — | — | не начат | 0% |
 | [`0x0be6c`](functions_mcu/func_0x0be6c.md) | 104 | код B | — | — | не начат | 0% |
 | [`0x0befc`](functions_mcu/func_0x0befc.md) | 74 | код B | — | — | не начат | 0% |
-| [`0x0bf4c`](functions_mcu/func_0x0bf4c.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x0bf4c`](functions_mcu/func_0x0bf4c.md) | 12 | код B | последовательность: 0xd878 + 0xddc4 | §48 | ID | 25% |
 | [`0x0bf58`](functions_mcu/func_0x0bf58.md) | 184 | код B | — | — | не начат | 0% |
 | [`0x0c02c`](functions_mcu/func_0x0c02c.md) | 92 | код B | — | — | не начат | 0% |
 | [`0x0c098`](functions_mcu/func_0x0c098.md) | 24 | код B | — | — | не начат | 0% |
 | [`0x0c0b4`](functions_mcu/func_0x0c0b4.md) | 78 | код B | — | — | не начат | 0% |
 | [`0x0c138`](functions_mcu/func_0x0c138.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x0c158`](functions_mcu/func_0x0c158.md) | 164 | код B | — | — | не начат | 0% |
-| [`0x0c200`](functions_mcu/func_0x0c200.md) | 12 | код B | — | — | не начат | 0% |
+| [`0x0c200`](functions_mcu/func_0x0c200.md) | 12 | код B | thunk → 0x9f64 (r3=1) | §48 | ID | 25% |
 | [`0x0c20c`](functions_mcu/func_0x0c20c.md) | 134 | код B | — | — | не начат | 0% |
 | [`0x0c2a8`](functions_mcu/func_0x0c2a8.md) | 84 | код B | — | — | не начат | 0% |
 | [`0x0c304`](functions_mcu/func_0x0c304.md) | 96 | код B | — | — | не начат | 0% |
@@ -374,10 +374,10 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0c684`](functions_mcu/func_0x0c684.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x0c6a4`](functions_mcu/func_0x0c6a4.md) | 26 | код B | — | — | не начат | 0% |
 | [`0x0c6c4`](functions_mcu/func_0x0c6c4.md) | 26 | код B | — | — | не начат | 0% |
-| [`0x0c6f0`](functions_mcu/func_0x0c6f0.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x0c6f0`](functions_mcu/func_0x0c6f0.md) | 6 | код B | запись в 0x42420060 — несуществующий адрес (dead code?) | §48 | ID | 25% |
 | [`0x0c708`](functions_mcu/func_0x0c708.md) | 86 | код B | — | — | не начат | 0% |
 | [`0x0c858`](functions_mcu/func_0x0c858.md) | 52 | код B | — | — | не начат | 0% |
-| [`0x0c894`](functions_mcu/func_0x0c894.md) | 10 | код B | — | — | не начат | 0% |
+| [`0x0c894`](functions_mcu/func_0x0c894.md) | 10 | код B | (RCC_CFGR0 @0x40021004) & 0xC — биты AHB-прескалера | §48 | разобран | 100% |
 | [`0x0c8a4`](functions_mcu/func_0x0c8a4.md) | 56 | код B | — | — | не начат | 0% |
 | [`0x0c8dc`](functions_mcu/func_0x0c8dc.md) | 56 | код B | — | — | не начат | 0% |
 | [`0x0c914`](functions_mcu/func_0x0c914.md) | 56 | код B | — | — | не начат | 0% |
@@ -395,7 +395,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0ccbc`](functions_mcu/func_0x0ccbc.md) | 72 | код B | — | — | не начат | 0% |
 | [`0x0cd0c`](functions_mcu/func_0x0cd0c.md) | 110 | код B | — | — | не начат | 0% |
 | [`0x0cd80`](functions_mcu/func_0x0cd80.md) | 136 | код B | — | — | не начат | 0% |
-| [`0x0ce68`](functions_mcu/func_0x0ce68.md) | 8 | код B | — | — | не начат | 0% |
+| [`0x0ce68`](functions_mcu/func_0x0ce68.md) | 8 | код B | thunk → 0x3168 | §48 | ID | 25% |
 | [`0x0ce70`](functions_mcu/func_0x0ce70.md) | 92 | код B | — | — | не начат | 0% |
 | [`0x0ced0`](functions_mcu/func_0x0ced0.md) | 16 | код B | — | — | не начат | 0% |
 | [`0x0cee0`](functions_mcu/func_0x0cee0.md) | 68 | код B | — | — | не начат | 0% |
@@ -433,7 +433,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0e2cc`](functions_mcu/func_0x0e2cc.md) | 44 | код B | — | — | не начат | 0% |
 | [`0x0e2fc`](functions_mcu/func_0x0e2fc.md) | 104 | код B | — | — | не начат | 0% |
 | [`0x0e36c`](functions_mcu/func_0x0e36c.md) | 114 | код B | — | — | не начат | 0% |
-| [`0x0e3e4`](functions_mcu/func_0x0e3e4.md) | 6 | код B | — | — | не начат | 0% |
+| [`0x0e3e4`](functions_mcu/func_0x0e3e4.md) | 6 | код B | setter u16 = 0 (strh #0,[r0]) | §48 | разобран | 100% |
 | [`0x0e3ec`](functions_mcu/func_0x0e3ec.md) | 24 | код B | — | — | не начат | 0% |
 | [`0x0e408`](functions_mcu/func_0x0e408.md) | 566 | код B | slew-лимитер → u16@RAM[0x1357] (duty% = byte@0xFD3) | §39, §41 | разобран | 100% |
 | [`0x0e658`](functions_mcu/func_0x0e658.md) | 136 | код B | round-robin диспетчер 6 задач (TBB @0xE684) | §39.5b | разобран | 100% |
@@ -467,28 +467,28 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x106b8`](functions_mcu/func_0x106b8.md) | 28 | код C | — | — | не начат | 0% |
 | [`0x106d8`](functions_mcu/func_0x106d8.md) | 54 | код C | — | — | не начат | 0% |
 | [`0x10718`](functions_mcu/func_0x10718.md) | 18 | код C | — | — | не начат | 0% |
-| [`0x1072a`](functions_mcu/func_0x1072a.md) | 6 | код C | — | — | не начат | 0% |
-| [`0x10730`](functions_mcu/func_0x10730.md) | 4 | код C | — | — | не начат | 0% |
+| [`0x1072a`](functions_mcu/func_0x1072a.md) | 6 | код C | getter u16 @+0xc (ldrh) | §48 | разобран | 100% |
+| [`0x10730`](functions_mcu/func_0x10730.md) | 4 | код C | setter u16 @+0xc (strh) | §48 | разобран | 100% |
 | [`0x10734`](functions_mcu/func_0x10734.md) | 60 | код C | — | — | не начат | 0% |
 | [`0x10770`](functions_mcu/func_0x10770.md) | 16 | код C | — | — | не начат | 0% |
-| [`0x10780`](functions_mcu/func_0x10780.md) | 8 | код C | — | — | не начат | 0% |
+| [`0x10780`](functions_mcu/func_0x10780.md) | 8 | код C | thunk → 0x10788 | §48 | ID | 25% |
 | [`0x10788`](functions_mcu/func_0x10788.md) | 92 | код C | — | — | не начат | 0% |
 | [`0x107ec`](functions_mcu/func_0x107ec.md) | 126 | код C | — | — | не начат | 0% |
 | [`0x10870`](functions_mcu/func_0x10870.md) | 98 | код C | — | — | не начат | 0% |
 | [`0x1093c`](functions_mcu/func_0x1093c.md) | 118 | код C | — | — | не начат | 0% |
-| [`0x10a20`](functions_mcu/func_0x10a20.md) | 8 | код C | — | — | не начат | 0% |
+| [`0x10a20`](functions_mcu/func_0x10a20.md) | 8 | код C | thunk → 0x112bc | §48 | ID | 25% |
 | [`0x10a5c`](functions_mcu/func_0x10a5c.md) | 50 | код C | — | — | не начат | 0% |
 | [`0x10abc`](functions_mcu/func_0x10abc.md) | 60 | код C | — | — | не начат | 0% |
 | [`0x10ba0`](functions_mcu/func_0x10ba0.md) | 160 | код C | — | — | не начат | 0% |
 | [`0x10cdc`](functions_mcu/func_0x10cdc.md) | 152 | код C | — | — | не начат | 0% |
-| [`0x110f0`](functions_mcu/func_0x110f0.md) | 10 | код D | — | — | не начат | 0% |
+| [`0x110f0`](functions_mcu/func_0x110f0.md) | 10 | код D | thunk → 0x5b8c(r0=0) | §48 | ID | 25% |
 | [`0x110fc`](functions_mcu/func_0x110fc.md) | 400 | код D | — | — | не начат | 0% |
 | [`0x11350`](functions_mcu/func_0x11350.md) | 30 | код D | — | — | не начат | 0% |
-| [`0x11668`](functions_mcu/func_0x11668.md) | 12 | код D | — | — | не начат | 0% |
+| [`0x11668`](functions_mcu/func_0x11668.md) | 12 | код D | thunk → 0x10e5c | §48 | ID | 25% |
 | [`0x11674`](functions_mcu/func_0x11674.md) | 168 | код D | — | — | не начат | 0% |
 | [`0x11724`](functions_mcu/func_0x11724.md) | 166 | код D | — | — | не начат | 0% |
 | [`0x117d4`](functions_mcu/func_0x117d4.md) | 172 | код D | — | — | не начат | 0% |
-| [`0x11888`](functions_mcu/func_0x11888.md) | 12 | код D | — | — | не начат | 0% |
+| [`0x11888`](functions_mcu/func_0x11888.md) | 12 | код D | thunk → 0x10f18 | §48 | ID | 25% |
 | [`0x11894`](functions_mcu/func_0x11894.md) | 204 | код D | — | — | не начат | 0% |
 | [`0x11978`](functions_mcu/func_0x11978.md) | 32 | код D | — | — | не начат | 0% |
 | [`0x11998`](functions_mcu/func_0x11998.md) | 44 | код D | — | — | не начат | 0% |
@@ -497,12 +497,12 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x11bac`](functions_mcu/func_0x11bac.md) | 130 | код D | — | — | не начат | 0% |
 | [`0x11c3c`](functions_mcu/func_0x11c3c.md) | 34 | код D | — | — | не начат | 0% |
 | [`0x11c5e`](functions_mcu/func_0x11c5e.md) | 38 | код D | — | — | не начат | 0% |
-| [`0x11cac`](functions_mcu/func_0x11cac.md) | 8 | код D | — | — | не начат | 0% |
+| [`0x11cac`](functions_mcu/func_0x11cac.md) | 8 | код D | thunk → 0x4c14 | §48 | ID | 25% |
 | [`0x11cb4`](functions_mcu/func_0x11cb4.md) | 188 | код D | — | — | не начат | 0% |
 | [`0x11d98`](functions_mcu/func_0x11d98.md) | 58 | код D | — | — | не начат | 0% |
 | [`0x11de8`](functions_mcu/func_0x11de8.md) | 1410 | код D | — | — | не начат | 0% |
 | [`0x1238c`](functions_mcu/func_0x1238c.md) | 48 | код D | — | — | не начат | 0% |
-| [`0x123c0`](functions_mcu/func_0x123c0.md) | 10 | код D | — | — | не начат | 0% |
+| [`0x123c0`](functions_mcu/func_0x123c0.md) | 10 | код D | запись 0x10000 в struct@RAM[0xdd8]+0x108 (через 0xb854) | §48 | разобран | 100% |
 | [`0x12804`](functions_mcu/func_0x12804.md) | 40 | код E | — | — | не начат | 0% |
 | [`0x128c8`](functions_mcu/func_0x128c8.md) | 18 | код E | — | — | не начат | 0% |
 | [`0x128e4`](functions_mcu/func_0x128e4.md) | 114 | код E | — | — | не начат | 0% |
@@ -516,8 +516,8 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x12d90`](functions_mcu/func_0x12d90.md) | 190 | код E | — | — | не начат | 0% |
 | [`0x12e64`](functions_mcu/func_0x12e64.md) | 56 | код E | — | — | не начат | 0% |
 | [`0x12f44`](functions_mcu/func_0x12f44.md) | 134 | код E | — | — | не начат | 0% |
-| [`0x12fd0`](functions_mcu/func_0x12fd0.md) | 8 | код E | — | — | не начат | 0% |
-| [`0x12fd8`](functions_mcu/func_0x12fd8.md) | 8 | код E | — | — | не начат | 0% |
+| [`0x12fd0`](functions_mcu/func_0x12fd0.md) | 8 | код E | thunk → 0x12b50 | §48 | ID | 25% |
+| [`0x12fd8`](functions_mcu/func_0x12fd8.md) | 8 | код E | thunk → 0x12d90 | §48 | ID | 25% |
 | [`0x12fe0`](functions_mcu/func_0x12fe0.md) | 66 | код E | — | — | не начат | 0% |
 | [`0x1302c`](functions_mcu/func_0x1302c.md) | 134 | код E | init/драйвер трёх USART | §6.5 | частично | 50% |
 | [`0x130f2`](functions_mcu/func_0x130f2.md) | 80 | код E | — | — | не начат | 0% |
@@ -592,8 +592,8 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x1736a`](functions_mcu/func_0x1736a.md) | 96 | код G | — | — | не начат | 0% |
 | [`0x173cc`](functions_mcu/func_0x173cc.md) | 294 | код G | — | — | не начат | 0% |
 | [`0x17736`](functions_mcu/func_0x17736.md) | 108 | код G | — | — | не начат | 0% |
-| [`0x177d6`](functions_mcu/func_0x177d6.md) | 8 | код G | — | — | не начат | 0% |
-| [`0x178c4`](functions_mcu/func_0x178c4.md) | 12 | код G | — | — | не начат | 0% |
+| [`0x177d6`](functions_mcu/func_0x177d6.md) | 8 | код G | cold-tail гигантской функции региона 0x17xxx (b #0x173bc); артефакт детекции | §48 | ID | 25% |
+| [`0x178c4`](functions_mcu/func_0x178c4.md) | 12 | код G | dead-фрагмент: после strh — НЕВАЛИДНАЯ инструкция 0x6EF5 (Unicorn: UC_ERR_INSN_INVALID); перед ним u16-таблица @0x177DE; дыра 0x177DE..0x19A1C = одна гигантская функция, пропущенная каноническим детектором | §48 | ID | 25% |
 | [`0x19a1c`](functions_mcu/func_0x19a1c.md) | 76 | код I | — | — | не начат | 0% |
 | [`0x19a68`](functions_mcu/func_0x19a68.md) | 36 | код I | — | — | не начат | 0% |
 | [`0x19a8c`](functions_mcu/func_0x19a8c.md) | 14 | код I | — | — | не начат | 0% |
@@ -619,8 +619,8 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x1a24c`](functions_mcu/func_0x1a24c.md) | 86 | код I | — | — | не начат | 0% |
 | [`0x1a2a4`](functions_mcu/func_0x1a2a4.md) | 90 | код I | — | — | не начат | 0% |
 | [`0x1a31c`](functions_mcu/func_0x1a31c.md) | 522 | код I | ADC1: стейт-машина выборки (системный тик ~1 кГц) | §22, §40 | разобран | 100% |
-| [`0x1a5c4`](functions_mcu/func_0x1a5c4.md) | 12 | код I | — | — | не начат | 0% |
-| [`0x1a5d4`](functions_mcu/func_0x1a5d4.md) | 12 | код I | — | — | не начат | 0% |
+| [`0x1a5c4`](functions_mcu/func_0x1a5c4.md) | 12 | код I | ADC1+0x18 |= 8 (bit3; caller — ADC-таск 0x1A31C) | §48 | разобран | 100% |
+| [`0x1a5d4`](functions_mcu/func_0x1a5d4.md) | 12 | код I | ADC1+0x18 |= 0x20 (bit5; caller — DMA+ADC 0x1E298) | §48 | разобран | 100% |
 | [`0x1a5e6`](functions_mcu/func_0x1a5e6.md) | 12 | код I | «own»: трамплин к S-box-блоку 0x1a7ac (реальный старт 0x1a5e4 `mov r2,r1` — без пролога, артефакт детекции; bl из 0x21c64) | §36.3, §37 | разобран | 100% |
 | [`0x1a5f2`](functions_mcu/func_0x1a5f2.md) | 8 | код I | «own»: трамплин bl 0x1bfa0 (из 0x1a628) | §27.2, §37 | разобран | 100% |
 | [`0x1a5fa`](functions_mcu/func_0x1a5fa.md) | 46 | код I | «own»: XOR двух 16-Б блоков (round, вызов из 0x1a7ac; callers=3) | §37 | разобран | 100% |
@@ -667,19 +667,19 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x1e480`](functions_mcu/func_0x1e480.md) | 180 | код I | ISR USART3 (линк к BLE-чипу): статус, сброс PE/FE/ORE | §6.5 | разобран | 100% |
 | [`0x1e658`](functions_mcu/func_0x1e658.md) | 218 | код I | — | — | не начат | 0% |
 | [`0x1e9e0`](functions_mcu/func_0x1e9e0.md) | 1914 | код I | RX-парсер протокола USART3 | §6.5 | частично | 50% |
-| [`0x1f1c0`](functions_mcu/func_0x1f1c0.md) | 6 | код I | — | — | не начат | 0% |
+| [`0x1f1c0`](functions_mcu/func_0x1f1c0.md) | 6 | код I | setter USART3+4 (вызов из TX-кольца 0x1F600) | §48 | разобран | 100% |
 | [`0x1f1cc`](functions_mcu/func_0x1f1cc.md) | 114 | код I | MCU→BLE: сборщик запросов `63 CMD` (шаблон кадра) | §32 | разобран | 100% |
 | [`0x1f600`](functions_mcu/func_0x1f600.md) | 156 | код I | RX USART3: кольцо + диспетчер по таблице дескрипторов | §6.7 | разобран | 100% |
 | [`0x1f6b4`](functions_mcu/func_0x1f6b4.md) | 94 | код I | TX: сборка дескриптора [type=2][len][data] | §6.5 | разобран | 100% |
 | [`0x1f71c`](functions_mcu/func_0x1f71c.md) | 6860 | код I | агрегатор: 24-состоянная машина (jump-table по CTX[0x10]) | §22.5 | разобран | 100% |
-| [`0x211ec`](functions_mcu/func_0x211ec.md) | 6 | код I | — | — | не начат | 0% |
+| [`0x211ec`](functions_mcu/func_0x211ec.md) | 6 | код I | setter UART4+4 (вызов из TX-кольца 0x216E4) | §48 | разобран | 100% |
 | [`0x211f8`](functions_mcu/func_0x211f8.md) | 1246 | код I | сборщик кадров 'a'/'a1' в TX-кольцо @0x10b5 (state byte@0x18A: 0→1→2→0; рейт-лимиты 1920/3200 тиков) | §47 | разобран | 100% |
 | [`0x216e4`](functions_mcu/func_0x216e4.md) | 256 | код I | TX-кольцо @0x10b5 отправитель (UART4) | §28.3 | разобран | 100% |
 | [`0x21804`](functions_mcu/func_0x21804.md) | 96 | код I | — | — | не начат | 0% |
 | [`0x2186c`](functions_mcu/func_0x2186c.md) | 370 | код I | — | — | не начат | 0% |
 | [`0x21a08`](functions_mcu/func_0x21a08.md) | 240 | код I | NVRAM-save таск (гейт byte@0x170==1 + бит31 common+0x14) | §25 | разобран | 100% |
 | [`0x21b84`](functions_mcu/func_0x21b84.md) | 60 | код I | — | — | не начат | 0% |
-| [`0x21c0c`](functions_mcu/func_0x21c0c.md) | 6 | код I | — | — | не начат | 0% |
+| [`0x21c0c`](functions_mcu/func_0x21c0c.md) | 6 | код I | getter *(u32@RAM[0x28])+4 (двойная индирекция) | §48 | разобран | 100% |
 | [`0x21c18`](functions_mcu/func_0x21c18.md) | 34 | код I | — | — | не начат | 0% |
 | [`0x21c64`](functions_mcu/func_0x21c64.md) | 12 | код I | «own»: входной шифр/проверка кадра (initiator BLE) | §36.3, §37 | разобран | 100% |
 | [`0x21ca8`](functions_mcu/func_0x21ca8.md) | 364 | код I | инициализация сенсоров ADC1 | §40 | ID | 25% |
