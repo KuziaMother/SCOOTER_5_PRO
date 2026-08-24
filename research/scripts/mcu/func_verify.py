@@ -133,6 +133,27 @@ def ref_scale_123e(lo, hi, r2):
     return P & M32, hp              # верхнее слово не меняется
 
 
+def ref_seg_interp_unsigned(A, B, slope):
+    """сегмент 0x16938: ветка по UNSIGNED сравнению A vs B (bhi)"""
+    if A > B:
+        d = (A - B) & M32
+        return (A - ((d * slope) >> 31)) & M32
+    d = (B - A) & M32
+    return (A + ((d * slope) >> 31)) & M32
+
+
+def ref_seg_interp(A, B, slope):
+    """сегмент 0x16880/0x16938: ветка по SIGNED сравнению A=ys[r4], B=ys[r4+1] (bgt);
+    delta — wrapped u32; result = A ± (delta*slope)>>31"""
+    sA = A - 0x100000000 if A >= 0x80000000 else A
+    sB = B - 0x100000000 if B >= 0x80000000 else B
+    if sA > sB:
+        d = (A - B) & M32
+        return (A - ((d * slope) >> 31)) & M32
+    d = (B - A) & M32
+    return (A + ((d * slope) >> 31)) & M32
+
+
 def ref_scale_1a052(lo, hi, r2, r3):
     """0x1a052: n = r2>>21; масштаб u64 на 2^(n-0x433), нижняя граница r3.
     Внимание: в lsl-ветке r1 перезаписывается смещением (n-0x433)."""
@@ -1388,6 +1409,331 @@ def _(run, rng):
     assert got == (exp_rcc & M32), f'{init:#x} → {got:#x}, ждали {exp_rcc:#x}'
     assert run.periph_read(0xE000ED0C) == 0x5FA0004, \
         f'AIRCR = {run.periph_read(0xE000ED0C):#x}'
+
+
+# ===========================================================================
+# Батч 5 (§51): полка 132–256 B
+# ===========================================================================
+
+# --- MSB-normalization shift (gap-функция, артефакт детектора) ---
+# трассировка: шаги 16/8/4/2 бита; финал: r0∈{1,2} → r1−r0; x=1<<p → 0x1F−p
+
+@t(0x21B24, 'MSB-normalization: x==0 → 0x20; иначе 0x1F − msb_pos(x)')
+def _(run, rng):
+    for _ in range(30):
+        if rng.getrandbits(2) == 0:
+            x = rng.choice([0, 1, 2, 3, 0x8000, 0x80000000, 0xFFFFFFFF])
+        else:
+            x = rng.getrandbits(32)
+        r0, _ = run.call(0x21B24, (x,))
+        exp = 0x20 if x == 0 else 0x1F - (x.bit_length() - 1)
+        assert r0 == exp, f'x={x:#x}: {r0:#x} ≠ {exp:#x}'
+
+
+# --- i16 × i16 → u32 (запись в *out_lo/*out_hi) ---
+
+@t(0x17170, 'i16×i16→u64 (sign-extended): *out_hi = 0/0xFFFFFFFF, *out_lo = a*b')
+def _(run, rng):
+    a = rng.randint(-32768, 32767)
+    b = rng.randint(-32768, 32767)
+    run.ram_write(0x100, struct.pack('<II', 0xDEAD, 0xBEEF))
+    run.call(0x17170, (a & M32, b & M32, RAM + 0x100, RAM + 0x104))
+    hi, lo = struct.unpack('<II', run.ram_read(0x100, 8))
+    p = a * b
+    exp_lo, exp_hi = p & M32, (0xFFFFFFFF if p < 0 else 0)
+    assert lo == exp_lo and hi == exp_hi, f'{a}×{b}: {hi:#x}:{lo:#x} ≠ {exp_hi:#x}:{exp_lo:#x}'
+
+
+@t(0x17214, 'i16×i16→u64 #2 (twin 0x17170)')
+def _(run, rng):
+    a = rng.randint(-32768, 32767)
+    b = rng.randint(-32768, 32767)
+    run.ram_write(0x100, struct.pack('<II', 0xDEAD, 0xBEEF))
+    run.call(0x17214, (a & M32, b & M32, RAM + 0x100, RAM + 0x104))
+    hi, lo = struct.unpack('<II', run.ram_read(0x100, 8))
+    p = a * b
+    exp_lo, exp_hi = p & M32, (0xFFFFFFFF if p < 0 else 0)
+    assert lo == exp_lo and hi == exp_hi, f'{a}×{b}: {hi:#x}:{lo:#x} ≠ {exp_hi:#x}:{exp_lo:#x}'
+
+
+# --- u16-массив: статистика + in-place clamp ---
+
+@t(0x5134, 'u16 статистика: s16≤0 → 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based)')
+def _(run, rng):
+    n = rng.randint(1, 24)
+    vals = []
+    for _ in range(n):
+        k = rng.getrandbits(2)
+        if k == 0:
+            vals.append(rng.getrandbits(16))
+        elif k == 1:
+            vals.append(0)
+        else:
+            vals.append(0x8000 + rng.getrandbits(15))   # s16 < 0
+    run.ram_write(0x200, struct.pack(f'<{n}H', *vals))
+    run.ram_write(0x300, b'\x00' * 16)
+    run.call(0x5134, (RAM + 0x200, n, RAM + 0x300), max_insn=20000)
+    cl = []
+    for v in vals:
+        s = v - 65536 if v >= 0x8000 else v
+        cl.append(300 if s <= 0 else v)
+    got_arr = struct.unpack(f'<{n}H', run.ram_read(0x200, 2 * n))
+    assert list(got_arr) == cl, f'in-place clamp: {got_arr} ≠ {cl}'
+    total = sum(cl) & M32
+    avg = (total // n) & 0xFFFF
+    mn, mx = min(cl), max(cl)
+    idx_min = cl.index(mn) + 1          # первое вхождение (обновление строго <)
+    idx_max = cl.index(mx) + 1          # первое вхождение (обновление строго >: равные не обновляют)
+    out = struct.unpack('<IHHHBB', run.ram_read(0x300, 12))
+    assert out[0] == total, f'sum: {out[0]:#x} ≠ {total:#x}'
+    assert out[1] == avg, f'avg: {out[1]} ≠ {avg}'
+    assert out[2] == mn and out[3] == mx, f'min/max: {out[2]}/{out[3]} ≠ {mn}/{mx}'
+    assert out[4] == idx_min and out[5] == idx_max, \
+        f'idx: {out[4]}/{out[5]} ≠ {idx_min}/{idx_max}'
+
+
+# --- интерполяция Q31 (u32 y-таблица, доп. слот) ---
+
+@t(0x16880, 'Q31-интерполяция: args (v, xtab_u16, ytab_u32, last_idx=n−1); slope=((v−x0)<<16)/dx через 0x161ea(…,15); y=y0+(y1−y0)*slope>>31; v≥xs[last] → mid-экстраполяция с последнего сегмента')
+def _(run, rng):
+    n = rng.randint(2, 8)
+    xs = sorted(rng.sample(range(-400, 400), n))
+    ys = [rng.getrandbits(32) for _ in range(n)]     # без доп. слота
+    base = 0x400
+    case = rng.getrandbits(2)
+    if case == 0:
+        value = xs[0] - rng.randint(0, 50)          # до начала: r4=0, slope=0
+        exp = ys[0]
+    elif case == 1:
+        value = xs[-1] + rng.randint(0, 50)         # за конец: sentinel=Q31 1.0 → полный шаг к ys[n−1]
+        exp = ys[n - 1]
+    elif case == 2:
+        k = rng.randint(0, n - 2)
+        while (xs[k + 1] - xs[k]) % 2:               # чётный dx → точная середина
+            xs = sorted(rng.sample(range(-400, 400), n))
+            k = rng.randint(0, n - 2)
+        value = (xs[k] + xs[k + 1]) // 2             # slope = 0x40000000 точный
+        exp = ref_seg_interp(ys[k], ys[k + 1], 0x40000000)
+    else:
+        k = rng.randint(0, n - 2)
+        value = xs[k]                                # точно на узле: slope=0
+        exp = ys[k]
+    run.ram_write(base, struct.pack(f'<{n}h', *xs))
+    run.ram_write(base + 0x100, struct.pack(f'<{n}I', *ys))
+    r0, _ = run.call(0x16880, (value & M32, RAM + base,
+                               RAM + base + 0x100, n - 1), max_insn=5000)
+    assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
+
+
+# --- интерполяция Q8 (u8 y-таблица, доп. слот) ---
+
+@t(0x167B6, 'Q8-интерполяция: args (v, xtab_u16, ytab_u8, last_idx=n−1); slope=((v−x0)<<8)/dx (udiv); y=(y0 ± dy*slope>>8)&0xFF; v≥xs[last] → slope=1.0 с последнего сегмента')
+def _(run, rng):
+    n = rng.randint(2, 8)
+    xs = sorted(rng.sample(range(-400, 400), n))
+    ys = [rng.getrandbits(8) for _ in range(n)]      # без доп. слота
+    base = 0x600
+    case = rng.getrandbits(2)
+    if case == 0:
+        value = xs[0] - rng.randint(0, 50)
+        exp = ys[0]
+    elif case == 1:
+        value = xs[-1] + rng.randint(0, 50)         # r1=n−2, slope = 0x100 (1.0) → полный шаг к ys[n−1]
+        exp = ys[n - 1]
+    elif case == 2:
+        k = rng.randint(0, n - 2)
+        while (xs[k + 1] - xs[k]) % 2:
+            xs = sorted(rng.sample(range(-400, 400), n))
+            k = rng.randint(0, n - 2)
+        value = (xs[k] + xs[k + 1]) // 2             # slope = 128 точный
+        dy = (ys[k + 1] - ys[k]) & 0xFF if ys[k + 1] >= ys[k] else (ys[k] - ys[k + 1]) & 0xFF
+        exp = (ys[k] + dy // 2) & 0xFF if ys[k + 1] >= ys[k] else (ys[k] - dy // 2) & 0xFF
+    else:
+        k = rng.randint(0, n - 2)
+        value = xs[k]
+        exp = ys[k]
+    run.ram_write(base, struct.pack(f'<{n}h', *xs))
+    run.ram_write(base + 0x100, bytes(ys))
+    r0, _ = run.call(0x167B6, (value & M32, RAM + base,
+                               RAM + base + 0x100, n - 1), max_insn=5000)
+    assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
+
+
+@t(0x16938, 'Q31-интерполяция #2: twin 0x16880, но ветка по UNSIGNED cmp (bhi)')
+def _(run, rng):
+    n = rng.randint(2, 8)
+    xs = sorted(rng.sample(range(-400, 400), n))
+    # y: иногда с битом31 (разница signed/unsigned веток)
+    ys = [rng.getrandbits(32) if rng.getrandbits(2) else
+          (0x80000000 + rng.getrandbits(31)) for _ in range(n)]
+    base = 0x500
+    case = rng.getrandbits(2)
+    if case == 0:
+        value = xs[0] - rng.randint(0, 50)
+        exp = ys[0]
+    elif case == 1:
+        value = xs[-1] + rng.randint(0, 50)         # полный шаг к ys[n−1]
+        exp = ys[n - 1]
+    elif case == 2:
+        k = rng.randint(0, n - 2)
+        while (xs[k + 1] - xs[k]) % 2:
+            xs = sorted(rng.sample(range(-400, 400), n))
+            k = rng.randint(0, n - 2)
+        value = (xs[k] + xs[k + 1]) // 2
+        exp = ref_seg_interp_unsigned(ys[k], ys[k + 1], 0x40000000)
+    else:
+        k = rng.randint(0, n - 2)
+        value = xs[k]
+        exp = ys[k]
+    run.ram_write(base, struct.pack(f'<{n}h', *xs))
+    run.ram_write(base + 0x100, struct.pack(f'<{n}I', *ys))
+    r0, _ = run.call(0x16938, (value & M32, RAM + base,
+                               RAM + base + 0x100, n - 1), max_insn=5000)
+    assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
+
+
+# --- duty/throttle shaping (чистый RAM) ---
+
+@t(0x1D330, 'duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4')
+def _(run, rng):
+    v = rng.randint(-32768, 32767)
+    flags = rng.getrandbits(16)
+    state = rng.randint(-500, 32767)
+    run.ram_write(0x1794 + 0xC, struct.pack('<h', v))
+    run.ram_write(0x220, struct.pack('<H', flags))
+    run.ram_write(0x1794 + 0xA, struct.pack('<h', state))
+    run.ram_write(0x3C8 + 0x10, b'\x00')
+    run.call(0x1D330, (), max_insn=5000)
+    f2 = struct.unpack('<H', run.ram_read(0x220, 2))[0]
+    st = struct.unpack('<h', run.ram_read(0x1794 + 0xA, 2))[0]
+    # референс (внимание: все сравнения v — UNSIGNED u16!)
+    vu = v & 0xFFFF
+    if vu > 580:
+        f2e, ste = flags | 2, 0
+    else:
+        f2e = flags & ~2
+        if vu < 196:
+            f2e, ste = f2e | 4, 0
+        else:
+            ste = state
+            if vu < 400:
+                ste = max(0, ste - 100)
+                if ste == 0:
+                    f2e |= 4
+            if vu > 431:
+                f2e &= ~4
+                ste = min(0x7FF8, ste + 1000)
+    ste = max(0, min(0x7FF8, ste))
+    assert f2 == (f2e & 0xFFFF), f'v={v} flags={flags:#x}: {f2:#x} ≠ {f2e:#x}'
+    assert st == ste, f'v={v} state={state}: {st} ≠ {ste}'
+    assert run.ram_read(0x3C8 + 0x10, 1)[0] == 4
+
+
+# --- drift detector (адаптивный базлайн) ---
+
+@t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=clamp(s16[RAM+0x13A4]−s16[RAM+0x1302],±0x8000); devA≥500||devB>500 → flag + refs:=текущие')
+def _(run, rng):
+    A = rng.getrandbits(16)
+    B = rng.randint(-32768, 32767)
+    refA = rng.getrandbits(16)
+    refB = rng.randint(-32768, 32767)
+    run.ram_write(0x13AB, struct.pack('<H', A))
+    run.ram_write(0x13A4, struct.pack('<h', B))
+    run.ram_write(0x130A, struct.pack('<H', refA))
+    run.ram_write(0x1302, struct.pack('<h', refB))
+    run.ram_write(0x500, b'\x7F')
+    run.call(0xE740, (RAM + 0x500,), max_insn=5000)
+    devA = abs(A - refA)
+    devB = B - refB
+    devB = max(-0x8000, min(0x7FFF, devB))
+    flag = 1 if (devA >= 500 or devB > 500) else 0
+    got = run.ram_read(0x500, 1)[0]
+    assert got == flag, f'A={A} refA={refA} B={B} refB={refB}: flag {got} ≠ {flag}'
+    gA = struct.unpack('<H', run.ram_read(0x130A, 2))[0]
+    gB = struct.unpack('<h', run.ram_read(0x1302, 2))[0]
+    if flag:
+        assert gA == A and gB == B, f'refs не обновлены: {gA}/{gB} ≠ {A}/{B}'
+    else:
+        assert gA == refA and gB == refB, 'refs должны остаться нетронутыми'
+
+
+# --- PB15 latch с гистерезисом (flash-калибровка @0x19E1C) ---
+# 0xfdac: lo=i8@+0=1, N=u16@+1=5264, hi=i8@+3=70, M=u16@+4=17936
+#         gate: mode@RAM[0x80]==0 && !bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]
+#         ON:  v≥lo && (cnt++≤N) → ODR|=0x8000, bit0=1, cnt=0
+#         OFF: bit0 && v≤hi && (cnt2++>M) → BRR|=0x8000, bit0=0, cnt2=0
+# 0xfe74: то же с bit1, v=i8[RAM+0xFC7+1], пороги @+6..+0xA (lo=5,N=224,hi=32,M=17921)
+
+@t(0xFDAC, 'PB15 latch #1: gate mode==0&&!bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]; flash @0x19E1C {lo=1,N=5264,hi=70,M=17936}')
+def _(run, rng):
+    mode = rng.getrandbits(2)
+    bit0 = rng.getrandbits(1)
+    v = rng.randint(-128, 127)
+    cnt = rng.choice([0, 1, 5263, 17936])
+    cnt2 = rng.choice([0, 1, 17936])
+    run.ram_write(0x80, struct.pack('<B', mode))
+    run.ram_write(0xFC7 + 6, struct.pack('<B', bit0))
+    run.ram_write(0xFC7 + 2, struct.pack('<b', v))
+    run.ram_write(0x9F4, struct.pack('<H', cnt))
+    run.ram_write(0x9F6, struct.pack('<H', cnt2))
+    run.periph_write(0x40010C18, rng.getrandbits(32) & ~0x8000)
+    run.periph_write(0x40010C28, 0)
+    run.call(0xFDAC, (), max_insn=5000)
+    # часть 1 (ON): mode==0 && !bit0 && v≥lo(1) && cnt++≤N(5264) → ODR|=
+    # часть 2 (OFF): bit0 (любой mode) && v≤hi(70) && cnt2++≤M(17936) → BRR|
+    exp_odr = 0x8000 if (mode == 0 and not bit0 and v >= 1 and cnt + 1 >= 5264) else 0   # cmp N,cnt; bgt=skip → ON при cnt_new≥N
+    exp_brr = 0x8000 if (bit0 and v <= 70 and cnt2 + 1 >= 17936) else 0   # cmp M,cnt; bgt=skip → OFF при cnt_new≥M
+    got_odr = run.periph_read(0x40010C18) & 0x8000
+    got_brr = run.periph_read(0x40010C28) & 0x8000
+    assert got_odr == exp_odr, f'mode={mode} bit0={bit0} v={v}: ODR {got_odr:#x} ≠ {exp_odr:#x}'
+    assert got_brr == exp_brr, f'cnt2={cnt2} v={v}: BRR {got_brr:#x} ≠ {exp_brr:#x}'
+    gbit = run.ram_read(0xFC7 + 6, 1)[0] & 1
+    gc = struct.unpack('<H', run.ram_read(0x9F4, 2))[0]
+    if mode == 0 and not bit0:
+        on = (v >= 1 and cnt + 1 >= 5264)
+        exp_bit, exp_cnt = (1, 0) if on else (0, (cnt + 1 if v >= 1 else 0))
+    else:
+        # часть 2 может снять bit0 (OFF при v≤70 && cnt2_new≥M)
+        off = (bit0 and v <= 70 and cnt2 + 1 >= 17936)
+        exp_bit, exp_cnt = (0 if off else bit0), cnt
+    assert gbit == exp_bit and gc == exp_cnt, \
+        f'bit {gbit}≠{exp_bit}, cnt {gc}≠{exp_cnt}'
+
+
+@t(0xFE74, 'PB15 latch #2: gate mode==0&&!bit1[RAM+0xFC7+6]; v=i8[RAM+0xFC7+1]; flash @0x19E1C+6 {lo=5,N=224,hi=32,M=17921}')
+def _(run, rng):
+    mode = rng.getrandbits(2)
+    bit1 = rng.getrandbits(1)
+    v = rng.randint(-128, 127)
+    cnt = rng.choice([0, 1, 223])
+    cnt2 = rng.choice([0, 1, 17921])
+    run.ram_write(0x80, struct.pack('<B', mode))
+    run.ram_write(0xFC7 + 6, struct.pack('<B', bit1 << 1))
+    run.ram_write(0xFC7 + 1, struct.pack('<b', v))
+    run.ram_write(0x9F0, struct.pack('<H', cnt))
+    run.ram_write(0x9F2, struct.pack('<H', cnt2))
+    run.periph_write(0x40010C18, rng.getrandbits(32) & ~0x8000)
+    run.periph_write(0x40010C28, 0)
+    run.call(0xFE74, (), max_insn=5000)
+    # часть 1 (ON): mode==0 && !bit1 && v≤lo(5) && cnt++≤N(224) → ODR|
+    # часть 2 (OFF): bit1 (любой mode) && v≥hi(32) && cnt2++≤M(17921) → BRR|
+    exp_odr = 0x8000 if (mode == 0 and not bit1 and v <= 5 and cnt + 1 >= 224) else 0   # cmp N,cnt; bgt=skip → ON при cnt_new≥N
+    exp_brr = 0x8000 if (bit1 and v >= 32 and cnt2 + 1 >= 17921) else 0   # cmp M,cnt; bgt=skip → OFF при cnt_new≥M
+    got_odr = run.periph_read(0x40010C18) & 0x8000
+    got_brr = run.periph_read(0x40010C28) & 0x8000
+    assert got_odr == exp_odr, f'mode={mode} bit1={bit1} v={v}: ODR {got_odr:#x} ≠ {exp_odr:#x}'
+    assert got_brr == exp_brr, f'cnt2={cnt2} v={v}: BRR {got_brr:#x} ≠ {exp_brr:#x}'
+    gbit = (run.ram_read(0xFC7 + 6, 1)[0] >> 1) & 1
+    gc = struct.unpack('<H', run.ram_read(0x9F0, 2))[0]
+    if mode == 0 and not bit1:
+        on = (v <= 5 and cnt + 1 >= 224)      # v≤lo! и debounce N=224
+        exp_bit, exp_cnt = (1, 0) if on else (0, (cnt + 1 if v <= 5 else 0))
+    else:
+        # часть 2 может снять bit1 (OFF при v≥32 && cnt2_new≥M)
+        off = (bit1 and v >= 32 and cnt2 + 1 >= 17921)
+        exp_bit, exp_cnt = (0 if off else bit1), cnt
+    assert gbit == exp_bit and gc == exp_cnt, \
+        f'bit {gbit}≠{exp_bit}, cnt {gc}≠{exp_cnt}'
 
 
 # ---------------------------------------------------------------------------
