@@ -1698,6 +1698,50 @@ def _(run, rng):
     assert r0 == exp, f'case={case} v1={v1} v2={v2}: {r0:#x} ≠ {exp:#x}'
 
 
+def _interp16(a, b, slope):
+    """один шаг интерполяции 0x16588/0x16bd4: unsigned cmp, Q16-наклон, u16"""
+    if a > b:
+        d = (a - b) & 0xFFFF
+        return (a - ((d * slope) >> 16)) & 0xFFFF
+    d = (b - a) & 0xFFFF
+    return (a + ((d * slope) >> 16)) & 0xFFFF
+
+
+def ref_16588(ix, iy, iz, sx, sy, sz, grid, syy, szz):
+    """3D-трилинейная интерполяция на плоской u16-сетке (§52.1 эмуляторно).
+    base = ix + syy*iy + szz*iz; x-шаг — соседний элемент (stride 1)."""
+    b = ix + syy * iy + szz * iz
+    a0 = _interp16(grid[b], grid[b + 1], sx)
+    a1 = _interp16(grid[b + syy], grid[b + syy + 1], sx)
+    c0 = _interp16(a0, a1, sy)
+    b2 = b + szz
+    d0 = _interp16(grid[b2], grid[b2 + 1], sx)
+    d1 = _interp16(grid[b2 + syy], grid[b2 + syy + 1], sx)
+    e0 = _interp16(d0, d1, sy)
+    return _interp16(c0, e0, sz)
+
+
+@t(0x16588, '3D-трилинейная интерполяция u16: (idx{3}, slope{3}Q16, grid_u16, stride{3})')
+def _(run, rng):
+    nx, ny, nz = rng.randint(2, 4), rng.randint(2, 3), rng.randint(2, 3)
+    syy, szz = rng.randint(1, nx + 1), rng.randint(ny, ny * nx + 1)
+    ix, iy, iz = (rng.randint(0, n - 1) for n in (nx, ny, nz))
+    sx, sy, sz = (rng.getrandbits(16) for _ in range(3))
+    size = (nx - 1) + syy * (ny - 1) + szz * nz + syy + 2
+    grid = [rng.getrandbits(16) for _ in range(size)]
+    base = 0x700
+    run.ram_write(base, struct.pack('<3I', ix, iy, iz))
+    run.ram_write(base + 0x40, struct.pack('<3I', sx, sy, sz))
+    gbase = base + 0x80
+    run.ram_write(gbase, struct.pack(f'<{len(grid)}H', *grid))
+    stride_p = base + 0x400   # НЕ в gbase — иначе перетрёт начало сетки!
+    run.ram_write(stride_p, struct.pack('<3I', 1, syy, szz))
+    r0, _ = run.call(0x16588, (RAM + base, RAM + base + 0x40,
+                               RAM + gbase, RAM + stride_p), max_insn=20000)
+    exp = ref_16588(ix, iy, iz, sx, sy, sz, grid, syy, szz)
+    assert r0 == exp, f'ix={ix} iy={iy} iz={iz}: {r0:#x} ≠ {exp:#x}'
+
+
 # --- duty/throttle shaping (чистый RAM) ---
 
 @t(0x1D330, 'duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4')

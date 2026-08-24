@@ -89,7 +89,7 @@
 0x03168,96,код B,"счётчик: если @0x2F==1 && @0x2E==1 → u16@0xB74 += byte@0x3F; ≤ 0x258 → @0x37=1, иначе reset+@0x37=2",§50,разобран,100%
 0x031dc,66,код B,"event {2, 8, 0x14, 0x18} → 0xcd80(0); {0xD, 1, 1, 0x40} → 0xca3c(0) — GPIO-настройка пинов",§50,разобран,100%
 0x032f4,54,код B,EXTI-настройка: RCC-enable + remap(7) + 0x40010414=0x80 + 0x59a4(),§49,разобран,100%
-0x0332c,574,код B,,,не начат,0%
+0x0332c,574,код B,"**GPIO batch configurator (descriptor-массив)**: args (desc_ptrs*, count); per desc (20B): {u32 port@+0, u16 mask@+4, byte@+6, u32 type@+7, byte@+0xB, u32@+0xC, byte@+0x10..0x13}; 6 известных type-кодов {0x1011,0x1021,0x1031,0x1012,0x1022,0x1032}×0x10000: 0x87b0(port,&mask), mask→local, если port==GPIOB(0x40010C00) и mask==0x800 → byte@+6 иначе 0; **0x85c8**(port, &local) (GPIO configurator §52); 0x2bbc(port, mask, sp); delay-код в local[0xD]: type *1 → 8, *2 (A∈{1,2}) → 0xC, иначе 0x10; struct {1,0,1,delay} → **0x59a4**; bytes@+0x11..0x13 → **0xc0b4**; ALT-путь (неизвестный type): generic 0x85c8 с полными полями desc; type ∈ {1,0x11} → **0x87e2**(port, mask, byte@+0xB); **17 callers** (0x2aac..0x12180, скан bl)",§53,разобран,100%
 0x03588,84,код B,"**GPIO B/C/D/A config для NVRAM**: struct {0xFFFF, flags} → 0x85c8(GPIOB/C/D); {0x9FFF} → GPIOA; вызов из 0x2d5c (NVRAM flash write)",§50,разобран,100%
 0x035ec,18,код B,SysTick: выкл. TICKINT (CTRL &= ~2),§49,разобран,100%
 0x03600,96,код B,"**SysTick период**: udiv(val, 0x3E8); SysTick LOAD(0xE000E014) = n-1; CTRL(0xE000E010) = 7; NVIC-priority по irq",§50,разобран,100%
@@ -118,7 +118,7 @@
 0x03cac,232,код B,"event dispatcher: flag-байт RAM[0x84], биты→хендлеры 0x11668/0x11674/0x11724/0x117d4/0x11888 и др.",§51,разобран,100%
 0x03da0,58,код B,чтение 4B из EEPROM + CRC-16 (0x8a50) с проверкой; буфер @0xC9C,§49,разобран,100%
 0x03de4,252,код B,"state machine вокруг RAM[0x89] (gate RAM[0x107]): вызов 0x3f00, запись flash-конфига через 0x332c",§51,разобран,100%
-0x03f00,912,код B,,,не начат,0%
+0x03f00,912,код B,"**frame builder 48B (telemetry)**: 0x11d6(sp+0x28, 0x28) ×3 (init кадра §52); bl 0x30a6, 0x2b2c, 0x1180, 0xdd2c ×2, 0x11a4, 0x3b42, 0x13284; pool: кластер RAM+0x9B4..0x9BE (5 adj-структов), RAM+0x8A/+0xC89/+0x1222/+0x1232/+0xFE7 — сборка кадра из телеметрии для BLE-чипа",§53,разобран,100%
 0x042b8,118,код B,"счётчики: @0x118 (кап 5, гейт GPIOB+0x10 bit) → @0x8A=1; u16@0x116 (кап 0x3E8) → reset",§50,разобран,100%
 0x04344,324,код B,**GPIOB state machine**: u32[RAM+0x110] = u16[RAM+0x15F7+0x34] × 10; gate byte[RAM+0x107]==0 + bit2 byte[RAM+0xF70+1]; сравнение с 0xE09C; 0x87c8 (set/clear GPIOB §50) + 0x332c (flash-config writer §51); GPIOB @0x40010C00,§52,разобран,100%
 0x044c0,58,код B,**range-check**: u16@0xF95+6 ≤ 0x7D0 && u16@0xF95+8 ≥ 0x1194 && i8@0xFC8+1 > -40 && i8@0xFC8+2 < 0x64; гейт byte@0xA73,§49,разобран,100%
@@ -197,15 +197,15 @@
 0x06360,18,код B,FLASH_CTLR биты [5:3] = r0 (режим стирания/записи),§49,разобран,100%
 0x06378,12,код B,FLASH unlock: magic-ключи 0x45670123/0xCDEF89AB → FLASH_KEYR @0x40022004,§48,разобран,100%
 0x06390,38,код B,ожидание не-BSY; таймаут → 0xA,§49,разобран,100%
-0x063b8,590,код B,,,не начат,0%
-0x06618,526,код B,,,не начат,0%
+0x063b8,590,код B,"**BLE session SM #6 (RAM+0x128B/0x12BA)**: 0x10fa4(1); byte@+0x6D гейт; u32[+0x18]=0x16528(); bl: 0x16528 ×2, 0x16558, 0x10e5c ×3, 0x8d90 ×3, 0x8e14 ×2, **0xea64 ×4** (§52 clamp-хендлер), 0x8eb4, 0x8ecc, 0xe3ec ×2, 0x8ee8, 0xe36c, 0x8f58, 0xe17c; pool: RAM+0x12BA/+0x128B, константы 0x186A0 (99999) / 0xFFFFEC78 (−8040)",§53,разобран,100%
+0x06618,526,код B,"**BLE session SM #7 (RAM+0x12BA)**: 0x10fb0(0); |0x8f24()| ×many (сенсор, abs); порог pool 0x7A120 = **500 000**; bl: 0x16564 ×3 (u64 §50), 0x16222, 0x162ce ×2, 0x1105c/0x11068 ×2/0x11074 ×2/0x11080 (session helpers), 0x16288 ×3, 0x16534, 0x16540; pool: 0x7A120, RAM+0x12BA, 0xFFC91180 (−566784), 0x249F0 (149904)",§53,разобран,100%
 0x06838,310,код B,**BLE-сессия state machine #3**: twin 0x6ccc/0x6e50; хендлеры: bl 0x10fbc/0x1657c/0x16504/0x10f30/0x8db4/0x10e8c/0x10ea0,§52,разобран,100%
 0x06978,104,код B,**state-машина @0x12BA**: критсекция 0x10fc8; byte@+0x68: 0→+0x69=2 + 0x16504()→u16@+0x50 + 0x164f8()→u16@+0x48; 1/2 → 0xe740(&local),§50,разобран,100%
-0x069e4,722,код B,,,не начат,0%
+0x069e4,722,код B,"**2D-интерполятор caller + BLE-сессия (RAM+0x128B/0x12BA)**: 0x10fd4(1); r4/r5 = max/min из пары 0x8ecc()/0x8ee8(); local[0xC]=u16 «цель»: если max−min ≥ 0x3E8 → 0xC80; elif min < 0xC80 → min; иначе 0x17094(min−0xC80, 0x3E8) → 0x16328(0x3E8−max+min, t), clamp [0,0xFFFF] (порог pool 0x7FFFF37F); **0x16bd4**(0x8f58(), |0x1654c()|, xtab1=0x19F60+0xBC, ystruct=0x19F60−0xAC, [stk]{grid=+0x550, base, 5}) → r7; byte[RAM+0x128B+0x65]: 0 → init (byte[+0x66]=3, u32[sp+0x10]=0xA, u16[RAM+0x12BA+0x24]=local[0xC]); else state@+0x66: 1 → проверка порогов (0x8f58()+5, 0x1654c() vs pool −1534) → 3 или merge через **0xe2fc/0xe2cc** (§50) + u16[+0x24]; 2 → local[0xC] ≥ 0xF6E? → 3 : 0xe808(&local[0xC], &sp+0x10); else → 0x1654c() ≤ r7 и 0x8f58()+5 < 0 → 3 : state=1 + merge; x2-ветка: local[0xC] > 0xFA0 и 0x1654c() > 0 → state=2, u32[+0x40]=0, u16[+0x4E]=0, u16[+0x4C]=local[0xC], byte[+0x67]=0, u32[+0x2C]=0x105F, 0xe808; финал: 0x1654c() > 0 → r6=0x64 иначе **0x16f42**(r4, 0x8f58(), vtbl=0x19F58−8+0xD4, htab=0x19F58−8−0x28, [stk]{grid=+0x5C7, base, 5}) → r6; u16[RAM+0x12BA+0x2D]=min(r6, sp+0x10); 0x11028(u16[+0x24]); **аномалия**: hdr-слова [csp+4]=base → u32[0x19F60]=0x05014674 / u32[0x19F58]=0x43D22201 — не декодируются как счётчики (эмулятор: fault при v1 в диапазоне) — версия таблицы ≠ кода?",§53,разобран,100%
 0x06ccc,378,код B,"**BLE-сессия state machine #1**: state byte[RAM+0x12BA+0x63], counter [+0x64] (<0x1F++); init: [+0x62]=1, state=2, i32[RAM+0x128B+0x14]=−2, u32[+0x3C]=0; state1: counter≥0x14 → state2; state2: 0x8e14()==1 → state3, i32[+0x14]=−33, u32[RAM+0x12BA+0x34]=0x164d4(); state≥3: 0x8e20()==1 → state=1, counter=0, ts={0x164d4(), 0x164e0()} + **0xe200**(u32[+0x34], u32[+0x38], ts) — caller интерполятора 0x16938 (§51); timeout: u32[+0x3C] ≥ 0xA8C0 (43200 тиков) → state2; bl 0x10fe0/0x8e14/0x164d4/0x164e0/0x8e20/0xe200/0x10f7c; twin'ы: 0x6e50/0x6838/0xea64",§52,разобран,100%
 0x06e50,358,код B,**BLE-сессия state machine #2**: twin 0x6ccc (та же пара структур RAM+0x128B/0x12BA); хендлеры: bl 0x10fec/0x16534/0x10f3c/0x8dc0/0x10e74/0x16540/0x10f48/0x8dcc/0x10e80,§52,разобран,100%
 0x06fc0,130,код B,,,не начат,0%
-0x070d8,944,код B,,,не начат,0%
+0x070d8,944,код B,"**BLE session SM #5 (RAM+0x128B/0x12BA)**: 0x11004(1) (acquire §52); counter byte@+0x59 (mod 32); flash-таблица @0x1A4D8; bl: 0x10f24 ×2, 0x8da8 ×3, 0x1651c, 0x17150 (u64-конвертеры §50/51), 0x164ec ×5, 0x16b22, 0x10f54 ×5, 0x8dd8 ×3, 0x8e9c ×3, 0x11004, 0x16266, 0x11034, 0x10e68, 0x110a4, 0x1638a, 0x110b0, 0x10eb8, 0x10ec4 — та же семья сессий что §52 (0x6ccc/0x6e50/0x6838)",§53,разобран,100%
 0x07494,1282,код B,,,не начат,0%
 0x0799c,144,код B,регулятор duty (вырожден: выход ≈ -275 → 0%),"§39, §41",разобран,100%
 0x07a30,820,код B,slot-3 state-machine мотора (TBB @0x7AA4),"§39, §41",разобран,100%
@@ -255,7 +255,7 @@
 0x08f7c,198,код B,"varargs-helper: читает значение со стека вызывающего, XOR через 0x3c7c",§51,разобран,100%
 0x09048,80,код B,"**I2C2-транзакция core**: 0x11d6(&buf, 0x28); 0x15640 (CRC-7-кодирование); callback *(u32@RAM[0xDD8]+0x11C)",§50,разобран,100%
 0x090a0,60,код B,I2C1-транзакция: проверка *(u32@RAM[0xB60])!=0; адрес из *(u32@RAM[0xB64]); 0x1c08/0x1bd8/0x1c08(1),§49,разобран,100%
-0x09134,668,код B,,,не начат,0%
+0x09134,668,код B,"**config-gated register-read dispatcher**: гейты: byte[RAM+0x15F7+3] bit2 (§52 flag-структ), byte[RAM+0xF95+0xC] bit4 и др.; bl **0x1bdc ×5** (I2C2 register read §49); pool: RAM+0x15F7/+0xF95/+0x8C/+0xA42/+0xA3E/+0xFBB/+0xFC7 (threshold §52)/+0x107",§53,разобран,100%
 0x09482,12,код B,последовательность: 0x9134 + 0x9480,§48,ID,25%
 0x09678,86,код B,"флаг-хендлер: bit1(@0xB65); счётчик @0xB73 (кап 3) → clear bit1(@0xB65), byte@0xB64 &= ~0xF0",§50,разобран,100%
 0x096dc,52,код B,вызов callback из структуры @0xDD8+0x114 (дефолт 0x11a4),§49,разобран,100%
@@ -369,7 +369,7 @@
 0x0cee0,68,код B,"I2C read: {code16, len=2} → 0x1e72(dev 0x3E) — чтение регистра чипа I2C2",§50,разобран,100%
 0x0cf60,84,код B,"**NVRAM verify @0x305C**: 0x8380(&buf, 0x28); CRC-16(0x26) == u16@+0x26 → u16@+0x24=1",§50,разобран,100%
 0x0cfb8,78,код B,"**транзакция + CRC-16 check**: 0x8380(&@0x304C, 0x2000, 0x10) ×2 (с delay); 0x8a50 == u32@+0xC",§50,разобран,100%
-0x0d00c,534,код B,,,не начат,0%
+0x0d00c,534,код B,"**telemetry frame builder + OTA logger step**: sub sp,#0x6c; цикл: **0xab0c**(sp+0x3C) (fetch/retry §51/52) до ==1 (счётчик r7); 48B-кадр в sp+0x3C; bl 0x8a50 ×6 (checksum §51), **0x8a90** (ADC §50.7), 0x11a4 ×2, **0xaccc ×2** (§52 OTA metadata logger!), 0xabf0, 0xad9c; pool: RAM+0x11C/+0xF64/+0x98 (ADC-структ §52)/+0xF70/+0xF95/+0xFBB/+0xFC7",§53,разобран,100%
 0x0d240,82,код B,"**EEPROM read+verify @0xC9C**: 0x8380(&buf, 0x30000, 8); CRC-16(4B) == u32@+4; вызов из 0xc420",§50,разобран,100%
 0x0d298,46,код B,poll 0xcfb8 с задержкой 0x1F4; затем *(u32@*(u32@RAM[0x304C])) != 0,§49,разобран,100%
 0x0d33c,84,код B,"счётчик @0xA67 (кап 5) → I2C read (0x1c60, 8B из @0x15F7); bit0/bit2(byte@+0x54) → byte@0xF70+1 bits 0/1",§50,разобран,100%
@@ -389,7 +389,7 @@
 0x0d824,36,код B,clear bit0xA u32@0x8C если 0xd46c(0xA)==1,§49,разобран,100%
 0x0d850,36,код B,clear bit0x12 u32@0x8C если 0xd39c(0x12)==1,§49,разобран,100%
 0x0d878,190,код B,"I2C2 telemetry read: 0x8a90(sp) → {u32,u16,b,b}; 0x87f8(sp+8,7) → [sp+0xF]; 0x82f0(0x50000)+delay; 0x82f0(0x51000)+delay; цикл ×3: delay + 0x84a0(sp+8,0x50000,8); цикл ×3: 0x84a0(sp+8,0x51000,8)",§51,разобран,100%
-0x0d938,970,код B,,,не начат,0%
+0x0d938,970,код B,"**telemetry-флагпакер + отправка**: arg0 = u16 type (0/8/9) → u16[pool]; type==0 → 0x11a4(0x28, ptr); type 8/9: u16[type_ptr]=arg0, **0x8a90**(sp) (ADC-read §50.7 → {u32,u16,byte} в sp), копия в out-структ (+0..+6, +7..+0x1C из ~12 RAM-структов pool); **bit-scatter**: ~30 отдельных битов из байтов struct'ов (offsets +0x2/+0x3/+0x6/+0x8/+0x9/+0xC/+0x10/+0x17) → u32 packed flags → u32[out+0x20]; u16[out+0x24/0x26]=0; **0x8a50**(out, 0x26) (checksum §51) → u16[out+0x26]; **bl 0x157e0** (§52 I2C2 NVRAM page reader — шаг пайплайна)",§53,разобран,100%
 0x0dd2c,84,код B,"**clamp-умножение**: q = clamp((r3-r0)/r1, 0, r2) с округлением; return r1*q + r0",§50,разобран,100%
 0x0ddc4,58,код B,**OTA-команда от хоста**: u16@0x124E+0x12==0xE0 && +0x14==0x5AA5 → erase @0x1D800 + 0xdd80; ==0xE2 → 0xdd80 (магия 0x5AA5),§49,разобран,100%
 0x0de0a,196,код B,"frame builder: r6=byte[sp+0x21] (varargs); copy 0x10B из RAM+0x1222; u32@RAM[0x9B8] → 4B big-endian [sp+0xC..0xF]; 0x1ac8(sp,0x10) encode; далее блок @RAM+0xFE7",§51,разобран,100%
@@ -408,7 +408,7 @@
 0x0e6ec,18,код B,if byte@RAM[0x13C9]==1 → bl 0xf14c (не function-pointer; эмуляторно подтверждено §50.7),§49/§50.7,разобран,100%
 0x0e704,54,код B,**clamp |v|≤0xC8**: иначе обнулить byte@0x12BA+0x56; вызов 0x1654c; вызов из 0x07A30 (§41 slot-3),§49,разобран,100%
 0x0e740,190,код B,"drift detector: byte[r5]=0; A=u16[RAM+0x13AB] (0x16504) vs ref u16[RAM+0x130A]: devA=max(0,|A−ref|); B=s16[RAM+0x13A4] (0x164f8) vs ref s16[RAM+0x1302]: devB=clamp(B−ref,±0x8000); если devA≥500 || devB>500 → byte[r5]=1 + refs := текущие значения (адаптивный базлайн)",§51/§51.1,разобран,100%
-0x0e808,592,код B,,,не начат,0%
+0x0e808,592,код B,"**BLE session interpolation consumer**: args (r7, sl); гейт u32[RAM+0x12BA+0x40]==0x1F4 (иначе reset → 0 и return r1); u16[+0x4C]; bl: 0x1654c ×many (u64 §50), 0x17094 ×2, 0x16328, 0x16570 ×2, 0x169f0, **0x167b6** (§51 интерполятор), **0x161c6**; pool: RAM+0x12BA, 0x80000F3C (?), flash @0x1A49A",§53,разобран,100%
 0x0ea64,504,код B,"**BLE-сессия clamp-хендлер**: 0x8d90() (fixed-address getter §50.7) ×неск.; сравнение со [arg0] (порог): отрицательное значение → clamp до max(−0x80000000, ...), положительное → min; структура RAM+0x128B/0x12BA (пара сессий §52); bl 0x8d90/0x10e5c/0x1654c",§52,разобран,100%
 0x0ec70,352,код B,"**BLE session state reset**: u32[[flash 0x1A538]] = 0 (NVRAM-зона §49); 0x11d6(RAM+0x128B, 0x2F) + 0x11d6(RAM+0x12BA, 0x8A) — init session-структур; 0x10ff8(0); 0xe3e4(sp) (memset §50.7.1); обнуление полей обеих структур; bl-семья 0x10fa4..0x1101c (мелкие setters)",§52,разобран,100%
 0x0eddc,98,код B,"**верификация @0x304C**: range-check'и (0x1F4/0x21000/flash 0x25E20); сбой → reset {0, 0x21000, 0x21000} + 0x1570c",§50,разобран,100%
@@ -422,8 +422,8 @@
 0x0f36c,80,код B,"порог #3: i8@0xFC7+8 ∈ [-0x1E, 0x64]; счётчик @0xA36 (кап 0x32); toggle bit3(@0xFC7+9)",§50,разобран,100%
 0x0f40c,116,код B,порог #5: |u16@0xF95+8 - u16@0xF95+6| ≥ flash 0x19D8E+0x12 && u16@0xF95+6 ≤ 0xC1C; счётчик @0xA2A (кап +0x16); toggle bit4(@0xF70+2),§50,разобран,100%
 0x0f5c4,102,код B,"порог #4: i8@0x44 и i8@0x44+1 ∈ [-0x1E, 0x64]; счётчик @0xA3A (кап 0x32); toggle bit6(@0xFC7+6)",§50,разобран,100%
-0x0f694,746,код B,,,не начат,0%
-0x0f994,564,код B,,,не начат,0%
+0x0f694,746,код B,"**voltage-table scanner/dispatcher (без push)**: r0=0..0xA (11 кейсов) по u16[RAM+0xF10 + i*2] (таблица напряжений §52: 13×u16, reset 0x8bec); сравнение с u16[RAM+0xF95+4]−0x320; pool: RAM+0xF10/+0xF95/+0x1264/+0x127E/+0x1271",§53,разобран,100%
+0x0f994,564,код B,"**flash-calibration flag dispatcher (без push)**: гейты byte[RAM+0x80], byte[RAM+0xFBB+8]&1; u32[RAM+0xA00+4] vs [0]; flash-таблица @0x19DE4 (рядом с калибровкой §52 @0x19DAA); pool: RAM+0x80/+0xFBB/+0xA00..+0xA0C (u16-массив)/+0xF95/+0x107",§53,разобран,100%
 0x0fbf8,190,код B,"threshold counter #1: gate mode RAM[0x80]==2; bit0[RAM+0xF95+C]; u16[RAM+0xF95+8] vs flash@0x19DAA{+0,+4}: счётчик u16@RAM[0x9E0]++ (reset при выходе, flag set при превышении); 2-я часть vs {+2,+6} → RAM[0x9E2]",§51,разобран,100%
 0x0fcd0,194,код B,"threshold counter #2: gate mode RAM[0x80] ∈ {1,2}; bit3[RAM+0xF95+C]; u16[RAM+0xF95+6] vs flash@0x19DAA{+0xE,+0x12} → счётчик RAM[0x9FC]; 2-я часть vs {+0x10,+0x14} → RAM[0x9FE]",§51,разобран,100%
 0x0fdac,174,код B,"PB15 latch #1 (debounce-гистерезис): часть 1 (ON): mode@RAM[0x80]==0 && !bit0[RAM+0xFC7+6] && v=i8[RAM+0xFC7+2]≥lo(i8@F+0=1) && cnt_new≥N(u16@F+1=5264) → GPIOB_ODR|=0x8000, bit0=1, cnt=0 (v<lo → cnt=0); часть 2 (OFF, любой mode): bit0 && v≤hi(i8@F+3=70) && cnt2_new≥M(u16@F+4=17936) → GPIOB_BRR|=0x8000, bit0=0, cnt2=0 (v>hi → cnt2=0); счётчики u16@RAM[0x9F4]/[0x9F6] (§51.2 эмуляторно)",§51/§51.2,разобран,100%
@@ -538,7 +538,7 @@
 0x163b4,76,код G,"GPIOA → RCC BDCR |= 4 (0xc6a4(4, 1))",§50,разобран,100%
 0x16410,94,код G,**checksum + divisibility**: sum(r1 байт) + r5 + (r3%4==0 && (r3%100==0 || r3%400==0)); вызов из 0x1647c,§50,разобран,100%
 0x1647c,86,код G,"**табличный offset**: r4 ∈ [0xBB8, 0x7D0) → условие; иначе r5 ∈ [1,0xC], r6 ∈ [1,0x1F], r7 ≤ 0x17 → 0x16410 + (res-1)*24 + r7",§50,разобран,100%
-0x16588,558,код G,,,не начат,0%
+0x16588,558,код G,"**3D-трилинейная интерполяция на плоской u16-сетке**: args ({ix,iy,iz}, {sx,sy,sz} Q16, grid_u16*, {1,syy,szz}); base=ix+syy·iy+szz·iz; 5 шагов _interp16 (unsigned cmp соседей, delta×Q16>>16, u16): x-сосед (stride 1) ×2 слоя, y-merge, z-merge; **эмуляторно верифицировано** (батч 7); twin 2D: 0x16bd4/0x16d8e (§52); callers: 0xe2fc (мульти-интерполяция §50) ← 0x69e4",§53,разобран,100%
 0x167b6,202,код G,"piecewise linear interpolation Q8: args (value, xtab_u16, ytab_u8, last_idx=n−1); binary search в s16 x-таблице; slope=((v−x0)<<8)/dx (udiv, точный floor); y=(y0 ± dy*slope>>8)&0xFF (обе ветки); v≥xs[last] → slope=0x100 (Q8 1.0) → полный шаг к ys[n−1] (§51.2 эмуляторно)",§51/§51.2,разобран,100%
 0x16880,184,код G,"piecewise linear interpolation Q31: args (value, xtab_u16, ytab_u32, last_idx=n−1); binary search в s16 x-таблице; slope=0x161ea((v−x0)<<16, dx, 0xF)≈(v−x0)/dx<<31; ветка по SIGNED cmp ys[r4] vs ys[r4+1] (bgt), delta wrapped u32: result = A ± (delta*slope)>>31 (обе ветки интерполируют); v≥xs[last] → sentinel 0x80000000 (Q31 1.0) → полный шаг к ys[n−1]; caller: 0xe170 (§51.2 эмуляторно)",§51/§51.2,разобран,100%
 0x16938,184,код G,"interpolation #2: twin 0x16880, НО ветка по UNSIGNED cmp (bhi вместо bgt) — иначе та же Q31-семантика; вызов из 0xe200 (§51.2 эмуляторно)",§51/§51.2,разобран,100%
@@ -611,8 +611,8 @@
 0x1c234,228,код I,"throttle ADC processing: byte@RAM[0x33A]==1 → reset RAM[0x262/0x263], u16@RAM[0x21E]; else v=byte@RAM[0x234]<<15; 0x19968(v,0x64) (u64 helper); u32[RAM+0x3C8+0x54]=r0; u16[RAM+0x260]=r0*0x2D0>>16 (Q16); state machine byte[RAM+0x3C8+9]: {0: flags RAM[0x262/0x263], u32[RAM+0x448/0x44C]=[RAM+0x1E0/0x1E4], u16[RAM+0x21E]|=4; 1: ..}",§51,разобран,100%
 0x1c34c,1244,код I,,,не начат,0%
 0x1c838,1466,код I,калибровка/секвенсор: @0xF400/+4 → @0x1e8/@0x1ec,§25,разобран,100%
-0x1ce38,522,код I,,,не начат,0%
-0x1d078,610,код I,state-машина режимов (byte@0x229: 2/3/0x0B) — адрес приблизительный,§34.2,частично,50%
+0x1ce38,522,код I,"**TIM1 CCR4 (мотор) state handler**: byte[RAM+0x169A] = state (0/1/other → dispatch); bl **0x21b52** (field writer §52); pool: RAM+0x26A/+0x169A/+0x218, **0x40012C40 (TIM1 CCR4, моторный кластер §41)**, RAM+0x1768 (тот же struct что 0x1d078), RAM+0x31A/+0x3C8/+0x268/+0x26E/+0x216, константы −0x2710 (−10000), **0xBB8 (3000)**, **0x1770 (6000)**",§53,разобран,100%
+0x1d078,610,код I,"state-машина режимов (byte@0x229: 2/3/0x0B) — адрес приблизительный; **timer capture/period handler (код I)**: u32[RAM+0x154+4]+byte[RAM+0x100] → **0x1d874** (timer helper); strh r0, [RAM+0x1768]; u32[RAM+0x1768+0xC] + s16[+0x10]; bl 0x19994 (Q20-кластер §52); pool: RAM+0x154/+0x100/+0x1768/+0x236/+0x339/+0x326/+0x229/+0x333/+0x320/+0x3C8/+0x244/+0x1D0/+0x263/+0x224","§34.2, §53",разобран,100%
 0x1d330,142,код I,"duty/throttle shaping: v=i16[RAM+0x1794+0xC] — ВСЕ сравнения UNSIGNED (v&0xFFFF)!; vu>580: u16[RAM+0x220]|=2, state=0; vu<196: |=4, state=0; [196,400): state=max(0,state−100), 0→|=4; >431: &=~4, state=min(0x7FF8,state+1000); clamp state [0,0x7FF8]; byte[RAM+0x3C8+0x10]=4 (§51.2 эмуляторно)",§51/§51.2,разобран,100%
 0x1d3d0,588,код I,хвост ADC ISR: → TX → SWSTART,§22.6,разобран,100%
 0x1d640,348,код I,"**TIM init (моторный таймер-кластер @0x40012C00)**: строит descriptor'ы на стеке; 0x22000(base_code, mask, &desc) ×8 (base ∈ {0x120000, 0x480004xx}, mask = бит-канал); 0x19a9a(sp, 0x3C) — memset; struct {0x40012C00, mode=3, 0x8CA, 0, 0} → 0x22b00 + 0x22a48 (TIM1-регион §50); константы 0x8CA (2250) / 0x45B (1115) = периоды/CCR; bl 0x23040/0x22c70 (§51 DIER)/0x23544",§52,разобран,100%
@@ -656,10 +656,10 @@
 0x221a4,66,код I,критсекция + атомарный u32-инкремент с валидацией (0x23688/0x235d4),§50,разобран,100%
 0x221e6,78,код I,критсекция + insert в список (0x2360c); только если r4>>30==0,§50,разобран,100%
 0x22234,58,код I,TIM-инициал: toggle RCC_CTLR bit0x10 с задержками 0x22a0c,§49,разобран,100%
-0x22274,790,код I,,,не начат,0%
+0x22274,790,код I,"**clock-governor (системная частота + FLASH ACR)**: arg0 = {u32 value@+0 (**assert ≠0**, cpsid i), byte mode@+4, u16 code1@+6, u16 code2@+8, byte m@+0x20}; старт: u32[FLASH+0x10]=3 (ACR); чтение signed-nibble полей из RCC: AHBPRESC [16:19] и [2:0]/[8:11], APB1PRESC [4:7]/[12:15]; Q20-цепь 0x19968/0x19ff4/0x19f7c → ядро **0x19c58** (§52) → целевая частота; запись: u32[RAM+8]=freq/2, u32[RAM+0]=выбранная цель по AHBPRESC[2:0] (0/1→4e6, 2→вычисл., 3→48e6), u32[RAM+4]=копия, u32[RAM+0xC]=APB-производная (AHBPRESC>>4); RCC+0x0C[15:8] ← f(1e6); AHBPRESC: bits[11:8]←0x8 (mask 0x0F00), bits[2:0]←mode; code1 ∈ {0,8,9,5,11,3,13,7,15}<<8 → OR в AHBPRESC (иначе assert), code2 ∈ {0,7,2,3,4}<<12 → замена bits[12:15]; **FLASH ACR по порогам частоты**: >72 999 999 → |=3, >48 999 999 → +2, >24 999 999 → +1; busy-delay 0x22934(&{FLASH,0,1,1})+0x229d4(1); bl 0x21c18(3) → return 0; **методич. пометка §53**: capstone с нечётным стартом (off|1) сдвигает ВСЕ адреса и bl-цели на +1 — истинные цели = label−1; mcu_annot.py (чётный старт) корректен",§53,разобран,100%
 0x225c4,18,код I,set/clear битов RCC_CTLR (+0x0),§49,разобран,100%
 0x225dc,18,код I,set/clear битов RCC+0x60 (расширенный регистр),§49,разобран,100%
-0x225f4,556,код I,,,не начат,0%
+0x225f4,556,код I,"**PLL/clock-switching state machine**: arg0 = request-структ или NULL; byte@+0xC = **маска фаз** (bit0/1/2); старт (arg0≠NULL): byte@+0x15 ∈ {0,1} (иначе assert), 0x225c4(bit 0 RCC+0, val) по AHBPRESC[2:0] и [20:23]; фаза bit0: byte@+0x14 ∈ {0,0x10,0x50} (иначе assert), 0x225c4(0x10/0x40) + **bounded wait** (tick u32[RAM+0x2C] через 0x21c0c, timeout 0xA → return 3); фаза bit1: u32@+0x1C ∈ {0,0x1000} (иначе assert), 0x225c4(0x100) + wait; фаза bit2: u16@+0x10 ∈ {0,0x100} (иначе assert), 0x225c4(0x1000) + wait; финал: u16@+0x16: 0 → u32[RCC+0x40] &= ~0x400, 0x225dc(0x100,0), spin до сброса bit8 RCC+0x60; 0x500 → |=0x400, 0x225dc(0x100,1), spin до установки bit8; иначе → 0x225dc(0x100,1)+spin; byte@+0x18: 0 → 0x225dc(1,0)+spin до сброса bit31, иначе 0x225dc(1,1)+spin до установки bit31; return 1 (успех) / 3 (timeout)",§53,разобран,100%
 0x22824,240,код I,u64 helper: 0x19968 ×2 + 0x19a1c — составной u64-расчёт,§51,разобран,100%
 0x22934,76,код I,**SysTick init из struct**: r5 = u32@r4[0] (÷8 если byte@+8==0); lookup 0x19968 ×3 (0x3E8/0x2710/0x186A0) → @0x1C; SysTick LOAD/VAL/CTRL из r4 (CTRL = (byte@+8)<<2 | byte@+9),§50,разобран,100%
 0x229d4,44,код I,busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; ждём rotl8(CVR)<порога; CVR := 0xFFFFFF,§49/§50.7.3,разобран,100%
