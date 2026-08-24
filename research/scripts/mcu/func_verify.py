@@ -51,6 +51,10 @@ class Run:
         # периферия/SYS — нули (чистые функции к ним не обращаются;
         # если обращение и есть — стоп по лимиту, тест упадёт с ошибкой)
         self._stop_hook = None
+        # §57: последняя ошибка исполнения (None = чистый возврат).
+        # ВАЖНО: call() раньше молча глотал UcError — fault выглядел как
+        # «чистый возврат» со мусором в r0 (ловушка для верификации).
+        self.last_error = None
 
     def call(self, off, args=(), max_insn=50000):
         """вызвать функцию (Thumb), вернуть (r0, r1) на момент возврата"""
@@ -70,10 +74,11 @@ class Run:
                     FLASH1 <= addr < FLASH1 + FW_LEN):
                 uc_.emu_stop()
         self._stop_hook = uc.hook_add(UC_HOOK_CODE, stop)
+        self.last_error = None
         try:
             uc.emu_start(off | 1, 0, count=max_insn)
-        except UcError:
-            pass
+        except UcError as e:
+            self.last_error = str(e)[:80]
         uc.hook_del(self._stop_hook)
         return (uc.reg_read(UC_ARM_REG_R0) & M32, uc.reg_read(UC_ARM_REG_R1) & M32)
 
@@ -2005,6 +2010,59 @@ def _(run, rng):
         assert r0 == (sv * 10) & M32 and out == sv * 10, \
             f'cfg={v}: r0={r0:#x}, out={out}'
 
+
+@t(0xE658, '§57: round-robin диспетчер BLE-задач: гейты byte[0x35]≤2 && byte[0xA49]==1; bl 0x6618; dispatch по counter byte[0xA62] (mod 10) → 6 задач + 4 пустых')
+def _(run, rng):
+    uc = run.uc
+    tasks = {0: 0x6E50, 1: 0x63B8, 2: 0x799C, 3: 0x7A30, 4: 0x69E4, 5: 0x6838}
+    # --- гейты закрыты → ранний возврат, counter не тронут
+    for b35 in (3, 5):
+        run.ram_write(0x35, bytes([b35]))
+        run.ram_write(0xA49, b'\x01')
+        run.ram_write(0xA62, b'\x05')
+        run.call(0xE658, [])
+        assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'гейт 0x35 не сработал'
+    run.ram_write(0x35, b'\x00')
+    run.ram_write(0xA49, b'\x00')
+    run.ram_write(0xA62, b'\x05')
+    run.call(0xE658, [])
+    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'гейт 0xA49 не сработал'
+    # --- гейты открыты: dispatch по counter (останавливаемся на входе в task)
+    from unicorn import UC_HOOK_CODE
+    for cnt in range(10):
+        run.ram_write(0x35, b'\x00')
+        run.ram_write(0xA49, b'\x01')
+        run.ram_write(0xA62, bytes([cnt]))
+        hit = []
+        def stopper(uc_, a, s, u_):
+            a &= ~1
+            if any(t <= a < t + 0x40 for t in tasks.values()):
+                hit.append(a)
+                uc_.emu_stop()
+            elif 0xE6C4 <= a < 0xE6DE:   # хвост (пустой слот) — тоже стоп
+                uc_.emu_stop()
+        hook = uc.hook_add(UC_HOOK_CODE, stopper)
+        run.emu.insn = 0
+        uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)   # валидный LR: пустые слоты доходят до pop {r4,pc}
+        try:
+            uc.emu_start(0xE659, 0, count=200000)
+        except UcError as e:
+            raise AssertionError(f'fault при dispatch cnt={cnt}: {e}')
+        uc.hook_del(hook)
+        exp = tasks.get(cnt)
+        if exp is None:
+            assert not hit, f'cnt={cnt}: ожидался пустой слот, вызван task'
+        else:
+            assert hit and (exp <= hit[0] < exp + 0x40), \
+                f'cnt={cnt}: ожидался task {exp:#06x}, факт {hit and hex(hit[0])}'
+    # --- counter инкремент + wrap (пустой слот cnt=9 → 0)
+    run.ram_write(0xA62, b'\x09')
+    run.call(0xE658, [], max_insn=200000)
+    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 0, 'counter не обнулился после 9'
+    # восстановление чистого состояния для следующих тестов
+    run.ram_write(0x35, b'\x00')
+    run.ram_write(0xA49, b'\x00')
+    run.ram_write(0xA62, b'\x00')
 
 @t(0x16BD4, '§56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash)')
 def _(run, rng):
