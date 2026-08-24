@@ -612,6 +612,10 @@ def parse_readme(path, has_vaddr):
         out.append((off, size, region))
     return out
 
+def esc(s):
+    """экранируем пайпы в ячейках markdown-таблицы (иначе колонки сдвигаются)"""
+    return s.replace('|', '\\|')
+
 def attach_catalog(funcs, catalog):
     """funcs: [(off, size, region)] → dict off → (имя|None, разделы|None, статус|None)"""
     att = {}
@@ -682,7 +686,7 @@ def write_mcu(path):
     for off, size, region in funcs:
         name, secs, st = att[off]
         if st:
-            A(f"| [`0x{off:05x}`](functions_mcu/func_0x{off:05x}.md) | {size} | {region} | {name} | {secs} | {st} | {PCT[st]}% |")
+            A(f"| [`0x{off:05x}`](functions_mcu/func_0x{off:05x}.md) | {size} | {region} | {esc(name)} | {esc(secs)} | {st} | {PCT[st]}% |")
         else:
             A(f"| [`0x{off:05x}`](functions_mcu/func_0x{off:05x}.md) | {size} | {region} | — | — | не начат | 0% |")
     A("")
@@ -725,7 +729,7 @@ def write_ble(path):
     A("| region | размер | статус | примечание |")
     A("|---|---|---|---|")
     for s, e, name, st, note in BLE_REGIONS:
-        A(f"| `{s:#06x}..{e:#06x}` | {e-s} Б ({100.0*(e-s)/BLE_TOTAL:.1f}%) | {st} | {note} |")
+        A(f"| `{s:#06x}..{e:#06x}` | {e-s} Б ({100.0*(e-s)/BLE_TOTAL:.1f}%) | {st} | {esc(note)} |")
     enc = sum(e - s for s, e, _, st, _ in BLE_REGIONS if st == 'шифр')
     plain_code = sum(e - s for s, e, _, st, _ in BLE_REGIONS if st == 'не начат')
     done = sum(e - s for s, e, _, st, _ in BLE_REGIONS if st == 'разобран')
@@ -747,7 +751,7 @@ def write_ble(path):
     A("| offset | vaddr | размер | регион | статус | % |")
     A("|---|---|---|---|---|---|")
     for off, size, region in funcs:
-        A(f"| [`0x{off:05x}`](functions_ble/func_0x{off:05x}.md) | `0x{0x01800000+off:08x}` | {size} | {region} | не начат | 0% |")
+        A(f"| [`0x{off:05x}`](functions_ble/func_0x{off:05x}.md) | `0x{0x01800000+off:08x}` | {size} | {esc(region)} | не начат | 0% |")
     A("")
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(L))
