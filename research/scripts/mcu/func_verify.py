@@ -133,6 +133,13 @@ def ref_scale_123e(lo, hi, r2):
     return P & M32, hp              # верхнее слово не меняется
 
 
+def ref_161ea(num, den, n):
+    """0x161ea(num, den, n) = floor((num/den) × 2^n) — точное фикс-деление (§52.1 эмуляторно)."""
+    if den == 0:
+        return 0
+    return (num * (1 << n)) // den & M32
+
+
 def ref_seg_interp_unsigned(A, B, slope):
     """сегмент 0x16938: ветка по UNSIGNED сравнению A vs B (bhi)"""
     if A > B:
@@ -317,6 +324,15 @@ def t(off, desc):
 
 
 # --- u64-сдвиги (кластер, скорректирован в §50.6) ---
+
+@t(0x161EA, 'фикс-деление: floor((r0/r1) × 2^r2)')
+def _(run, rng):
+    num = rng.getrandbits(32)
+    den = rng.getrandbits(32) or 1
+    n = rng.choice([8, 15, 16, 20, 31])
+    r0, _ = run.call(0x161EA, (num, den, n), max_insn=20000)
+    assert r0 == ref_161ea(num, den, n), f'({num:#x},{den:#x},{n}) → {r0:#x}'
+
 
 @t(0x126C, 'u64 LSR (r1:r0) >> r2')
 def _(run, rng):
@@ -1590,6 +1606,96 @@ def _(run, rng):
     r0, _ = run.call(0x16938, (value & M32, RAM + base,
                                RAM + base + 0x100, n - 1), max_insn=5000)
     assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
+
+
+@t(0x16BD4, '2D-билинейная интерполяция u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride)')
+def _(run, rng):
+    n1 = rng.randint(2, 6)
+    n2 = rng.randint(2, 5)
+    xtab1 = sorted(rng.sample(range(-300, 300), n1))
+    ystruct = sorted(rng.getrandbits(31) for _ in range(n2))   # u32, без бит31
+    stride = rng.randint(4, 8)
+    grid = [rng.getrandbits(16) for _ in range((n2 + 1) * stride + 1)]
+    base = 0x700
+    run.ram_write(base, struct.pack(f'<{n1}h', *xtab1))          # xtab1
+    yst = base + 0x80
+    run.ram_write(yst, struct.pack(f'<{n2}I', *ystruct))         # ystruct (flat)
+    hdr = base + 0x180
+    run.ram_write(hdr, struct.pack('<II', n1 - 1, n2 - 1))       # {count1, count2}
+    grd = base + 0x200
+    run.ram_write(grd, struct.pack(f'<{len(grid)}H', *grid))     # ygrid
+    # caller-стек: SP call = STACK_TOP − 0x200; слоты [SP+0]=ygrid, +4=hdr, +8=stride
+    csp = STACK_TOP - 0x200
+    run.ram_write(csp - RAM, struct.pack('<3I',
+                   RAM + grd, RAM + hdr, stride))
+    case = rng.getrandbits(2)
+    if case == 0:
+        v1 = xtab1[rng.randint(0, n1 - 1)]
+        v2 = ystruct[rng.randint(0, n2 - 1)]
+    else:
+        k1 = rng.randint(0, n1 - 2)
+        while (xtab1[k1 + 1] - xtab1[k1]) % 2:
+            xtab1 = sorted(rng.sample(range(-300, 300), n1))
+            k1 = rng.randint(0, n1 - 2)
+            run.ram_write(base, struct.pack(f'<{n1}h', *xtab1))
+        v1 = (xtab1[k1] + xtab1[k1 + 1]) // 2
+        k2 = rng.randint(0, n2 - 2)
+        while (ystruct[k2 + 1] - ystruct[k2]) % 2:
+            ystruct = sorted(rng.getrandbits(31) for _ in range(n2))
+            k2 = rng.randint(0, n2 - 2)
+            run.ram_write(yst, struct.pack(f'<{n2}I', *ystruct))
+        v2 = (ystruct[k2] + ystruct[k2 + 1]) // 2
+    # референс
+    def seg(u16_a, u16_b, slope):
+        if u16_a > u16_b:                       # unsigned bgt → descending
+            return (u16_a - (((u16_a - u16_b) * slope) >> 16)) & 0xFFFF
+        return (u16_a + (((u16_b - u16_a) * slope) >> 16)) & 0xFFFF
+    if v1 <= xtab1[0]:
+        idx1, s1 = 0, 0
+    elif v1 >= xtab1[n1 - 1]:
+        idx1, s1 = n1 - 2, 0x10000
+    else:
+        idx1 = max(i for i in range(n1) if xtab1[i] <= v1)
+        dx = (xtab1[idx1 + 1] - xtab1[idx1]) & 0xFFFF
+        s1 = (((v1 - xtab1[idx1]) << 16) // dx) & M32
+    if v2 <= ystruct[0]:
+        idx2, s2 = 0, 0
+    elif v2 >= ystruct[n2 - 1]:
+        idx2, s2 = n2 - 2, 0x10000
+    else:
+        idx2 = max(i for i in range(n2) if ystruct[i] <= v2)
+        s2 = ref_161ea((v2 - ystruct[idx2]) & M32,
+                       (ystruct[idx2 + 1] - ystruct[idx2]) & M32, 16)
+    # примечание: s2 — unsigned udiv-результат (0x161ea с положительными аргументами)
+    iA = idx2 * stride + idx1
+    yA = seg(grid[iA], grid[iA + 1], s1)
+    yB = seg(grid[iA + stride], grid[iA + stride + 1], s1)
+    if yB >= yA:
+        exp = (yA + (((yB - yA) * s2) >> 16)) & 0xFFFF
+    else:
+        exp = (yA - (((yA - yB) * s2) >> 16)) & 0xFFFF
+    # ручной call (Run.call ставит SP=STACK_TOP — не хватает места на caller-слоты)
+    uc = run.uc
+    from unicorn import UC_HOOK_CODE, UcError
+    from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
+                                   UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_LR)
+    uc.reg_write(UC_ARM_REG_R0, v1 & M32)
+    uc.reg_write(UC_ARM_REG_R1, v2 & M32)
+    uc.reg_write(UC_ARM_REG_R2, RAM + base)
+    uc.reg_write(UC_ARM_REG_R3, RAM + yst)
+    uc.reg_write(UC_ARM_REG_SP, csp)
+    uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+    run.emu.insn = 0
+    stop_h = uc.hook_add(UC_HOOK_CODE, lambda u, a, s, usr: u.emu_stop()
+                         if not (FLASH0 <= a < FLASH0 + FW_LEN or
+                                 FLASH1 <= a < FLASH1 + FW_LEN) else None)
+    try:
+        uc.emu_start(0x16BD4 | 1, 0, count=5000)
+    except UcError:
+        pass
+    uc.hook_del(stop_h)
+    r0 = uc.reg_read(UC_ARM_REG_R0) & M32
+    assert r0 == exp, f'case={case} v1={v1} v2={v2}: {r0:#x} ≠ {exp:#x}'
 
 
 # --- duty/throttle shaping (чистый RAM) ---

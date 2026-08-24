@@ -4707,3 +4707,94 @@ delay 1.5M + init-цепь, финал 0x8468/0x2a94), `0xc368` (BLE RX dispatch
   0x80000000 = «1.0 в Q31» (не «½») — проверять исполнением.
 - `cpsid i` как assert-паттерн (infinite loop на невалидных аргументах)
   впервые зафиксирован в `0x22c70`.
+
+
+## §52. Полка 257–512 Б: 38 функций / 13 026 Б — 100% классифицировано (2026-08-24)
+
+После §51 все полки ≤256 Б закрыты. Полка **257–512 Б**: **38 функций /
+13 026 Б** (4 функции были уже частично: 0x23188 разобран, 0x21ca8 ID,
+0x1dfd8/0x23374 частично — остаются). Все 38 разобраны, каталог в
+`gen_maps.py` (раздел «§52»). Карта MCU: **62.9% → 76.2%** (+13.3 pp).
+
+### Главные находки полки
+
+**2D-интерполяция (калибровочные сетки):** `0x16bd4` — **билинейная
+интерполяция на u16-сетке** (stride из caller-стека, Q16-наклоны; part1:
+прямой udiv, part2: 0x161ea); `0x16d8e` — twin с u32-таблицами и Q8.
+Семантика 0x16bd4 **эмуляторно верифицирована** (§52.1). Caller 0x69e4:
+сетка в flash @0x19F60 (xtab1@+0xBC, ystruct@−0xAC, grid@+0x550, stride=5) —
+классическая двухфакторная компенсация (напр. напряжение × температура).
+
+**u64 Q20-арифметика моторной цепи:** `0x19c58` + twin `0x1346` —
+фиксированная арифметика с 20-битной дробной частью (dfrac, порог 0x40),
+ядро через u64 LSL/ASR-кластер (0x1a080/0x1a0c2/0x1a16a/0x1a184) или
+0x14e8/0x1506/0x12aa; callers: 0x22274 (мотор) и 0x16040 (u64↔double §51).
+
+**NVRAM-зоны I2C2 (page-reader'ы):** `0x14802` (@RAM+0x30CF: 32B-страницы,
+окно регистров 0x41000..0x45000, counter max 0x200, медленный scan regA +=
+0x1000) и `0x157e0` (@RAM+0x304C/0x305C: 40B-страницы прямо в RAM, окно
+0x21000..0x25E20, counter max 0x1F4) — оба: read-регистра 0x82f0 + retry×3
+(0x84a0) + CRC-верификация (0x147ac/0x1570c §50). **Внешний чип на I2C2
+имеет memory-mapped EEPROM-регионы** (уточнение B-задачи §49).
+
+**I2C-инфраструктура:** `0xb302` — **bus recovery: 9 тактов SCL-toggle**
+(стандартная разблокировка зависшей шины) через GPIO-конфиг `0x85c8`;
+`0x119e4` — **block-manager @RAM+0x1FD4 с 2KB-буфером** (валидация len/align,
+copy, read 0x84a0, обработка 0x8380+0x3b82, результаты в u16-таблицы
+@RAM+0xC06/@0xB8E); `0x85c8` — **descriptor-driven GPIO configurator**
+(MODER_L/H, CRL/CRH-подобные 2-бит поля, AFR, ODR, PUPDR + AFIO/EXTI).
+
+**BLE-сессии (пара структур RAM+0x128B/0x12BA):** `0x6ccc` — state machine
+(state@+0x63: 0→1→2→3, timeout 43200 тиков; при handshake → **0xe200** —
+caller интерполятора 0x16938 §51); twin'ы `0x6e50`/`0x6838`; `0xea64` —
+clamp-хендлер (±0x80000000); `0xec70` — **session reset** (обнуление обеих
+структур + u32[[flash 0x1A538]]=0).
+
+**Системные:** `0x110fc` — **power/shutdown state machine** (NVRAM-save
+0x5c9c при byte[0x37]==2, boot-счётчики u32@RAM+0x8/0xC, timeout 700 тиков,
+SCB sleep/reset); `0xacce` — **OTA metadata circular logger**: 8 слотов ×8B
+в flash @0x1F000/0x1F800, 56B-записи с magic 0xAA + **CRC-16/CCITT**,
+wear-counter byte@RAM+0x7C (erase при >3).
+
+**TIM-семья:** `0x22000` — validated descriptor setter (**assert `cpsid i`**
+на невалидные base/mask/поля — третий зафиксированный assert-паттерн);
+`0x1d640` — TIM init моторного кластера @0x40012C00 (периоды 0x8CA/0x45B);
+`0x23040` — base+mode validator/dispatcher; `0x1a688` — capture handler
+(счётчик clamp 10000, CCR @0x40012C40).
+
+**Прочее:** `0x13c78`/`0x8938` (ADC-sample → struct {u32,u16,byte} @RAM+0x98),
+`0x8bec` (voltage-table reset: 13×u16 @RAM+0xF10 = 2500 mV default),
+`0x4344` (GPIOB state machine, ×10-масштаб), `0x6080` (threshold @RAM+0xFC7),
+`0xdf10` (frame parser magic 0xAA + TBB), `0xbd50` (frame field extractor:
+layout полей зависит от byte[3]), `0xf038` (frame builder с retry×3),
+`0x21e18` (validated frame parser, assert), `0x173cc` (GPIO/AFIO config из
+flash-таблиц @0x1A780/0x1A794), `0x15a60` (RLE-кодек, шаг 25), `0x4508`
+(state machine byte@RAM+0x11D), `0x1ac8` (buffer processor с flash-таблицами
+@0x19D3E/0x19D7E), `0x5dd8` (command dispatcher), `0x2186c` (u16 counter
+manager @RAM+0x2BA, порог 63488), `0xee48` (buffer manager @RAM+0x2FFA),
+`0x1e94` (flag bit-pack из byte@RAM+0x15F7+2).
+
+**Артефакт детектора:** `0x244d2` — push-prologue в **data-регионе** у конца
+образа (cdp2/каша, callers нет) — помечен «ID», не код.
+
+### §52.1. Эмуляторная верификация, батч 6: +2 теста (итого **111/111 PASS**)
+
+Новые тесты: `0x161EA`, `0x16BD4`. Покрытие «разобран»: 111/619 = 17.9%.
+
+- **`0x161EA(num, den, n)` = floor((num/den) × 2ⁿ)** — точное фикс-деление
+  (30/30 случайных u31/u31 кейсов, включая переполнение num×2ⁿ > u32).
+  Корректировка: в §51 каталоге было «≈» — теперь подтверждено «=».
+- **`0x16BD4`** — полная 2D-билинейная модель верифицирована (индексы,
+  Q16-наклоны, обе ветки сегментов, финальная интерполяция).
+
+**Методические пометки:**
+
+- **Python-ловушка приоритета**: `a + x >> n` = `(a+x) >> n` (shift сильнее
+  сложения!) — в референсе 0x16bd4 это дало yA = только delta без базового
+  значения. Всегда явные скобки: `a + ((x) >> n)`.
+- **Thumb push layout**: первый регистр списка → НИЗКИЙ адрес блока
+  (`push {r0,...,lr}`: r0@[sp+0], lr@[sp+48]) — поэтому «stack-passed»
+  значения в 0x16bd4 на самом деле arg0/arg1 (reg), а по-настоящему
+  stack-passed — args 5–7 ([caller_sp+0..8]).
+- Мой ручной скан bl-кодировок (одна halfword) давал ложные цели для `bl.w`
+  (4 байта) — все bl-списки §52 пересчитаны capstone'ом.
