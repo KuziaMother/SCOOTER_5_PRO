@@ -1163,6 +1163,233 @@ def _(run, rng):
     assert struct.unpack_from('<I', run.ram_read(0x19570, 0x110), 0x108)[0] == 0x10000
 
 
+# ===========================================================================
+# БАТЧ 4: FLASH unlock/wait, SysTick/NVIC/SCB, busy-delay, AFIO, GPIO, reset
+# ===========================================================================
+
+SYS = 0xE0000000        # SYS-регион (NVIC 0xE000E400, SCB 0xE000ED00, SysTick)
+AFIO_MAPR = 0x40010004  # AFIO_MAPR (таблица remap)
+
+# --- FLASH unlock / wait-BSY ---
+
+@t(0x6378, 'FLASH unlock: KEYR=0x45670123 → KEYR=0xCDEF89AB')
+def _(run, rng):
+    run.periph_write(FLASH + 4, 0)
+    run.call(0x6378, ())
+    assert run.periph_read(FLASH + 4) == 0xCDEF89AB, \
+        f'KEYR = {run.periph_read(FLASH+4):#x}'
+
+
+@t(0x6390, 'wait не-BSY (code!=1); timeout → 0xA')
+def _(run, rng):
+    # A: SR без bit0 → сразу возвращает code
+    sr = rng.getrandbits(32) & ~1
+    run.periph_write(FLASH + 0xC, sr)
+    r0, _ = run.call(0x6390, (rng.randint(1, 5),))
+    assert r0 == ref_flash_sr_code(sr), f'sr={sr:#x} → {r0}'
+    # B: SR с bit0 (busy) → N+1 проверок → 0xA
+    run.periph_write(FLASH + 0xC, 1 | (rng.getrandbits(32) & ~1))
+    n = rng.randint(1, 5)
+    r0, _ = run.call(0x6390, (n,))
+    assert r0 == 0xA, f'n={n} → {r0:#x}'
+
+
+# --- I2C/DMA clock: set-then-clear (проверка net-эффекта) ---
+
+# set-then-clear = ВЫНУЖДЕННЫЙ CLEAR бита (x |= m; x &= ~m → бит всегда 0)
+
+@t(0x97F4, 'I2C clock OFF: base==I2C1 → RCC+0x10 &= ~(1<<21); иначе &= ~(1<<22)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    base = rng.choice([0x40005400, 0x40005800, rng.getrandbits(32)])
+    run.periph_write(RCC + 0x10, init)
+    run.call(0x97F4, (base,))
+    exp = init & ~(1 << 21) if base == 0x40005400 else init & ~(1 << 22)
+    got = run.periph_read(RCC + 0x10)
+    assert got == (exp & M32), f'base={base:#x}: {init:#x} → {got:#x}, ждали {exp:#x}'
+
+
+@t(0x17F4, 'DMA clock OFF: base==0x40020800 → RCC+0x28 &= ~0x1000 (base>>18 = бит12); иначе нетто')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    base = rng.choice([0x40020800, rng.getrandbits(32)])
+    run.periph_write(RCC + 0x28, init)
+    run.call(0x17F4, (base,))
+    exp = (init & ~0x1000) if base == 0x40020800 else init
+    got = run.periph_read(RCC + 0x28)
+    assert got == (exp & M32), f'base={base:#x}: {init:#x} → {got:#x}, ждали {exp:#x}'
+
+
+@t(0xC644, 'set/clear mask в RCC+0x28 (mode=r1)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    mask = rng.getrandbits(32)
+    mode = rng.getrandbits(1)
+    run.periph_write(RCC + 0x28, init)
+    run.call(0xC644, (mask, mode))
+    exp = (init | mask) if mode else (init & ~mask)
+    assert run.periph_read(RCC + 0x28) == (exp & M32)
+
+
+# --- SysTick / NVIC / SCB ---
+
+@t(0x35EC, 'SysTick_CTRL &= ~2 (TICKINT off)')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    run.periph_write(SYS + 0xE010, init)
+    run.call(0x35EC, ())
+    assert run.periph_read(SYS + 0xE010) == (init & ~2)
+
+
+def ref_sign_ext8(v):
+    v &= 0xFF
+    return v - 0x100 if v & 0x80 else v
+
+
+# 0x21b84 (подтверждено тресом):
+#   p0 = r0&3, shift = p0*8: mask = 0xFF<<shift (байт), value = (r1&3) << (6+shift)
+#   r0>=0: addr = 0xE000E400 + (r0&~3)          (NVIC-блок, байт r0>>2)
+#   r0<0:  addr = 0xE000ED00 + (s32(r0)&~3) + 0x24  (SCB-блок, байты 0..5 = 0xE000ED00..ED1C)
+#   reg[addr] = (v & ~mask) | value
+#   (lsrs #0x1b/#0x18 — ЛОГИЧЕСКИЕ трёхоперандные; пул 0x21BC0=0xE000E400, 0x21BC4=0xE000ED00)
+
+@t(0x21B84, 'NVIC/SCB: поле [7:6] байта (r0>>2): r0>=0 → 0xE000E400+(r0&~3); r0<0 → 0xE000ED00+(s32&~3)+0x24;'
+            ' reg = (v & ~(0xFF<<(8*(r0&3)))) | ((r1&3) << (6+8*(r0&3)))')
+def _(run, rng):
+    from unicorn import UC_HOOK_MEM_WRITE
+    zone = rng.choice(['NVIC', 'SCB'])
+    if zone == 'NVIC':
+        r0 = rng.randint(0, 63)
+        exp_addr = 0xE000E400 + (r0 & ~3)
+    else:
+        sb = rng.randint(-28, -1)               # s32; адрес останется в SYS-регионе
+        r0 = sb & M32
+        # firmware: t = r0&0xF (только младший ниббл! <<28/>>28); off = ((t-8)>>2)*4
+        t = r0 & 0xF
+        exp_addr = 0xE000ED00 + (((t - 8) >> 2) * 4) + 0x1C
+    r1 = rng.getrandbits(32)
+    writes = []
+    def hw(uc, access, address, size, value, user):
+        if address >= SYS:
+            writes.append((address, value & M32))
+    h = run.uc.hook_add(UC_HOOK_MEM_WRITE, hw)
+    init = rng.getrandbits(32)
+    run.periph_write(exp_addr, init)
+    run.call(0x21B84, (r0, r1))
+    run.uc.hook_del(h)
+    assert len(writes) == 1, f'writes={writes}, ожидали адрес {exp_addr:#x}'
+    waddr, _ = writes[0]
+    assert waddr == exp_addr, f'r0={r0:#x} → запись {waddr:#x}, ждали {exp_addr:#x}'
+    shift = (r0 & 3) * 8
+    mask = (0xFF << shift) & M32
+    setv = ((r1 & 3) << (6 + shift)) & M32
+    exp_val = (init & ~mask | setv) & M32
+    got = run.periph_read(exp_addr)
+    assert got == exp_val, f'({init:#x}, r0={r0:#x}, r1={r1:#x}) → {got:#x}, ждали {exp_val:#x}'
+
+
+# --- busy-delay: проверка порога через hook на CMP ---
+
+@t(0x22A0C, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE
+    coeff = rng.randint(1, 1000)
+    n = rng.randint(1, 50)
+    iters = rng.randint(1, 5)
+    run.ram_write(0x10, struct.pack('<I', coeff))
+    run.periph_write(SYS + 0xE018, rng.getrandbits(24))
+    captured = {}
+    def hc(uc, address, size, user):
+        if (address & ~1) == 0x22A2C:   # cmp r4, r2
+            captured['thr'] = uc.reg_read(UC_ARM_REG_R2) & M32
+    h = run.uc.hook_add(UC_HOOK_CODE, hc)
+    run.call(0x22A0C, (n, iters), max_insn=100000)
+    run.uc.hook_del(h)
+    exp_thr = (0x1000000 - coeff * n) & M32
+    assert captured.get('thr') == exp_thr, \
+        f'coeff={coeff} N={n}: порог {captured.get("thr"):#x}, ждали {exp_thr:#x}'
+    assert run.periph_read(SYS + 0xE018) == 0xFFFFFF, 'CVR должен стать 0xFFFFFF'
+
+
+@t(0x229D4, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE
+    coeff = rng.randint(1, 1000)
+    n = rng.randint(1, 50)
+    iters = rng.randint(1, 5)
+    run.ram_write(0x24, struct.pack('<I', coeff))   # пул 0x2000001C + 8!
+    run.periph_write(SYS + 0xE018, rng.getrandbits(32))
+    captured = {}
+    def hc(uc, address, size, user):
+        if (address & ~1) == 0x229F0:   # cmp r3, r2
+            captured['thr'] = uc.reg_read(UC_ARM_REG_R2) & M32
+    h = run.uc.hook_add(UC_HOOK_CODE, hc)
+    run.call(0x229D4, (n, iters), max_insn=100000)
+    run.uc.hook_del(h)
+    exp_thr = (0x1000000 - coeff * n) & M32
+    assert captured.get('thr') == exp_thr, \
+        f'coeff={coeff} N={n}: порог {captured.get("thr"):#x}, ждали {exp_thr:#x}'
+    assert run.periph_read(SYS + 0xE018) & 0xFFFFFF == 0xFFFFFF
+
+
+# --- AFIO remap ---
+
+# 0x8588: idx = arg1>>2 (арифм.), pair = arg1&3, shift = pair*4:
+#   MAPR[idx] = (MAPR & ~(3<<shift)) | ((val<<shift) & M32)
+#   (lsrs r5,r4,#0x1c — ЛОГИЧЕСКИЙ: b1→bit3, b0→bit2 → r5 = pair*4; val не маскируется!)
+
+@t(0x8588, 'AFIO remap: поле [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2')
+def _(run, rng):
+    val = rng.getrandbits(8)
+    arg1_s = rng.randint(-127, 63) if rng.getrandbits(1) else rng.randint(0, 63)
+    idx = arg1_s >> 2
+    pair = arg1_s & 3
+    shift = pair * 4
+    addr = AFIO_MAPR + idx * 4
+    init = rng.getrandbits(32)
+    run.periph_write(addr, init)
+    run.call(0x8588, (val, arg1_s & M32))
+    exp = (init & ~(3 << shift)) | ((val << shift) & M32)
+    got = run.periph_read(addr)
+    assert got == (exp & M32), f'idx={idx} pair={pair} val={val:#x} arg1={arg1_s}: {got:#x} ≠ {exp:#x}'
+
+
+# --- номер порта по GPIO-базе (PC-трассировка) ---
+
+@t(0x2BBC, 'порт по GPIO-базе: A=0,B=1,C=2,D=3 (проверка точки детекции)')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE
+    cases = [(0x40010800, 0x2BCC), (0x40010C00, 0x2BD6),
+             (0x40011000, 0x2BE0), (0x40011400, 0x2BEA)]
+    base, expect_pc = cases[rng.randint(0, 3)]
+    hits = []
+    def hc(uc, address, size, user):
+        a = address & ~1
+        if a in (0x2BCC, 0x2BD6, 0x2BE0, 0x2BEA, 0x2BEE):
+            hits.append(a)
+    h = run.uc.hook_add(UC_HOOK_CODE, hc)
+    # mode=0x100 — длинный путь; dispatch завершается общим return через 0x2BEE
+    run.call(0x2BBC, (base, 0x100, 0), max_insn=20000)
+    run.uc.hook_del(h)
+    assert expect_pc in hits, \
+        f'base={base:#x}: детекция {expect_pc:#x} не найдена, hits={[hex(h) for h in hits]}'
+
+
+# --- программный сброс (бюджетный вызов: функция зацикливается) ---
+
+@t(0x1E3A4, 'soft reset: [0x40021400] &= ~0xC; &= ~0x1F0; |= 1; AIRCR=0x5FA0004; b .')
+def _(run, rng):
+    init = rng.getrandbits(32)
+    run.periph_write(0x40021400, init)
+    run.periph_write(0xE000ED0C, 0)
+    run.call(0x1E3A4, (), max_insn=500)   # остановится в цикле b .
+    exp_rcc = ((init & ~0xC) & ~0x1F0) | 1
+    got = run.periph_read(0x40021400)
+    assert got == (exp_rcc & M32), f'{init:#x} → {got:#x}, ждали {exp_rcc:#x}'
+    assert run.periph_read(0xE000ED0C) == 0x5FA0004, \
+        f'AIRCR = {run.periph_read(0xE000ED0C):#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
