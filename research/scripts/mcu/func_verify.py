@@ -30,8 +30,8 @@ sys.path.insert(0, os.path.join(RES, 'scripts'))
 
 from unicorn import UcError, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
-                               UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_LR,
-                               UC_ARM_REG_CPSR)
+                               UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_SP,
+                               UC_ARM_REG_LR, UC_ARM_REG_CPSR)
 
 from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
 
@@ -3153,6 +3153,66 @@ def _(run, rng):
         r0, _ = run.call(0x1D818, (arg0,), max_insn=50000)
         exp = ref_1d818(arg0, X_lo, X_hi)
         assert r0 == exp, f'0x1d818: arg0={arg0:#010x} X=({X_lo},{X_hi}) got={r0:#010x} exp={exp:#010x}'
+
+
+# ---------------------------------------------------------------------------
+# §60.4: 0x1b3f2..0x1b460 — inline-блок FOC (inlined cross+dot) внутри 0x1A938
+# Входы (по трассировке, НЕ capstone pool-offsets): P=u32[RAM+0x388],
+# X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]. r4=RAM+0x040 (struct).
+# Вычисления (muls + asrs#15):
+#   cross = asr15(R6·X_hi) − asr15(P·X_lo)      → RAM+0x3b8
+#   dot   = asr15(R6·X_lo) + asr15(P·X_hi)      → RAM+0x3bc
+#   t1 = −(dot<<14)
+#   r4+0x1c = asr15(t1 + 0x6ed9·cross)
+#   r4+0x20 = asr15(t1 − 0x6ed9·cross)
+#   r4+0x28 = dot>>1
+#   r4+0x24 = asr15(0x376d·cross + (dot<<13))
+# (тот же комплексный произведение, что 0x1d7ac/0x1d818, но inline)
+# Верификация: mid-function jump в 0x1b3f2 с r4=RAM+0x040, stop в 0x1b48a.
+# ---------------------------------------------------------------------------
+
+
+def _asr15(v):
+    s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
+    return s >> 15
+
+
+def ref_1b3f2(P, X_lo, X_hi, R6):
+    cross = _asr15((R6 * X_hi) & 0xFFFFFFFF) - _asr15((P * X_lo) & 0xFFFFFFFF)
+    dot = _asr15((R6 * X_lo) & 0xFFFFFFFF) + _asr15((P * X_hi) & 0xFFFFFFFF)
+    t1 = -(dot << 14)
+    out = [cross, dot,
+           _asr15((t1 + 0x6ED9 * cross) & 0xFFFFFFFF),
+           _asr15((t1 - 0x6ED9 * cross) & 0xFFFFFFFF),
+           dot >> 1,
+           _asr15((0x376D * cross + (dot << 13)) & 0xFFFFFFFF)]
+    return out
+
+
+@t(0x1B3F2, '§60.4: inline-блок FOC в 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6·Xhi)−asr15(P·Xlo)→RAM+0x3b8, dot=asr15(R6·Xlo)+asr15(P·Xhi)→RAM+0x3bc; r4+0x1c/0x20=asr15(∓t1±0x6ed9·cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d·cross+dot<<13); верификация mid-function jump (r4=RAM+0x040, stop 0x1b48a)')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(40):
+        P = rng.getrandbits(32) & 0x7FFFFFFF
+        X_lo = rng.randrange(-500, 500); X_hi = rng.randrange(-500, 500)
+        R6 = rng.getrandbits(20)
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(RAM + 0x388, struct.pack('<I', P))
+        uc.mem_write(RAM + 0x108, struct.pack('<h', X_lo))
+        uc.mem_write(RAM + 0x10a, struct.pack('<h', X_hi))
+        uc.mem_write(RAM + 0x3ac, struct.pack('<i', R6))
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, RAM + 0x040)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1B3F2 | 1, 0x1B48A | 1, count=200)
+        except UcError:
+            pass
+        got = [struct.unpack_from('<i', uc.mem_read(RAM + o, 4), 0)[0]
+               for o in (0x3b8, 0x3bc, 0x5c, 0x60, 0x68, 0x64)]
+        exp = ref_1b3f2(P, X_lo, X_hi, R6)
+        assert got == exp, f'0x1b3f2: P={P} Xlo={X_lo} Xhi={X_hi} R6={R6} got={got} exp={exp}'
 
 
 # ---------------------------------------------------------------------------
