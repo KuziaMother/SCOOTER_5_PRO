@@ -17,10 +17,9 @@ code-секций A–J; остальное — literal-пулы и данные
 
 | статус | функций | байт | % байт |
 |---|---|---|---|
-| разобран | 642 | 95356 | 98.4% |
-| ID | 29 | 630 | 0.6% |
-| не начат | 7 | 946 | 1.0% |
-| **всего** | **678** | **96932** | **98.5% декомпилировано** |
+| разобран | 673 | 96536 | 99.6% |
+| ID | 5 | 396 | 0.4% |
+| **всего** | **678** | **96932** | **99.7% декомпилировано** |
 
 Подробности по каждой функции: `functions_mcu/func_0x<off>.md` (дизассембляция,
 литералы, callees/callers). Разделы REPORT.md — где описана семантика.
@@ -53,16 +52,16 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x01984`](functions_mcu/func_0x01984.md) | 102 | код A | напряжение-хендлер: 0x87ec(); toggle bit3(@0xA72); счётчик @0xA74 (кап 3); если !bit3 → 0x8b58+0x8b10 (ADC→мВ) | §50 | разобран | 100% |
 | [`0x019f4`](functions_mcu/func_0x019f4.md) | 100 | код A | флаг-хендлер: bit1(@0xF95+0xC) && !bit2(@0x15F7+0x11); счётчик @0xA41 (кап flash 0x19E5E+0xD); сброс флагов | §50 | разобран | 100% |
 | [`0x01a68`](functions_mcu/func_0x01a68.md) | 70 | код A | порог #6: u16@0xF95+6 ≥ flash 0x19E5E+0x18; счётчик @0xA40 (кап +0x1B); clear bit4(@0xF95+0xC) | §50 | разобран | 100% |
-| [`0x01abc`](functions_mcu/func_0x01abc.md) | 12 | код A | последовательность: 0x1a68 + 0x19f4 | §48 | ID | 25% |
+| [`0x01abc`](functions_mcu/func_0x01abc.md) | 12 | код A | последовательность: 0x1a68 + 0x19f4 | §48/§61 | разобран | 100% |
 | [`0x01ac8`](functions_mcu/func_0x01ac8.md) | 268 | код A | **buffer processor с flash-таблицами @0x19D3E/0x19D7E**: args (buf, len); 0x3b42(buf, len) → r8; цикл по байтам buf[i] с индексацией в flash-таблицах; bl 0x3b42 | §52 | разобран | 100% |
 | [`0x01bdc`](functions_mcu/func_0x01bdc.md) | 42 | код A | **I2C2 read**: {code16, len=2} → 0x1e72(op=8, dev=0x3E) — чтение регистра чипа I2C2 | §49 | разобран | 100% |
 | [`0x01c1c`](functions_mcu/func_0x01c1c.md) | 42 | код A | **I2C2 read**: {code16, len=2} → 0x90a0(base=0x40005800) — чтение регистра чипа I2C2 | §49 | разобран | 100% |
 | [`0x01c60`](functions_mcu/func_0x01c60.md) | 26 | код A | I2C2-цепочка #1: → 0x1e52 → 0x214c → 0x8f7c(I2C2=0x40005800) | §49 | разобран | 100% |
 | [`0x01c7a`](functions_mcu/func_0x01c7a.md) | 52 | код A | I2C2 read: буфер {u16=0, len=2, addr=0x3E} → 0x1e72; результат → u16@0xF95+0x1E | §49 | разобран | 100% |
-| [`0x01cea`](functions_mcu/func_0x01cea.md) | 12 | код A | последовательность: 0x1fe0 + 0x20d8 | §48 | ID | 25% |
+| [`0x01cea`](functions_mcu/func_0x01cea.md) | 12 | код A | последовательность: 0x1fe0 + 0x20d8 | §48/§61 | разобран | 100% |
 | [`0x01cf6`](functions_mcu/func_0x01cf6.md) | 54 | код A | init-подблок: 0x1d06(1) + 0x1d1e(1) | §49 | разобран | 100% |
 | [`0x01d78`](functions_mcu/func_0x01d78.md) | 112 | код A | I2C read reg 5 (2B) → u16@0xA7C (BE); 3 попытки | §50 | разобран | 100% |
-| [`0x01dec`](functions_mcu/func_0x01dec.md) | 8 | код A | thunk → 0x29e8 | §48 | ID | 25% |
+| [`0x01dec`](functions_mcu/func_0x01dec.md) | 8 | код A | thunk → 0x29e8 | §48/§61 | разобран | 100% |
 | [`0x01df4`](functions_mcu/func_0x01df4.md) | 64 | код A | **мега-инициал**: 15 последовательных bl (0x3b2a, 0x36f4, 0xced0, 0x9b44, 0x9f70, 0xc098, 0x11978, 0x119c4, 0x3034, 0x1cf6, ...) | §49 | разобран | 100% |
 | [`0x01e34`](functions_mcu/func_0x01e34.md) | 30 | код A | сумма массива байтов (u8) | §49 | разобран | 100% |
 | [`0x01e52`](functions_mcu/func_0x01e52.md) | 32 | код A | I2C2-цепочка #2: пересборка аргументов → 0x214c | §49 | разобран | 100% |
@@ -104,11 +103,11 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x02a94`](functions_mcu/func_0x02a94.md) | 132 | код B | boot-config loader (сестра 0x2b2c): чтение flash-конфига в RAM-структуру; финальный вызов ветки case2 диспетчера 0xc20c | §51 | разобран | 100% |
 | [`0x02b2c`](functions_mcu/func_0x02b2c.md) | 124 | код B | **boot-конфиг из flash @0x1A8xx**: 0xc624(1); 0x332c(flash 0x1A827, 2); [0x1A8CC] → sp; 0x307c (varargs event); ldm 0x1A878/0x1A8B0 → 0x3278/0x3220; {u32@0x1AD8, 0x96}; 0x130e0/0x12fe0/0x4f38/0x130c8 (флаги) | §50 | разобран | 100% |
 | [`0x02bbc`](functions_mcu/func_0x02bbc.md) | 50 | код B | GPIO-порт: A(0x40010800)=0, B(0x40010C00)=1, C(0x40011000)=2, D(0x40011400)=3; dispatch по mode(r1), общий return 0x2BEE | §49/§50.7.3 | разобран | 100% |
-| [`0x02d14`](functions_mcu/func_0x02d14.md) | 8 | код B | thunk → 0x9678 | §48 | ID | 25% |
+| [`0x02d14`](functions_mcu/func_0x02d14.md) | 8 | код B | thunk → 0x9678 | §48/§61 | разобран | 100% |
 | [`0x02d1c`](functions_mcu/func_0x02d1c.md) | 20 | код B | **вход в критсекцию**: u32@RAM[0xB5C]++ | §49 | разобран | 100% |
 | [`0x02d34`](functions_mcu/func_0x02d34.md) | 36 | код B | **выход из критсекции**: u32@RAM[0xB5C]-- | §49 | разобран | 100% |
 | [`0x02d5c`](functions_mcu/func_0x02d5c.md) | 16 | код B | **flash write**: 0x3588(); 0x332c(flash 0x1A550, 0x1A) — запись 26B в NVRAM-зону | §49 | разобран | 100% |
-| [`0x02d70`](functions_mcu/func_0x02d70.md) | 130 | код B | — | — | не начат | 0% |
+| [`0x02d70`](functions_mcu/func_0x02d70.md) | 130 | код B | **инициализатор stack-struct**: [sp+8]=0, [sp+0xa]=0xbfff, далее заполнение полей (0x30...). Вызывающий 0x174ec | §61 | разобран | 100% |
 | [`0x02e0c`](functions_mcu/func_0x02e0c.md) | 16 | код B | проверка «оба нуля»: u16@0x38 == 0 && u16@0x3A == 0 | §49 | разобран | 100% |
 | [`0x02e84`](functions_mcu/func_0x02e84.md) | 54 | код B | I2C-подобный запрос: 0x9874 (проверка структуры) + счётчик @0xB71 | §49 | разобран | 100% |
 | [`0x03034`](functions_mcu/func_0x03034.md) | 62 | код B | init-подблок: 0x3044(1) + 0x305c() | §49 | разобран | 100% |
@@ -125,7 +124,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x035ec`](functions_mcu/func_0x035ec.md) | 18 | код B | SysTick: выкл. TICKINT (CTRL &= ~2) | §49 | разобран | 100% |
 | [`0x03600`](functions_mcu/func_0x03600.md) | 96 | код B | **SysTick период**: udiv(val, 0x3E8); SysTick LOAD(0xE000E014) = n-1; CTRL(0xE000E010) = 7; NVIC-priority по irq | §50 | разобран | 100% |
 | [`0x03668`](functions_mcu/func_0x03668.md) | 88 | код B | **charger detection**: 0x8afc(); если нет флагов заряда и u32@0xF95+0xD → I2C read reg 0x9335 (8B) → byte@0xB44=1 | §50 | разобран | 100% |
-| [`0x036f4`](functions_mcu/func_0x036f4.md) | 12 | код B | последовательность: 0x10900 + 0x3b00; init-подблок: 0x3700() + 0xc984() | §48, §49 | разобран | 100% |
+| [`0x036f4`](functions_mcu/func_0x036f4.md) | 12 | код B | последовательность: 0x10900 + 0x3b00; init-подблок: 0x3700() + 0xc984() | §48/§61, §49 | разобран | 100% |
 | [`0x03700`](functions_mcu/func_0x03700.md) | 54 | код B | поиск в таблице @0x92C (0x11 записей) через 0x583c | §49 | разобран | 100% |
 | [`0x03740`](functions_mcu/func_0x03740.md) | 40 | код B | event: u16@0x1048 → 0xcd80(2) + 0xcda4() | §49 | разобран | 100% |
 | [`0x03780`](functions_mcu/func_0x03780.md) | 78 | код B | **расчёт напряжения**: i8@0xFC7+2 - i8@0xFC7+1 ≤ 3 → медиан-фильтр × 0xCE4/2^20 → таблица 0x12804 → -u8@0x44 → i8@0xA6; иначе 0; EEPROM 0x3da0 | §50 | разобран | 100% |
@@ -133,12 +132,12 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x03838`](functions_mcu/func_0x03838.md) | 174 | код B | frame parser: u16 len ∈ [6,0x82]; header [r4+2..5]→RAM+0x10B8; chk=data[len-2], crc=data[len-1]→RAM+0x10B8+0x9A/0x9B; 0x3c4c(data+2,len-2)==u16(chk\|crc<<8) && byte[RAM+0x10B8+3]<0x96 → OK | §51 | разобран | 100% |
 | [`0x038ec`](functions_mcu/func_0x038ec.md) | 84 | код B | **TLV + CRC-16 (таблица)**: 4B header + len=byte@+3; CRC-16(0x3c4c) → {hi, lo} в конец; *r2 = len | §50 | разобран | 100% |
 | [`0x03940`](functions_mcu/func_0x03940.md) | 22 | код B | 0x3c04(0x8000000, 0x3000, 0) → u32@0xCC (чтение flash?) | §49 | разобран | 100% |
-| [`0x0395c`](functions_mcu/func_0x0395c.md) | 10 | код B | thunk → 0xd298(r0=0) | §48 | ID | 25% |
-| [`0x03966`](functions_mcu/func_0x03966.md) | 10 | код B | thunk → 0xd298(r0=1) (пара с 0x395c: off/on) | §48 | ID | 25% |
+| [`0x0395c`](functions_mcu/func_0x0395c.md) | 10 | код B | thunk → 0xd298(r0=0) | §48/§61 | разобран | 100% |
+| [`0x03966`](functions_mcu/func_0x03966.md) | 10 | код B | thunk → 0xd298(r0=1) (пара с 0x395c: off/on) | §48/§61 | разобран | 100% |
 | [`0x03970`](functions_mcu/func_0x03970.md) | 28 | код B | доступ к структуре @0x98: +0x20 = r0 ? r2 : r1; +0x24 = r3 | §49 | разобран | 100% |
 | [`0x03994`](functions_mcu/func_0x03994.md) | 52 | код B | поиск в таблице @0x5CC (0x3A записей × 8B): match по +4 → указатель | §49 | разобран | 100% |
 | [`0x03a6c`](functions_mcu/func_0x03a6c.md) | 22 | код B | one-shot флаг byte@0x142: если 0 → 1 + bl 0x3a7e | §49 | разобран | 100% |
-| [`0x03b20`](functions_mcu/func_0x03b20.md) | 10 | код B | thunk → 0x1bdc(r0=0x9a) | §48 | ID | 25% |
+| [`0x03b20`](functions_mcu/func_0x03b20.md) | 10 | код B | thunk → 0x1bdc(r0=0x9a) | §48/§61 | разобран | 100% |
 | [`0x03b2a`](functions_mcu/func_0x03b2a.md) | 20 | код B | init-подблок: 0x3b50/0x3b74/0x3b8a/0x3b9c/0x3bb2 (цепочка RCC/периферии) | §49 | разобран | 100% |
 | [`0x03b42`](functions_mcu/func_0x03b42.md) | 64 | код B | CRC-16 (полином 0xA001) + mvn (двоичное дополнение) | §49 | разобран | 100% |
 | [`0x03b82`](functions_mcu/func_0x03b82.md) | 66 | код B | CRC-16 (poly 0x1021, MSB-first) — пятый вариант CRC-16 | §50 | разобран | 100% |
@@ -172,8 +171,8 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x04d48`](functions_mcu/func_0x04d48.md) | 138 | код B | sliding-window signed average: u32 ring buffer в RAM, скользящее среднее со знаком | §51 | разобран | 100% |
 | [`0x04de0`](functions_mcu/func_0x04de0.md) | 40 | код B | poll: 0x1bdc(0x93)&0x1bdc(0x94) + задержка 0x1F4 | §49 | разобран | 100% |
 | [`0x04e08`](functions_mcu/func_0x04e08.md) | 32 | код B | poll: 0x1bdc(0x94) + задержка 0x1F4 | §49 | разобран | 100% |
-| [`0x04e28`](functions_mcu/func_0x04e28.md) | 8 | код B | thunk → 0x5000 | §48 | ID | 25% |
-| [`0x04e30`](functions_mcu/func_0x04e30.md) | 8 | код B | thunk → 0x4fc0 | §48 | ID | 25% |
+| [`0x04e28`](functions_mcu/func_0x04e28.md) | 8 | код B | thunk → 0x5000 | §48/§61 | разобран | 100% |
+| [`0x04e30`](functions_mcu/func_0x04e30.md) | 8 | код B | thunk → 0x4fc0 | §48/§61 | разобран | 100% |
 | [`0x04e38`](functions_mcu/func_0x04e38.md) | 4 | код B | setter +4 (str r0,[r1,#4]) | §48 | разобран | 100% |
 | [`0x04f38`](functions_mcu/func_0x04f38.md) | 24 | код B | set: *(u32@r0) \|= 1; clear: *(u32@r0) &= 0xFFFE (**трюнирует до u16!** асимметрия; mode=r1; §50.7) | §49/§50.7 | разобран | 100% |
 | [`0x04f50`](functions_mcu/func_0x04f50.md) | 8 | код B | getter u16 @+4 (uxth) | §48 | разобран | 100% |
@@ -208,7 +207,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x05a38`](functions_mcu/func_0x05a38.md) | 30 | код B | I2C-прединициал: 0x15588() + 0x5134() + 0x109c4() | §49 | разобран | 100% |
 | [`0x05a68`](functions_mcu/func_0x05a68.md) | 32 | код B | u32 udiv (аппаратный + коррекция переполнения) | §49 | разобран | 100% |
 | [`0x05b5a`](functions_mcu/func_0x05b5a.md) | 50 | код B | задержка 0x2F + 0x1c1c(0x90) (init-подблок) | §49 | разобран | 100% |
-| [`0x05b8c`](functions_mcu/func_0x05b8c.md) | 10 | код B | thunk → 0x4de0 | §48 | ID | 25% |
+| [`0x05b8c`](functions_mcu/func_0x05b8c.md) | 10 | код B | thunk → 0x4de0 | §48/§61 | разобран | 100% |
 | [`0x05b98`](functions_mcu/func_0x05b98.md) | 30 | код B | @0x40003000 = 0xAAAA; GPIOB+0x18 = 0x40003000>>7; GPIOA+0x18 = 4; 0xc20c(3) | §49 | разобран | 100% |
 | [`0x05bc4`](functions_mcu/func_0x05bc4.md) | 202 | код B | mode dispatch: проверки пинов GPIOB + запись flash-конфига (0x332c) | §51 | разобран | 100% |
 | [`0x05c9c`](functions_mcu/func_0x05c9c.md) | 26 | код B | @0x40003000 = 0xAAAA; 0x332c(flash 0x19B14, 2); 0xc20c(1) | §49 | разобран | 100% |
@@ -235,7 +234,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x069e4`](functions_mcu/func_0x069e4.md) | 722 | код B | **2D-интерполятор caller + BLE-сессия (RAM+0x128B/0x12BA)**: 0x10fd4(1); r4/r5 = max/min из пары 0x8ecc()/0x8ee8(); local[0xC]=u16 «цель»: если max−min ≥ 0x3E8 → 0xC80; elif min < 0xC80 → min; иначе 0x17094(min−0xC80, 0x3E8) → 0x16328(0x3E8−max+min, t), clamp [0,0xFFFF] (порог pool 0x7FFFF37F); **0x16bd4**(0x8f58(), \|0x1654c()\|, xtab1=0x19F60+0xBC, ystruct=0x19F60−0xAC, [stk]{grid=+0x550, base, 5}) → r7; byte[RAM+0x128B+0x65]: 0 → init (byte[+0x66]=3, u32[sp+0x10]=0xA, u16[RAM+0x12BA+0x24]=local[0xC]); else state@+0x66: 1 → проверка порогов (0x8f58()+5, 0x1654c() vs pool −1534) → 3 или merge через **0xe2fc/0xe2cc** (§50) + u16[+0x24]; 2 → local[0xC] ≥ 0xF6E? → 3 : 0xe808(&local[0xC], &sp+0x10); else → 0x1654c() ≤ r7 и 0x8f58()+5 < 0 → 3 : state=1 + merge; x2-ветка: local[0xC] > 0xFA0 и 0x1654c() > 0 → state=2, u32[+0x40]=0, u16[+0x4E]=0, u16[+0x4C]=local[0xC], byte[+0x67]=0, u32[+0x2C]=0x105F, 0xe808; финал: 0x1654c() > 0 → r6=0x64 иначе **0x16f42**(r4, 0x8f58(), vtbl=0x19F58−8+0xD4, htab=0x19F58−8−0x28, [stk]{grid=+0x5C7, base, 5}) → r6; u16[RAM+0x12BA+0x2D]=min(r6, sp+0x10); 0x11028(u16[+0x24]); **hdr-аномалия §53 — РАЗРЕШЕНА (§56)**: u32[0x19F60]=0x05014674 / u32[0x19F58]=0x43D22201 — невалидные last_idx, НО путь их чтения (v1>xtab[0]=2002) недостижим: v1=0x8f58()=s8∈[−128..127] → 0x16bd4 всегда идёт early-exit (нулевой наклон, константный результат из grid[0..1]); таблица xtab {2002..63734} — кривая по полному u16-диапазону (~3%..97%) — под другой (старший/младший) вызывающий; латентный баг версии | §53/§56 | разобран | 100% |
 | [`0x06ccc`](functions_mcu/func_0x06ccc.md) | 378 | код B | **BLE-сессия state machine #1**: state byte[RAM+0x12BA+0x63], counter [+0x64] (<0x1F++); init: [+0x62]=1, state=2, i32[RAM+0x128B+0x14]=−2, u32[+0x3C]=0; state1: counter≥0x14 → state2; state2: 0x8e14()==1 → state3, i32[+0x14]=−33, u32[RAM+0x12BA+0x34]=0x164d4(); state≥3: 0x8e20()==1 → state=1, counter=0, ts={0x164d4(), 0x164e0()} + **0xe200**(u32[+0x34], u32[+0x38], ts) — caller интерполятора 0x16938 (§51); timeout: u32[+0x3C] ≥ 0xA8C0 (43200 тиков) → state2; bl 0x10fe0/0x8e14/0x164d4/0x164e0/0x8e20/0xe200/0x10f7c; twin'ы: 0x6e50/0x6838/0xea64 | §52 | разобран | 100% |
 | [`0x06e50`](functions_mcu/func_0x06e50.md) | 358 | код B | **BLE-сессия state machine #2**: twin 0x6ccc (та же пара структур RAM+0x128B/0x12BA); хендлеры: bl 0x10fec/0x16534/0x10f3c/0x8dc0/0x10e74/0x16540/0x10f48/0x8dcc/0x10e80 | §52 | разобран | 100% |
-| [`0x06fc0`](functions_mcu/func_0x06fc0.md) | 130 | код B | — | — | не начат | 0% |
+| [`0x06fc0`](functions_mcu/func_0x06fc0.md) | 130 | код B | **многоступенчатая операция** — последовательность sub-calls: 0x10ff8, 0x8e90 (cbnz), 0x8ecc, 0xe3ec (×2), 0x8ee8, 0xe36c, 0x11098, 0x8f58. Вызывающий 0x11940 | §61 | разобран | 100% |
 | [`0x070d8`](functions_mcu/func_0x070d8.md) | 944 | код B | **BLE session SM #5 (RAM+0x128B/0x12BA)**: 0x11004(1) (acquire §52); counter byte@+0x59 (mod 32); flash-таблица @0x1A4D8; bl: 0x10f24 ×2, 0x8da8 ×3, 0x1651c, 0x17150 (u64-конвертеры §50/51), 0x164ec ×5, 0x16b22, 0x10f54 ×5, 0x8dd8 ×3, 0x8e9c ×3, 0x11004, 0x16266, 0x11034, 0x10e68, 0x110a4, 0x1638a, 0x110b0, 0x10eb8, 0x10ec4 — та же семья сессий что §52 (0x6ccc/0x6e50/0x6838) | §53 | разобран | 100% |
 | [`0x07494`](functions_mcu/func_0x07494.md) | 1282 | код B | **моторный периодический task (ramp-контроллер)**: чтение 3 «сенсоров» (каждый ×3): **0x8f04** = константа 0x1068 (4200) → [sp+0x10]; **0x8ecc** = u16[A+8] → [sp+0xC]; **0x8ee8** = u16[A+6] → r5; все clamp [0x3E8..0x1388] = [1000..5000]; r4=min, r7=max; u16[out+8]=r7−r4, u16[out+4]=1000−(r7−r4), u16[out+0xA]=r4−3200; **знак произведения** (smulbb): (r7−r4)×(r4−3200)<0 → u32[pool]=−0x80000000 иначе +0x80000000 (Q31 ±1.0 sentinel), иначе u32 = prod/u16[out+4]; r6=clamp(±0x8000) → s16; u16[out+0xC]=r6+r4 (цель); гейты bit3/4/5/6/7: u16[+0x12]=r4, **0x8e50** = byte×10 → u16[+6/+8/+0xA], **0x8f24** = u32[A+0]→[B+0x1B]; **ramp-логика**: diff=s16[+6]−u16[+0xA]: ≥0 → bl **0xf010**(sl, r7, buf+6) иначе **0xf024** (ramp up/down шагом 8: min(max(cur,target±8))); аналогично пара +0xC/+0xE → u16[+0x10]; гейты bit0/1: 0x8e70 = byte×10 → u16[+0xC/+0xE]; bl **0x16fde** ×2 (2D-lookup, twin 0x16f42 §53) с {s16, u16, ptr, ptr+0xCE+0x12}; [sp+0x14] = result; caller: thunk @0x12438 (гейт flag==0 или mode==1) | §54 | разобран | 100% |
 | [`0x0799c`](functions_mcu/func_0x0799c.md) | 144 | код B | регулятор duty (вырожден: выход ≈ -275 → 0%) | §39, §41 | разобран | 100% |
@@ -287,7 +286,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x09048`](functions_mcu/func_0x09048.md) | 80 | код B | **I2C2-транзакция core**: 0x11d6(&buf, 0x28); 0x15640 (CRC-7-кодирование); callback *(u32@RAM[0xDD8]+0x11C) | §50 | разобран | 100% |
 | [`0x090a0`](functions_mcu/func_0x090a0.md) | 60 | код B | I2C1-транзакция: проверка *(u32@RAM[0xB60])!=0; адрес из *(u32@RAM[0xB64]); 0x1c08/0x1bd8/0x1c08(1) | §49 | разобран | 100% |
 | [`0x09134`](functions_mcu/func_0x09134.md) | 668 | код B | **config-gated register-read dispatcher**: гейты: byte[RAM+0x15F7+3] bit2 (§52 flag-структ), byte[RAM+0xF95+0xC] bit4 и др.; bl **0x1bdc ×5** (I2C2 register read §49); pool: RAM+0x15F7/+0xF95/+0x8C/+0xA42/+0xA3E/+0xFBB/+0xFC7 (threshold §52)/+0x107 | §53 | разобран | 100% |
-| [`0x09482`](functions_mcu/func_0x09482.md) | 12 | код B | последовательность: 0x9134 + 0x9480 | §48 | ID | 25% |
+| [`0x09482`](functions_mcu/func_0x09482.md) | 12 | код B | последовательность: 0x9134 + 0x9480 | §48/§61 | разобран | 100% |
 | [`0x09678`](functions_mcu/func_0x09678.md) | 86 | код B | флаг-хендлер: bit1(@0xB65); счётчик @0xB73 (кап 3) → clear bit1(@0xB65), byte@0xB64 &= ~0xF0 | §50 | разобран | 100% |
 | [`0x096dc`](functions_mcu/func_0x096dc.md) | 52 | код B | вызов callback из структуры @0xDD8+0x114 (дефолт 0x11a4) | §49 | разобран | 100% |
 | [`0x09714`](functions_mcu/func_0x09714.md) | 52 | код B | вызов callback из структуры @0xDD8+0x110 (дефолт 0x11a4) | §49 | разобран | 100% |
@@ -309,13 +308,13 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x099f0`](functions_mcu/func_0x099f0.md) | 10 | код B | запись 0xAAAA в @0x40003000 (кластер драйвера) | §48 | разобран | 100% |
 | [`0x09a00`](functions_mcu/func_0x09a00.md) | 6 | код B | запись r0 в @0x40003000+4 | §48 | разобран | 100% |
 | [`0x09a0c`](functions_mcu/func_0x09a0c.md) | 6 | код B | запись r0 в @0x40003000 | §48 | разобран | 100% |
-| [`0x09a18`](functions_mcu/func_0x09a18.md) | 8 | код B | thunk → 0x99f0 (запись 0xAAAA в @0x40003000) | §48 | ID | 25% |
+| [`0x09a18`](functions_mcu/func_0x09a18.md) | 8 | код B | thunk → 0x99f0 (запись 0xAAAA в @0x40003000) | §48/§61 | разобран | 100% |
 | [`0x09a20`](functions_mcu/func_0x09a20.md) | 34 | код B | @0x40003000 cmd: 0x5555 → 0x9a0c; 0x9a00(6); uxth(r4) → 0x99d4; 0x99f0; 0x99e0 | §49 | разобран | 100% |
 | [`0x09a44`](functions_mcu/func_0x09a44.md) | 80 | код B | **регистрация event-handlers**: flash-таблицы @0x14A65/0x149B5/0x148E5/0x14A79 (IDs 0-4) → очередь | §50 | разобран | 100% |
 | [`0x09aa4`](functions_mcu/func_0x09aa4.md) | 86 | код B | **телеметрия reset**: zero @0x1344 (0x13B) + 0x11d6(&@0x1384, 0x4A); вызов из 0x51d8 (telemetry init) | §50 | разобран | 100% |
 | [`0x09b08`](functions_mcu/func_0x09b08.md) | 54 | код B | toggle bit3 byte@0xA71 (до 3 попыток, гейт 0x2a5c) | §49 | разобран | 100% |
 | [`0x09b44`](functions_mcu/func_0x09b44.md) | 24 | код B | init-подблок: 0x9b54() + 0x9b6c() | §49 | разобран | 100% |
-| [`0x09f64`](functions_mcu/func_0x09f64.md) | 12 | код B | последовательность: 0x9b44 + 0x9f70 | §48 | ID | 25% |
+| [`0x09f64`](functions_mcu/func_0x09f64.md) | 12 | код B | последовательность: 0x9b44 + 0x9f70 | §48/§61 | разобран | 100% |
 | [`0x09f70`](functions_mcu/func_0x09f70.md) | 28 | код B | init-подблок: 0x9f80(0x10) + 0x9fa4(1) | §49 | разобран | 100% |
 | [`0x0a6a4`](functions_mcu/func_0x0a6a4.md) | 6 | код B | getter byte@RAM[0x40] | §48 | разобран | 100% |
 | [`0x0a788`](functions_mcu/func_0x0a788.md) | 96 | код B | I2C read reg 0x91A4 → u16@0xF95+0x1C; вне [0x7D00..0x8CA0] → запись 0x84D0; 3 попытки | §50 | разобран | 100% |
@@ -347,14 +346,14 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0bd50`](functions_mcu/func_0x0bd50.md) | 280 | код B | **frame field extractor/dispatcher**: из frame arg0: byte[2], byte[3] → RAM+0x1154; layout полей [2..8] зависит от byte[3] (==3: {+2..+5}, ==6: {+2,+3,+7,+8}, ==0x10: {+2..+6}); bl 0x11a4/0x8a50 (checksum §51); pool RAM+0x1154 | §52 | разобран | 100% |
 | [`0x0be6c`](functions_mcu/func_0x0be6c.md) | 104 | код B | **TLV-декодер**: type byte@+1: 3 → {len=byte@+6, data} (0x11a4); 6/0x10 → 6B fixed; return длина | §50 | разобран | 100% |
 | [`0x0befc`](functions_mcu/func_0x0befc.md) | 74 | код B | поиск в таблице @0x7C4 (2 записи): range [entry+4, entry+ptr+8] → указатель | §50 | разобран | 100% |
-| [`0x0bf4c`](functions_mcu/func_0x0bf4c.md) | 12 | код B | последовательность: 0xd878 + 0xddc4 | §48 | ID | 25% |
+| [`0x0bf4c`](functions_mcu/func_0x0bf4c.md) | 12 | код B | последовательность: 0xd878 + 0xddc4 | §48/§61 | разобран | 100% |
 | [`0x0bf58`](functions_mcu/func_0x0bf58.md) | 184 | код B | byte bit-permutation + NOT: r6=~((b1<<3)\|(b0<<2)\|(b3<<1)\|b2)&0xFF (r7==1) или 0xFF; dispatch по r5 (≤3) — I2C bit-banging/CRC-обработка | §51 | разобран | 100% |
 | [`0x0c02c`](functions_mcu/func_0x0c02c.md) | 92 | код B | mismatch-счётчик: bit0/bit1(@0xF70+1) vs @0xA65/@0xA66 → u16@0xA68++; ≥ 0x32 → toggle bit3(@0xF70+3); вызов из 0xc098 | §50 | разобран | 100% |
 | [`0x0c098`](functions_mcu/func_0x0c098.md) | 24 | код B | init-подблок: 0x5b5a() + 0xc0a0() | §49 | разобран | 100% |
 | [`0x0c0b4`](functions_mcu/func_0x0c0b4.md) | 78 | код B | **NVIC IRQ enable**: приоритет-группа из SCB_CFSR(0xE000ED0C) bits 0x700; запись в [0xE000E400+irq] и [adj+0x100] — **база NVIC этого чипа = 0xE000E400** | §50 | разобран | 100% |
 | [`0x0c138`](functions_mcu/func_0x0c138.md) | 26 | код B | магия: u16@0xA7C == 0xEB04 → 1 | §49 | разобран | 100% |
 | [`0x0c158`](functions_mcu/func_0x0c158.md) | 164 | код B | I2C2 BMS read cycle: цикл по 8 entries таблицы @RAM+0xA80 (8B: {u32,u16 reg,..}): copy 0x20B; 0x1bdc(0x90); delay 0x3E8; 0x280c(0,8,u16[entry],sp+4) batch-write (retry ×1); 0x1bdc(0x92) | §51 | разобран | 100% |
-| [`0x0c200`](functions_mcu/func_0x0c200.md) | 12 | код B | thunk → 0x9f64 (r3=1) | §48 | ID | 25% |
+| [`0x0c200`](functions_mcu/func_0x0c200.md) | 12 | код B | thunk → 0x9f64 (r3=1) | §48/§61 | разобран | 100% |
 | [`0x0c20c`](functions_mcu/func_0x0c20c.md) | 134 | код B | TBB mode dispatch (5 cases): case1/2 → 0xaf94(RAM+0xDD8) + 0x1bdc(0x9A) + 0x16d4 + delay 0x186A00 (1.5M) + 0x175c/0x178c/0x10780 + финал 0x8468 (case1) / 0x2a94 (case2); boot-селектор режимов | §51 | разобран | 100% |
 | [`0x0c2a8`](functions_mcu/func_0x0c2a8.md) | 84 | код B | **system sleep**: poll [0x40007010]&2; [0x40007008]\|=r1; [0x40007000]=(&~7)\|2; **SCB_SCR \|= 4 (SLEEPDEEP)**; WFI или SEV+WFE×2; clear SLEEPDEEP | §50 | разобран | 100% |
 | [`0x0c304`](functions_mcu/func_0x0c304.md) | 96 | код B | I2C read reg 0x91A0 → u16@0xF95+0x18; та же логика диапазона; 3 попытки | §50 | разобран | 100% |
@@ -394,7 +393,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0ccbc`](functions_mcu/func_0x0ccbc.md) | 72 | код B | **WWDG CR(+0) decode**: {bits[15:10], [14:8], [6:0]} → 3 байта | §50 | разобран | 100% |
 | [`0x0cd0c`](functions_mcu/func_0x0cd0c.md) | 110 | код B | **WWDG refresh с данными**: 0xCA/0x53 → +0x24; RER(+0x8) = u32@r4; +0x10 = u32@r4+8 \| (u16@r4+4)<<16; 0xcc08; delay 0x2FF | §50 | разобран | 100% |
 | [`0x0cd80`](functions_mcu/func_0x0cd80.md) | 136 | код B | WWDG window timer: BCD-кодирование 4B (0xc9a8/0xc9be); magic 0xCA/0x53 → [0x40002824]; 0xcbb8 check; CFR=[0x40002804]=r6&0xFFFF3F; 0xcc08 start; status bit5[0x40002808] / 0xce70 wait; финал [0x40002824]=0xFF | §51 | разобран | 100% |
-| [`0x0ce68`](functions_mcu/func_0x0ce68.md) | 8 | код B | thunk → 0x3168 | §48 | ID | 25% |
+| [`0x0ce68`](functions_mcu/func_0x0ce68.md) | 8 | код B | thunk → 0x3168 | §48/§61 | разобран | 100% |
 | [`0x0ce70`](functions_mcu/func_0x0ce70.md) | 92 | код B | **WWDG window wait**: magic 0xCA/0x53 → +0x24; clear bit5([0x4000280C]); poll bit5 до 0x8000; return статус; финал 0xFF → +0x24 | §50 | разобран | 100% |
 | [`0x0ced0`](functions_mcu/func_0x0ced0.md) | 16 | код B | init-подблок: 0xcdd4(1) + 0xcdc8(1) | §49 | разобран | 100% |
 | [`0x0cee0`](functions_mcu/func_0x0cee0.md) | 68 | код B | I2C read: {code16, len=2} → 0x1e72(dev 0x3E) — чтение регистра чипа I2C2 | §50 | разобран | 100% |
@@ -446,7 +445,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x0ee48`](functions_mcu/func_0x0ee48.md) | 298 | код B | **buffer/queue manager @RAM+0x2FFA**: args (src {u16 len}, dst, ?); clamp u16[src]−0xF; если u16[dst] < clamped → s8[RAM+0x2FFA+0x14]++ (overflow counter); bl 0x170e0 | §52 | разобран | 100% |
 | [`0x0ef78`](functions_mcu/func_0x0ef78.md) | 140 | код B | buffer init: [flash@0x1AD24]=0; 0x11d6(RAM+0x2FEC,0xE); 0x11d6(RAM+0x2FFA,0x15); byte[RAM+0x2FFE] \|= 0xF8 (биты 3..7) | §51 | разобран | 100% |
 | [`0x0f038`](functions_mcu/func_0x0f038.md) | 262 | код B | **frame builder с retry**: 0x11d6(sp+4, 0x30) — init 48B кадра; цикл ×3: 0xab0c(sp+4) (fetch/retry §51), при !=1 → retry (счётчик r5); 0x8a50 (checksum §51); pool RAM+0x59/0x5A/+0x1359; bl 0x11d6/0xab0c/0x8a50 | §52 | разобран | 100% |
-| [`0x0f14c`](functions_mcu/func_0x0f14c.md) | 156 | код B | — | — | не начат | 0% |
+| [`0x0f14c`](functions_mcu/func_0x0f14c.md) | 156 | код B | **init/retry-рутина**: bl 0x11d6; цикл (≤3 итерации) bl 0xab0c с проверкой r0==1 (retry до успеха); затем читает [pool+0x2f]. Вызывающий 0xe6f8 | §61 | разобран | 100% |
 | [`0x0f1ec`](functions_mcu/func_0x0f1ec.md) | 78 | код B | порог #1: u16@0xF95+6 vs flash 0x19D8E+0xA; счётчик @0xA22 (кап +0xE); toggle bit1(@0xF70+2) + 0x156ac | §50 | разобран | 100% |
 | [`0x0f290`](functions_mcu/func_0x0f290.md) | 94 | код B | счётчик #8: u32@0xFBB+4 ≥ 0x3E8 && !флаги && byte@0x107==1 → u16@0xA2E++; ≥ 0x12C → toggle bit2(@0xF70+2), reset; вызов из 0x11978 | §50 | разобран | 100% |
 | [`0x0f304`](functions_mcu/func_0x0f304.md) | 88 | код B | счётчик #7: u32@0xFBB+4 ≥ 0x3E8 && !флаги → u16@0xA30++; ≥ 0x12C → toggle bit3(@0xF70+2), reset; вызов из 0x11978 | §50 | разобран | 100% |
@@ -470,33 +469,33 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x10730`](functions_mcu/func_0x10730.md) | 4 | код C | setter u16 @+0xc (strh) | §48 | разобран | 100% |
 | [`0x10734`](functions_mcu/func_0x10734.md) | 60 | код C | SPI-конфиг: merge u16-флагов из структуры → SPI-регистр; вызов 0x10788 | §49 | разобран | 100% |
 | [`0x10770`](functions_mcu/func_0x10770.md) | 16 | код C | SPI1-инициал: SPI_CTLR \|= 0x40, RCC \|= 0x1000, SPI+0x4=0x80, 0x5a6c() | §49 | разобран | 100% |
-| [`0x10780`](functions_mcu/func_0x10780.md) | 8 | код C | thunk → 0x10788 | §48 | ID | 25% |
+| [`0x10780`](functions_mcu/func_0x10780.md) | 8 | код C | thunk → 0x10788 | §48/§61 | разобран | 100% |
 | [`0x10788`](functions_mcu/func_0x10788.md) | 92 | код C | **SPI1 full init**: 0x107ec (GPIOA EXTI); GPIOA pin 0x10; struct {0, 0x104, 0, 2, 1, 0x200, 8, 0, 7} → 0x10734(0x40013000); 0x106a0 — **SPI1 = 0x40013000** | §50 | разобран | 100% |
 | [`0x107ec`](functions_mcu/func_0x107ec.md) | 126 | код C | **GPIOA EXTI init**: 0x87b0(&local); RCC BDCR \|= 4\|0x1001; 4× {mode u16 (0x20/0x80/0x40/0x10), byte, count} → 0x85c8(GPIOA) | §50 | разобран | 100% |
 | [`0x10870`](functions_mcu/func_0x10870.md) | 98 | код C | **SPI1 read**: poll SPI1+8 bit2 (0x10718) до 0x8000; 0x10730(r5); delay 0xA; poll bit0; 0x1072a() → byte | §50 | разобран | 100% |
 | [`0x1093c`](functions_mcu/func_0x1093c.md) | 118 | код C | **NVRAM→RAM копия + порог**: byte@0x4A[0..5] → @0xFC7; если i8@+2 > i8@+5: счётчик @0x60 (кап 0xA) → sync + u32@0x8C \|= 0x1000 | §50 | разобран | 100% |
-| [`0x10a20`](functions_mcu/func_0x10a20.md) | 8 | код C | thunk → 0x112bc | §48 | ID | 25% |
+| [`0x10a20`](functions_mcu/func_0x10a20.md) | 8 | код C | thunk → 0x112bc | §48/§61 | разобран | 100% |
 | [`0x10a5c`](functions_mcu/func_0x10a5c.md) | 50 | код C | event: u16@0x1048 → 0xcd80(1) + 0xcda4() | §49 | разобран | 100% |
 | [`0x10abc`](functions_mcu/func_0x10abc.md) | 60 | код C | включение HSE (CTLR bit0) + ожидание HSERDY (bit1), таймаут 0x500; fallback-константа 0x3D0900 → @0xB88 | §49 | разобран | 100% |
 | [`0x10ba0`](functions_mcu/func_0x10ba0.md) | 160 | код C | PLL setup: 0xc4cc(0x10000); 0xc8a4 (wait PLLRDY/CTLR bit17) != 1 → 0x10e10 (fallback); выбор mul/div по константе 0xF42400 (10 MHz HSE ref): == → {0x30000,0,0}; > → {0x30000,0,2}; else udiv/mls divisibility check | §51 | разобран | 100% |
 | [`0x10cdc`](functions_mcu/func_0x10cdc.md) | 152 | код C | clock init: 0xc518 + 0xc8dc (wait) + 0x10e10 — инициализация тактового контура | §51 | разобран | 100% |
-| [`0x110f0`](functions_mcu/func_0x110f0.md) | 10 | код D | thunk → 0x5b8c(r0=0) | §48 | ID | 25% |
+| [`0x110f0`](functions_mcu/func_0x110f0.md) | 10 | код D | thunk → 0x5b8c(r0=0) | §48/§61 | разобран | 100% |
 | [`0x110fc`](functions_mcu/func_0x110fc.md) | 400 | код D | **power/shutdown state machine**: state byte[RAM+0x2F] (0..3); state0: byte[RAM+0xA64]=0, byte[0x35]=3, 0x5bc4(0), →state1, 0x5cd0(5); state1: если byte[RAM+0x37]==2 → **0x5c9c()** (NVRAM flash-write §49) + u32[RAM+0x8]++/u32[RAM+0xC]++ (boot-счётчики) →state3; если ==1 → 0x5cc0() →state2; state2: 0x111f6; state3: u16[RAM+0x4]++ (timeout, при ≥0x2BC=700 → сброс в state1); bl 0x5bc4/0x5cd0/0x5c9c/0x5cc0/0xc94c/0xd938/0x22f4/**0x8bec** (voltage-reset §52); SCB 0xE000ED0C + 0x5FA0000 в хвосте (sleep/reset) | §52 | разобран | 100% |
 | [`0x11350`](functions_mcu/func_0x11350.md) | 30 | код D | обнуление кластера счётчиков @0xA55..; гейт bit7(u16@0xF95+0xC) | §49 | разобран | 100% |
-| [`0x11668`](functions_mcu/func_0x11668.md) | 12 | код D | thunk → 0x10e5c | §48 | ID | 25% |
+| [`0x11668`](functions_mcu/func_0x11668.md) | 12 | код D | thunk → 0x10e5c | §48/§61 | разобран | 100% |
 | [`0x11674`](functions_mcu/func_0x11674.md) | 168 | код D | BLE sender #1: 0x11d6+0xab0c+0x8a50(chk)+0xaccc(send); handler 0x10f30; вызов из диспетчера 0x3cac | §51 | разобран | 100% |
 | [`0x11724`](functions_mcu/func_0x11724.md) | 166 | код D | BLE sender #2: twin 0x11674; handlers 0x10f3c/0x10f48 | §51 | разобран | 100% |
 | [`0x117d4`](functions_mcu/func_0x117d4.md) | 172 | код D | BLE sender #3: twin 0x11674; handlers 0x10f24/0x10f54 | §51 | разобран | 100% |
-| [`0x11888`](functions_mcu/func_0x11888.md) | 12 | код D | thunk → 0x10f18 | §48 | ID | 25% |
+| [`0x11888`](functions_mcu/func_0x11888.md) | 12 | код D | thunk → 0x10f18 | §48/§61 | разобран | 100% |
 | [`0x11894`](functions_mcu/func_0x11894.md) | 204 | код D | BLE session state machine TBB(5): reset при RAM[0xA48]==1; state byte@RAM[0xA51]: 0→0xec70(WWDG wait)+0xf038→1; 1→u16@RAM[0xA52]++ (wrap 0x32) + 0x44c0() → 2/3; 2→count (wrap 0x64) → 3; 3→0x6fc0 → 4 | §51 | разобран | 100% |
 | [`0x11978`](functions_mcu/func_0x11978.md) | 32 | код D | init-подблок: 0x11988(0x80) + 0x119a0() | §49 | разобран | 100% |
 | [`0x11998`](functions_mcu/func_0x11998.md) | 44 | код D | **инициал-цепочка из 10 вызовов** (0xfbf8..0xff3c) | §49 | разобран | 100% |
 | [`0x119c4`](functions_mcu/func_0x119c4.md) | 32 | код D | init-подблок: 0x119d4() + 0x119ec() | §49 | разобран | 100% |
 | [`0x119e4`](functions_mcu/func_0x119e4.md) | 434 | код D | **I2C2 block-manager @RAM+0x1FD4 (2KB buffer @+0x800)**: args (reg_code, src, len, mode); валидация: u32[+0x800]+len ≤ 0x800, u32[+0x804] ≥ len, len≠0, mode==1 \|\| 0x800%len==0; copy src→buffer[+0x800..]; если (arg0&0x7FF)==0 → u32[+0x808]=arg0; read-регистра (0x82f0) + wait 100; 0x84a0(reg=[+0x808], len=u16[+0x800]+len, buf=RAM+0x27E0); 0x8380(buf,0x800) + 0x3b82(buf,0x800) — обработка блока; результаты → u16-таблицы @RAM+0xC06/@RAM+0xB8E (индекс u16[RAM+0x1FAC+0xc]−3); при совпадении таблиц → 0x15758 | §52 | разобран | 100% |
-| [`0x11bac`](functions_mcu/func_0x11bac.md) | 130 | код D | — | — | не начат | 0% |
+| [`0x11bac`](functions_mcu/func_0x11bac.md) | 130 | код D | **форматтер даты/времени (верифицировано §61)**: total-seconds → 6 байт через цепочку остатков. Аргументы: arg0=r0=out-буфер, arg1=r1=total seconds. Дивизоры [31104000, 2592000, 86400, 3600, 60] (≈360d-год, 30d-месяц, день, час, минута): out[0]=v//31104000, out[i]=(v%D[i-1])//D[i], out[5]=v%60. Вызывающий 0x6184 раскладывает счётчик [r0+0x1f] в [r1+0x19..] | §61 | разобран | 100% |
 | [`0x11c3c`](functions_mcu/func_0x11c3c.md) | 34 | код D | I2C init: 0x5a38() + задержка 0x29BC + 0x1c1c(0x1F4) | §49 | разобран | 100% |
 | [`0x11c5e`](functions_mcu/func_0x11c5e.md) | 38 | код D | I2C init: 0x5a38() + задержка 0x9239 + 0x1c1c(0x1F4) | §49 | разобран | 100% |
-| [`0x11cac`](functions_mcu/func_0x11cac.md) | 8 | код D | thunk → 0x4c14 | §48 | ID | 25% |
+| [`0x11cac`](functions_mcu/func_0x11cac.md) | 8 | код D | thunk → 0x4c14 | §48/§61 | разобран | 100% |
 | [`0x11cb4`](functions_mcu/func_0x11cb4.md) | 188 | код D | clock switch to HSE/PLL: [0xE000ED88]\|=0xF00000; RCC+0x24\|=4; CFGR0 &= 0xF8FFC000; RCC+0 \|= 0xFEF6FFFF & ~0x40000; CFGR0 &= 0x0700FFFF; RCC+0x2C=0; +0x30=0x3800; +0x34=0; +0x40=0; CFGR1=0x04BF8000; RCC+0x1C\|=0x10000000; wait [0x40007000]&0x400; затем 0x40001820 | §51 | разобран | 100% |
 | [`0x11d98`](functions_mcu/func_0x11d98.md) | 58 | код D | state machine byte@0x2E: 0→1+инициал; 2/3/4/5→сброс в 0 с вызовами; копия в @0xF70+5/6 | §49 | разобран | 100% |
 | [`0x11de8`](functions_mcu/func_0x11de8.md) | 1410 | код D | **boot/startup state machine (5 states, byte[RAM+0x2E], TBB)**: state 0: bl **0x174fc**, bl **0x15c7c** → fail? state=4 : OK; если byte[X]==1 → bl **0x87c8** (GPIO check §52) → u16[Y]++ (≤4); серия гейтов → flags; u16[W]++ до **0xBB8 (3000 ticks)** по гейтам; bl **0x139ac**, bl **0xd878** → state=3; state 1: bl 0x4994, bl 0x8834; гейты (byte==1/≥3); u32[pool+4]≥0xC8? skip : u16[X]++ до **0x1F4 (500)** → bl **0x5b98**, 0x139ac, 0xd878 → state=3; state 2: секция 0x1206C..0x12348; state 3: b 0x1216A; state 4: b 0x12348; константы порогов: 3000/500/**0x2EE0 (12000)**; caller: thunk @0x12472 | §54 | разобран | 100% |
@@ -515,14 +514,14 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x12d90`](functions_mcu/func_0x12d90.md) | 190 | код E | flag sequencer #2: twin 0x12b50 (та же структура 0x130f2/0x4f38/0x4f50/bitmask) | §51 | разобран | 100% |
 | [`0x12e64`](functions_mcu/func_0x12e64.md) | 56 | код E | счётчик с насыщением: u16@0xB7C++, кап 0xC8; гейт bit2(u32@0xB76) | §49 | разобран | 100% |
 | [`0x12f44`](functions_mcu/func_0x12f44.md) | 134 | код E | copy helper #2: 0x11a4 (memcpy) — twin 0x12d04 | §51 | разобран | 100% |
-| [`0x12fd0`](functions_mcu/func_0x12fd0.md) | 8 | код E | thunk → 0x12b50 | §48 | ID | 25% |
-| [`0x12fd8`](functions_mcu/func_0x12fd8.md) | 8 | код E | thunk → 0x12d90 | §48 | ID | 25% |
+| [`0x12fd0`](functions_mcu/func_0x12fd0.md) | 8 | код E | thunk → 0x12b50 | §48/§61 | разобран | 100% |
+| [`0x12fd8`](functions_mcu/func_0x12fd8.md) | 8 | код E | thunk → 0x12d90 | §48/§61 | разобран | 100% |
 | [`0x12fe0`](functions_mcu/func_0x12fe0.md) | 66 | код E | **generic u32 flag set/clear**: группа r1>>5&7 (1→+0xC, 2→+0x10, иначе +0x14); бит r1&0x1F | §50 | разобран | 100% |
 | [`0x1302c`](functions_mcu/func_0x1302c.md) | 134 | код E | **RCC-пульсатор USART (полный разбор §59)**: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность \|=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит; эмуляторно верифицирован (батч 12) | §6.5/§59 | разобран | 100% |
 | [`0x130f2`](functions_mcu/func_0x130f2.md) | 80 | код E | **generic u32 flag check**: та же группа; оба бита (низкий + высокий r1>>8) должны быть set | §50 | разобран | 100% |
 | [`0x13148`](functions_mcu/func_0x13148.md) | 168 | код E | HSE freq → divider setup: 0xc708 (расчёт частоты HSE = div × 0x7A1200) + запись делителей | §51 | разобран | 100% |
-| [`0x131fc`](functions_mcu/func_0x131fc.md) | 130 | код E | — | — | не начат | 0% |
-| [`0x13284`](functions_mcu/func_0x13284.md) | 130 | код E | — | — | не начат | 0% |
+| [`0x131fc`](functions_mcu/func_0x131fc.md) | 130 | код E | **state-machine контекст-слотов — близнец 0x13284** (идентичная структура: r2>0x96→return 0, state&7, mod-4 счётчик, bitmask). Вызывающие 0x4a88, 0x4ad8 | §61 | разобран | 100% |
+| [`0x13284`](functions_mcu/func_0x13284.md) | 130 | код E | **state-machine контекст-слотов (близнец 0x131fc)**: аргументы (r0,r1,r2); r2>0x96 (stride слота §59.6) → return 0; читает state-байт &7 (==7→обход), цикл mod-4 счётчика с bitmask-проверкой, вычисление индекса r4*3+r4*16. Вызывающий 0x4276 | §61 | разобран | 100% |
 | [`0x1330c`](functions_mcu/func_0x1330c.md) | 106 | код E | **транзакция + CRC-8 check**: 0x8380(&buf, 0x50000/0x51000, 8); 0x87f8(buf, 7) == byte@buf+0xB → 0x10a5c (event) | §50 | разобран | 100% |
 | [`0x1337c`](functions_mcu/func_0x1337c.md) | 1472 | код E | **сенсорный сэмплер + flag bit-pack**: пролог: если byte[RAM+0xF70+3] → u32[RAM+0xFC]++ (clamp 0x32=50, overflow-флаг); гейт byte[RAM+0x31]==1 → skip, иначе bl **0x8938** (ADC handler §52) → r8; bl 0x8a44 → r7; s16×10 → bl **0x4d48**(v×10) → r5; sb = r5/10 (при r5<0: −(r5/10)\|0x8000); выбор signed-байта sl из 3 источников по битам config (+6 offsets); fp=\|sl\|&0xFF; гейт byte>>7 или clamp byte[+2]→0..0xC → u8[sp+4]; **bit-pack секция**: ~15 отдельных битов config → u16[out+7] (паттерн §52 0x1e94) + bl **0xa6a4** (helper) + ещё биты; pool: RAM+0xF70/+0xFC/+0x31/+0x15F7/+0xFC7/+0xDA/+0x98/+0xD8/+0x90/+0x104/+0xEF/+0xF95/+0x106E/+0xFD3/+0xFBB/**+0x80** (тот же телеметрии-state что 0x14f50)/+0x107/+0x1077, flash @0x19C42, RAM+0xF10 (voltage table §52), +0x109E/+0x44/+0xF9; caller: thunk @0x12454 (+0x5fd4) | §54 | разобран | 100% |
 | [`0x1395c`](functions_mcu/func_0x1395c.md) | 36 | код E | обработчик флага: byte@0xCAC → byte@0xA73 (сброс после обработки) | §49 | разобран | 100% |
@@ -628,7 +627,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x1a688`](functions_mcu/func_0x1a688.md) | 266 | код I | **timer capture handler @RAM+0xAC**: u32[+0x40] — счётчик (clamp ≤ 0x2710=10000, иначе +1); u16[+0xE] — mode (==arg0 → exit); s16 из [RAM+0x1768+8] (порог 0x1E); запись в 0x40012C40 (TIM-кластер +0x40 = CCR-регистр); state u32[+0x3C] | §52 | разобран | 100% |
 | [`0x1a7ac`](functions_mcu/func_0x1a7ac.md) | 136 | код I | «own»: S-box-подстановка + перестановка (16 Б, 10 раундов) | §37 | разобран | 100% |
 | [`0x1a838`](functions_mcu/func_0x1a838.md) | 32 | код I | **CRC-32** (полином 0x04C11DB7, MSB-first); вызов из агрегатора 0x1F71C | §49 | разобран | 100% |
-| [`0x1a894`](functions_mcu/func_0x1a894.md) | 140 | код I | — | — | не начат | 0% |
+| [`0x1a894`](functions_mcu/func_0x1a894.md) | 140 | код I | **инициализатор struct/счётчика**: bl 0x1e3e4; обнуляет struct+4/+8/+0xc; ставит байты (+0=0, +1=1); bit15 [r0+0x14] \|= 1<<15; цикл декремента u16[r1+4] до underflow (обнуление счётчика). Вызывающий 0x1a338 | §61 | разобран | 100% |
 | [`0x1a938`](functions_mcu/func_0x1a938.md) | 3296 | код I | **моторный FOC-рутин (корректировка §6.5/§22: не просто «батарейные пороги»)** — 3296 B, крупнейшая функция; вызывающий единственный — 0x1a49e (без свежих аргументов, работает на глобальном RAM). **Структура (§59.9):** вход → push + pool-загрузки → сразу `bl 0x1be1c` (TIM capture calc) — при нулевом состоянии исполняется лишь ~10 собственных инструкций до делегирования. Подфункции: 0x1be1c (TIM capture), 0x1d7ac (векторная операция), 0x1d818 (2D rotate/dot §50), 0x1bd88 (quadrant-классификатор) — все моторные. **Батарейный аспект**: ldrb @0x306 (% из 0x1DFD8) @0x1aaf8, `cmp #0x5a`(90), гейт byte@0x22e (==1 → обход); пороги 10/90/100 (§6.5). 3 внутренних возврата (0x1adf0/0x1b224/0x1b616) = state-machine-ветки; части сильно связаны межчастными ветками (не склейка). RAM-регионы: 0x90, 0x108..0x10e, 0x382/0x384/0x386, 0x17fa4..0x17fac (константы-инициализация при idle). **Глубокий проход (§60–§60.3): ВСЕ 5 подфункции разобраны и верифицированы** — 0x1be1c (TIM capture → FOC фазы, 6-секторная), 0x1e410 (табличная декодировка Q15 @flash 0xA6C6), 0x1d7ac (cross+dot, X из таблицы), 0x1d818 (cross+dot, X из RAM+0x10c), 0x1bd88 (6-секторный классификатор). **Архитектура state-machine (§60.3, трассировка):** нулевое состояние → одна итерация, 458 insn, чистый возврат; поток: вход→0x1be1c(TIM)→post→0x1d7ac(cross+dot→0x1e410)→большой inline-блок 0x1aa08..0x1aae6(109 insn)→условный `bl 0x1ab68` (внутренний блок, гейт `cmp r3,#0;bge`)→fixed-point 0x1b3f2..0x1b460 (muls/asrs#15, запись r4+0x18..0x34)→0x1d818(2D rotate)→0x1bd88(sector)→возврат. Одиночные byte-флаги путь не меняют — гейты многобайтные/по значениям. **Все 3 крупных inline-блока + 3 содержательных мелких фрагмента верифицированы**: §60.4 0x1b3f2 (cross+dot); §60.5 0x1aa08 (кламп+интегратор); §60.6 0x1b48a (коммутация секторов, порог 16383); §60.7 мелкие: 0x1b470 (v2c/v30/v34 из r0/r1/r2), 0x1b584 (хвост: svX=asr15(4500·vX), offset=asr1(2250−max(sv)), фазы u16[RAM+0x382/4/6]=2250−(sv+offset) — финальный PWM-вывод FOC), 0x1a9f2 (pre-block-2 frame setup); **§60.8 entry 0x1a938..0x1a9d0 верифицирован** (табличная выборка — треугольный mapping по flash-таблице @0x9E38: idx=value>>4 \| 1023−(value−16384)>>4, u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta); branch C неактивен для s16). **ВЕСЬ 0x1A938 разобран и верифицирован**: все 5 подфункций + entry + 3 крупных inline-блока + 3 мелких фрагмента; остались только тривиальные 1-2 insn зазоры (store/ветки) | §22/§59.9 | разобран | 100% |
 | [`0x1b67c`](functions_mcu/func_0x1b67c.md) | 1174 | код I | флаги/статус: перегрев ≥46°C → флаг @0x318 | §22 | разобран | 100% |
 | [`0x1bb1c`](functions_mcu/func_0x1bb1c.md) | 562 | код I | батарейный замер №2 (struct @0x154) | §25.4 | разобран | 100% |

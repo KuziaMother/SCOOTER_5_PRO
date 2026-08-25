@@ -3531,6 +3531,51 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §61: оставшиеся некаталогизированные функции (досмотр карты)
+# 0x11bac — форматтер даты/времени: total-seconds → байты через цепочку остатков.
+# Аргументы: arg0=r0=out-буфер, arg1=r1=total seconds. Дивизоры [31104000,2592000,
+# 86400,3600,60] (≈360d-год, 30d-месяц, день, час, минута):
+#   out[0]=v//31104000; out[i]=(v%D[i-1])//D[i]; out[5]=v%60
+# ---------------------------------------------------------------------------
+
+_FMT_D = [31104000, 2592000, 86400, 3600, 60]
+
+
+def ref_11bac(v):
+    out = [(v // _FMT_D[0]) & 0xFF]
+    for i in range(1, len(_FMT_D)):
+        out.append(((v % _FMT_D[i - 1]) // _FMT_D[i]) & 0xFF)
+    out.append((v % _FMT_D[-1]) & 0xFF)
+    return out
+
+
+@t(0x11BAC, '§61: форматтер даты/времени — total-seconds → байты (цепочка остатков, дивизоры [31104000,2592000,86400,3600,60] ≈ 360d-год/30d-месяц/день/час/мин/сек): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60')
+def _(run, rng):
+    uc = run.uc
+    OUT = RAM + 0x300
+    for _ in range(100):
+        v = rng.getrandbits(26)
+        uc.mem_write(RAM, bytes(0x20000))
+        from unicorn import UC_HOOK_CODE as _H
+        def _st(uc_, addr, size, u):
+            a = addr & ~1
+            if a >= 0x11C2E or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(_H, _st)
+        uc.reg_write(UC_ARM_REG_SP, 0x20017F00); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R0, OUT); uc.reg_write(UC_ARM_REG_R1, v)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x11BAC | 1, 0, count=80)
+        except UcError:
+            pass
+        uc.hook_del(sh)
+        got = list(bytes(uc.mem_read(OUT, 6)))
+        exp = ref_11bac(v)
+        assert got == exp, f'0x11bac: v={v} got={got} exp={exp}'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
