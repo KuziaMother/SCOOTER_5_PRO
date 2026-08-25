@@ -2651,6 +2651,104 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §59.6: RX-парсер USART3 0x1E9E0 (вызывающий — периодический таск 0x1DFD8)
+#
+# Контракт (эмпирически):
+# - state = byte[RAM+0x172]: 0 → только RAM+0x171=0; 1 → обработать 1 сообщение
+# - head = byte[RAM+0x2C0] (кольцо 3 слота × 150 B @RAM+0x881), байт команды = ring[head*150+1]
+# - toggle = byte[RAM+0x2C9] (0..7): индекс context-слота @RAM+0x10B5 + i*0x76
+# - dispatch по ASCII: '@'→только head++; 'G'/'K'/'c'→frame-start (len 20/27/83);
+#   'A'→telemetry-snapshot; 'a' и др. → response-сборщики
+# - context: {6,'e',len,'O','K',crc,0x9A} (frame-start) или {'d'-кадры}
+# - crc = сумма байтов context[1..] mod 256; checksum = 0xFF - context[1]
+# - после обработки: state=0, head++ (wrap при ≥3), toggle++ (wrap при ≥8, frame-start)
+#
+# Методич. (§59.6.3): на этом чипе Bcond-кодировка D0xx = BEQ c imm8 в [7:0]
+# (не стандартный ARM [11:4]); capstone декодирует цели верно, но метки cond — нет.
+# ---------------------------------------------------------------------------
+
+def _parser_probe(run, state=1, head=0, toggle=0, byte=0, slot_data=None):
+    """засеять состояние парсера и прогнать; вернуть список записей (off, val) в RAM"""
+    uc = run.uc
+    uc.mem_write(RAM + 0x172, bytes([state]))
+    uc.mem_write(RAM + 0x2C0, bytes([head]))
+    uc.mem_write(RAM + 0x2C9, bytes([toggle]))
+    uc.mem_write(RAM + 0x882 + head * 150, bytes([byte]))
+    if slot_data:
+        for off, v in slot_data.items():
+            uc.mem_write(RAM + 0x881 + head * 150 + off, bytes([v]))
+    ev = []
+    def hw(u_, acc, addr, size, val, usr):
+        if RAM <= addr < RAM + 0x20000 and not (0x20017F00 <= addr < 0x20018000):
+            ev.append((addr - RAM, val))
+    h = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, RAM, RAM + 0x20000)
+    try:
+        run.call(0x1E9E0, [], max_insn=50000)
+    finally:
+        uc.hook_del(h)
+    return ev
+
+
+def _ctx(run, slot, n=13):
+    """context-слот @RAM+0x10B5 + slot*0x96 (n байтов; stride = размер ring-слота)"""
+    base = RAM + 0x10B5 + slot * 0x96
+    return bytes(run.uc.mem_read(base, n))
+
+
+@t(0x1E9E0, '§59.6: RX-парсер USART3 — dispatch-каркас: state=0 → только RAM+0x171=0; state=1 + неизвестный байт → RAM+0x171=0, state→0, head 0→1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC-структ {idx=5,crc=0x13,sum=0x9A}, флаг RAM+0x310=0, toggle 0→1, head 0→1; "G" (toggle=7): context @0x14CF, toggle 8→0 (wrap)')
+def _(run, rng):
+    # state=0: только RAM+0x171=0
+    ev = _parser_probe(run, state=0, byte=0x47)
+    assert ev == [(0x171, 0)], f'state=0: {ev}'
+    # неизвестный байт (0x00): минимальные записи
+    ev = _parser_probe(run, state=1, head=0, byte=0x00)
+    assert ev == [(0x171, 0), (0x172, 0), (0x2C0, 1)], f'неизв. байт: {ev}'
+    # "G" frame-start, toggle=0
+    ev = _parser_probe(run, state=1, head=0, toggle=0, byte=0x47)
+    got = dict(ev)
+    assert got.get(0x310) == 0, f'флаг G: {ev}'
+    assert got.get(0x2C9) == 1, f'toggle: {ev}'
+    assert got.get(0x2C0) == 1, f'head: {ev}'
+    assert got.get(0x172) == 0, f'state: {ev}'
+    ctx = _ctx(run, 0)
+    assert ctx[:7] == bytes([6, 0x65, 20, 0x4F, 0x4B, 0x13, 0x9A]), f'context G: {ctx.hex(" ")}'
+    # CRC-структ @RAM+0x177: idx=5, crc=0x13, sum=0x9A
+    assert got.get(0x177) == 5 and got.get(0x178) == 0x13 and got.get(0x179) == 0x9A, f'crc-структ: {ev}'
+    # "G" frame-start, toggle=7 → слот 7, wrap toggle 8→0
+    ev = _parser_probe(run, state=1, head=0, toggle=7, byte=0x47)
+    tw = [v for a, v in ev if a == 0x2C9]
+    assert tw == [8, 0], f'toggle wrap: {tw}'
+    ctx7 = _ctx(run, 7)
+    assert ctx7[:7] == bytes([6, 0x65, 20, 0x4F, 0x4B, 0x13, 0x9A]), f'context G slot7: {ctx7.hex(" ")}'
+
+
+@t(0x1E9E0, '§59.6: RX-парсер — "A" telemetry-snapshot: ring[3..9] → RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (нибблы ring5), 0x2EC=ring6, ring7 → {bit7→0x2ED, bit6→0x2EE, [5:0]→0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF')
+def _(run, rng):
+    data = {i: 0x10 + i for i in range(3, 10)}   # ring[3..9] = 0x13..0x19
+    ev = _parser_probe(run, state=1, head=0, byte=0x41, slot_data=data)
+    uc = run.uc
+    def rd(off):
+        return uc.mem_read(RAM + off, 1)[0]
+    # rev16: u16 LE @0x2E8 = rev16((ring4<<8)|ring3) = rev16(0x1413) = 0x1314
+    assert (rd(0x2E8), rd(0x2E9)) == (0x14, 0x13), f'rev16: {rd(0x2E8):#x},{rd(0x2E9):#x}'
+    assert rd(0x2EA) == 5 and rd(0x2EB) == 1, f'нибблы ring5: {rd(0x2EA):#x},{rd(0x2EB):#x}'
+    assert rd(0x2EC) == 0x16, f'ring6: {rd(0x2EC):#x}'
+    # ring7 = 0x17: bit7=0, bit6=0, [5:0]=0x17
+    assert rd(0x2ED) == 0 and rd(0x2EE) == 0 and rd(0x2EF) == 0x17, f'ring7-сплит: {rd(0x2ED):#x},{rd(0x2EE):#x},{rd(0x2EF):#x}'
+    assert rd(0x2F0) == 0x18 and rd(0x2F1) == 0x19, f'ring8/9: {rd(0x2F0):#x},{rd(0x2F1):#x}'
+    # context: {0xC,'d',0x20,7,data[0..6],crc,checksum}
+    ctx = _ctx(run, 0)
+    assert ctx[0] == 0x0C and ctx[1] == 0x64 and ctx[2] == 0x20 and ctx[3] == 7
+    assert ctx[4:11] == bytes([0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19]), f'data: {ctx.hex(" ")}'
+    crc = (0x64 + 0x20 + 7 + sum(range(0x13, 0x1A))) & 0xFF   # = 0x25
+    assert ctx[11] == crc == 0x25, f'crc: {ctx[11]:#x} (ожидалось {crc:#x})'
+    assert ctx[12] == 0x9B, f'checksum: {ctx[12]:#x}'
+    # toggle и head
+    got = dict(ev)
+    assert got.get(0x2C9) == 1 and got.get(0x2C0) == 1 and got.get(0x172) == 0
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
