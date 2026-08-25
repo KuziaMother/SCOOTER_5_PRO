@@ -3124,6 +3124,38 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.3: 0x1d818 — cross+dot (двойник 0x1d7ac, но X из RAM, не из таблицы)
+# Аргумент: arg0=r0 = A=(a_lo,a_hi) Q15. Вектор X = (X_lo,X_hi) из RAM:
+#   X_lo=s16[RAM+0x10c], X_hi=s16[RAM+0x10e] (база r6 = pool @flash 0x1d870).
+# Вычисление идентично 0x1d7ac: lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo
+# +a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF).
+# ---------------------------------------------------------------------------
+
+D818_XLO = 0x10C   # RAM-offset X_lo
+D818_XHI = 0x10E   # RAM-offset X_hi
+
+
+def ref_1d818(arg0, X_lo, X_hi):
+    a_lo, a_hi = _s16(arg0), _s16(arg0 >> 16)
+    P = _div15(X_hi * a_lo); Q = _div15(X_lo * a_hi)
+    R = _div15(X_lo * a_lo); S = _div15(X_hi * a_hi)
+    return ((R + S) & 0xFFFF) << 16 | ((Q - P) & 0xFFFF)
+
+
+@t(0x1D818, '§60.3: cross+dot (двойник 0x1d7ac, X из RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое /2^15 с округлением')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(60):
+        arg0 = rng.getrandbits(32)
+        X_lo = rng.randrange(-300, 300); X_hi = rng.randrange(-300, 300)
+        uc.mem_write(RAM + D818_XLO, struct.pack('<h', X_lo))
+        uc.mem_write(RAM + D818_XHI, struct.pack('<h', X_hi))
+        r0, _ = run.call(0x1D818, (arg0,), max_insn=50000)
+        exp = ref_1d818(arg0, X_lo, X_hi)
+        assert r0 == exp, f'0x1d818: arg0={arg0:#010x} X=({X_lo},{X_hi}) got={r0:#010x} exp={exp:#010x}'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
