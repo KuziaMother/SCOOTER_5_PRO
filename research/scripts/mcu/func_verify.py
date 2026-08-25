@@ -2749,6 +2749,163 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §59.7: «own» round 0x1DD8C (128 B, bl из 0x1a814) — один раунд шифра «own»
+#
+# Буфер 16 B = 4 группы × 4 байта; каждая группа [A,B,C,D] смешивается
+# независимо через CRC-8 (полином 0x1B, MSB-first) как Feistel:
+#   X  = A^B^C^D
+#   A' = A ^ crc8(A^B) ^ X
+#   B' = B ^ crc8(B^C) ^ X
+#   C' = C ^ crc8(C^D) ^ X
+#   D' = D ^ crc8(D^A) ^ X
+# где crc8(x) = ((x<<1) ^ (0x1B & -(x>>7))) & 0xFF (один шаг CRC-8).
+# Чистая функция: все обращения к памяти — относительно r0 (буфер),
+# без pool/абсолютных RAM-адресов.
+# ---------------------------------------------------------------------------
+
+def ref_crc8_step(x):
+    return ((x << 1) ^ (0x1B & -(x >> 7))) & 0xFF
+
+
+def ref_own_round(buf16):
+    b = bytearray(buf16)
+    for i in range(4):
+        g = i * 4
+        A, B, C, D = b[g], b[g + 1], b[g + 2], b[g + 3]
+        X = A ^ B ^ C ^ D
+        b[g + 0] = A ^ ref_crc8_step(A ^ B) ^ X
+        b[g + 1] = B ^ ref_crc8_step(B ^ C) ^ X
+        b[g + 2] = C ^ ref_crc8_step(C ^ D) ^ X
+        b[g + 3] = D ^ ref_crc8_step(D ^ A) ^ X
+    return bytes(b)
+
+
+@t(0x1DD8C, '§59.7: «own» round — 16 B = 4×4 байта; каждая группа [A,B,C,D]: X=A^B^C^D; A''=A^crc8(A^B)^X, B''=B^crc8(B^C)^X, C''=C^crc8(C^D)^X, D''=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); чистая функция от буфера в r0')
+def _(run, rng):
+    buf_off = 0x1F000
+    for _ in range(32):
+        data = bytes(rng.randrange(256) for _ in range(16))
+        exp = ref_own_round(data)
+        run.ram_write(buf_off, data)
+        run.call(0x1DD8C, (RAM + buf_off,), max_insn=20000)
+        got = run.ram_read(buf_off, 16)
+        assert got == exp, f'own_round:\n in : {data.hex(" ")}\n exp: {exp.hex(" ")}\n got: {got.hex(" ")}'
+    # детерминированный якорь: все нули → все нули (X=0, crc8(0)=0)
+    run.ram_write(buf_off, b'\x00' * 16)
+    run.call(0x1DD8C, (RAM + buf_off,), max_insn=20000)
+    assert run.ram_read(buf_off, 16) == b'\x00' * 16, 'нули должны остаться нулями'
+
+
+# ---------------------------------------------------------------------------
+# §59.8: периодический таск USART3 0x1DFD8 (344 B) — inline-логика верифицирована
+#
+# Тело: u16 tick-счётчик @RAM+0x2BA++ → 3 «утечных интегратора» с обратной
+# связью → расчёт % батареи (линейная карта) → вызовы 0x1E9E0/0x1F1CC/
+# 0x1F71C/0x211F8 (+ 0x1B67C/0x2186C на старте) → главный u32-счётчик @RAM+0x314++.
+#
+# Верификация изолирует INLINE-логику: 6 `bl` патчатся в NOP (свежий Run —
+# общий не портится). Подфункции верифицируются отдельно (0x1E9E0 — §59.6).
+#
+# Интегратор (3 шт, пары acc/delta/out):
+#   new_acc = (acc + delta - old_out) & 0xFFFFFFFF
+#   new_out = asr(new_acc, 5)  (s16)
+#   пары: (0x298/0x278/0x27A), (0x288/0x284/0x286), (0x2A0/0x29C/0x29E)
+#
+# % батареи: level = s16[RAM+0x1794 + 12] (элемент 6 массива @RAM+0x1794):
+#   level >= 535 → 100;  level < 415 → 0;  иначе (level-415)*100/120 (signed div)
+#   (активный диапазон [415,535] → [0,100]); результат в byte[RAM+0x306].
+#   Гейт: вычисляется если flag byte[RAM+0x321]==1 ИЛИ u16[RAM+0x312] >= 30000
+#   (тогда flag:=1); иначе — только инкремент u16[RAM+0x312].
+# ---------------------------------------------------------------------------
+
+DFD8_BLS = [0x1dfda, 0x1dfe6, 0x1e0ae, 0x1e0b2, 0x1e0cc, 0x1e0d0]
+DFD8_NOP4 = b'\x00\xbf\x00\xbf'
+
+
+def _dfd8_asr(v, n):
+    """арифметический сдвиг u32 вправо на n, результат как signed s16"""
+    v &= 0xFFFFFFFF
+    if v & 0x80000000:
+        v -= 0x100000000
+    r = (v >> n) & 0xFFFF
+    return r - 0x10000 if r >= 0x8000 else r
+
+
+def ref_dfd8_integ(acc, delta_s16, out_s16):
+    na = (acc + delta_s16 - out_s16) & 0xFFFFFFFF
+    return na, _dfd8_asr(na, 5)
+
+
+def ref_dfd8_batpct(level):
+    if level >= 535:
+        return 100
+    if level < 415:
+        return 0
+    return ((level - 415) * 100) // 120
+
+
+@t(0x1DFD8, '§59.8: периодический таск USART3 — inline-логика (6 bl патч в NOP, save/restore): u16 tick @0x2BA++; 3 интегратора new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (пары 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); % батареи из level=s16[0x1794+12]: >=535→100, <415→0, иначе (level-415)*100//120 в byte[0x306]; главный u32 @0x314++')
+def _(run, rng):
+    uc = run.uc
+    S16 = {0x278, 0x284, 0x29C, 0x27A, 0x286, 0x29E}
+    INTEG = [(0x298, 0x278, 0x27A), (0x288, 0x284, 0x286), (0x2A0, 0x29C, 0x29E)]
+    # сохранить оригинальные байты 6 bl и патчить в NOP (изоляция inline-логики)
+    orig = [bytes(uc.mem_read(FLASH0 + b, 4)) for b in DFD8_BLS]
+    try:
+        for b in DFD8_BLS:
+            uc.mem_write(FLASH0 + b, DFD8_NOP4)
+
+        def seed(off, fmt, v):
+            uc.mem_write(RAM + off, struct.pack(fmt, v))
+
+        # --- 20 случайных наборов: интеграторы + счётчики ---
+        for _ in range(20):
+            seeds = {
+                0x2BA: rng.randrange(0, 0xFFFF),
+                0x314: rng.randrange(0, 0x1D4CA),
+                0x312: rng.randrange(0, 30000),
+            }
+            for acc_o, del_o, out_o in INTEG:
+                seeds[acc_o] = rng.getrandbits(32)
+                seeds[del_o] = rng.randrange(-32768, 32767)
+                seeds[out_o] = rng.randrange(-32768, 32767)
+            for off, v in seeds.items():
+                if off in S16:
+                    seed(off, '<h', v)
+                elif off in (0x2BA, 0x312):
+                    seed(off, '<H', v)
+                else:
+                    seed(off, '<I', v)
+            uc.mem_write(RAM + 0x321, b'\x00')   # flag=0 → только инкремент u16[0x312]
+            run.call(0x1DFD8, [], max_insn=200000)
+            got_tick = struct.unpack_from('<H', uc.mem_read(RAM + 0x2BA, 2), 0)[0]
+            assert got_tick == (seeds[0x2BA] + 1) & 0xFFFF, f'tick: {got_tick:#x}'
+            got_u32 = struct.unpack_from('<I', uc.mem_read(RAM + 0x314, 4), 0)[0]
+            assert got_u32 == seeds[0x314] + 1, f'u32: {got_u32:#x}'
+            got_bat = struct.unpack_from('<H', uc.mem_read(RAM + 0x312, 2), 0)[0]
+            assert got_bat == seeds[0x312] + 1, f'bat-cnt: {got_bat:#x}'
+            for acc_o, del_o, out_o in INTEG:
+                ea, eo = ref_dfd8_integ(seeds[acc_o], seeds[del_o], seeds[out_o])
+                ga = struct.unpack_from('<I', uc.mem_read(RAM + acc_o, 4), 0)[0]
+                go = struct.unpack_from('<h', uc.mem_read(RAM + out_o, 2), 0)[0]
+                assert (ga, go) == (ea, eo), (
+                    f'integ acc@{acc_o:#x}: exp ({ea},{eo}) got ({ga},{go}) '
+                    f'from acc={seeds[acc_o]:#x} d={seeds[del_o]} o={seeds[out_o]}')
+
+        # --- % батареи: принудительный compute (flag=1), линейная карта ---
+        for level in [0, 300, 414, 415, 416, 417, 435, 500, 511, 534, 535, 700, 1000, -50]:
+            uc.mem_write(RAM + 0x312, struct.pack('<H', 100))   # < 30000
+            uc.mem_write(RAM + 0x321, b'\x01')                    # flag=1 → compute
+            uc.mem_write(RAM + 0x1794 + 12, struct.pack('<h', level))
+            run.call(0x1DFD8, [], max_insn=200000)
+            got = uc.mem_read(RAM + 0x306, 1)[0]
+            exp = ref_dfd8_batpct(level) & 0xFF
+            assert got == exp, f'bat% level={level}: exp {exp} got {got}'
+    finally:
+        for b, o in zip(DFD8_BLS, orig):
+            uc.mem_write(FLASH0 + b, o)
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
