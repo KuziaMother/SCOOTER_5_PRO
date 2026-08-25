@@ -3070,6 +3070,60 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.2: 0x1bd88 — 6-секторный FOC-классификатор (подфункция 0x1A938)
+# Аргументы: arg0=r0 = struct вывода (u16[r0+2]=сектор), arg1=r1 = указатель на
+# два s16: x0=s16[r1+0], x2=s16[r1+2]. Гейт: бит15 низких16 u32[0x40012C54]
+# (TIMER_A+0x14, тот же что в 0x1be1c): ==0 → обход (сектор не пишется).
+# A=0x3ce4, B=0x2328 (pool). S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2),
+# rnd(V)=(V−1 if V<0 else V)>>1; r2=B·x2. Сектор по знакам:
+#   S<0,D<0→5 ; S<0,D≥0→(3 if r2>0 else 4) ; S≥0,D<0→(1 if r2>0 else 6) ; S≥0,D≥0→2
+# ---------------------------------------------------------------------------
+
+BD88_GATE = 0x40012C54   # TIMER_A + 0x14 (гейт, бит15 низких 16)
+BD88_A = 0x3CE4
+BD88_B = 0x2328
+
+
+def _rnd2(V):
+    if V < 0:
+        V -= 1
+    return _asr32(V & 0xFFFFFFFF, 1)
+
+
+def ref_1bd88(gate_low16, x0, x2):
+    """вернёт сектор (1..6) или None если гейт положит. (обход)"""
+    if (gate_low16 & 0x8000) == 0:
+        return None
+    S = _rnd2(BD88_B * x2 + BD88_A * x0)
+    D = _rnd2(BD88_B * x2 - BD88_A * x0)
+    r2 = BD88_B * x2
+    if S < 0:
+        return 5 if D < 0 else (3 if r2 > 0 else 4)
+    else:
+        return 1 if (D < 0 and r2 > 0) else (6 if D < 0 else 2)
+
+
+@t(0x1BD88, '§60.2: 6-секторный FOC-классификатор (подфункция 0x1A938): гейт=бит15 низких16 u32[0x40012C54] (=0→обход); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V−1 if V<0 else V)>>1; u16[r0+2]=сектор: S<0,D<0→5 / S<0,D≥0→(r2>0?3:4) / S≥0,D<0→(r2>0?1:6) / S≥0,D≥0→2, r2=B·x2')
+def _(run, rng):
+    uc = run.uc
+    S_IN = 0x1F000; S_OUT = 0x1F100
+    for _ in range(60):
+        gate = rng.getrandbits(16)
+        x0 = rng.randrange(-400, 400); x2 = rng.randrange(-400, 400)
+        uc.mem_write(BD88_GATE, struct.pack('<I', gate))
+        uc.mem_write(RAM + S_IN + 0, struct.pack('<h', x0))
+        uc.mem_write(RAM + S_IN + 2, struct.pack('<h', x2))
+        uc.mem_write(RAM + S_OUT + 2, struct.pack('<H', 0xEEEE))   # sentinel
+        run.call(0x1BD88, (RAM + S_OUT, RAM + S_IN), max_insn=50000)
+        got = struct.unpack_from('<H', uc.mem_read(RAM + S_OUT + 2, 2), 0)[0]
+        exp = ref_1bd88(gate, x0, x2)
+        if exp is None:
+            assert got == 0xEEEE, f'обход: gate={gate:#06x} x0={x0} x2={x2} got={got:#06x}'
+        else:
+            assert got == exp, f'сектор: gate={gate:#06x} x0={x0} x2={x2} got={got} exp={exp}'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
