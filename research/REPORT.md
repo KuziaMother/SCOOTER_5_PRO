@@ -5961,3 +5961,62 @@ store/ветки; branch C табличной выборки (0x1a9d4..0x1a9f0) 
 
 **Итог:** фактический код MCU практически полностью декомпилирован (99.7%); остаток —
 data-артефакты и dead code, не поддающиеся «декомпиляции» по определению.
+
+### §62. Tочная структура FOTA-пакета BLE + SCEK/XIP-модель (SDK-подтверждено)
+
+**Ключевая находка: полный SDK Realtek RTL8762C в репо** (`zip_archives/rtl8762c-sdk-full/`).
+Дает авторитетные определения структур хедеров (`inc/platform/patch_header_check.h`) и
+flash/OTP-конфиг. Структуры `#pragma pack(1)`:
+
+- `T_IMG_CTRL_HEADER_FORMAT` (12 Б): `ic_type`(u8) `secure_version`(u8) `ctrl_flag`(u16-bitfield)
+  `image_id`(u16) `crc16`(u16) `payload_len`(u32).
+- `T_IMG_HEADER_FORMAT`: ctrl(12) + `uuid[16]`@0x0C + `exe_base`@0x1C + `load_base`@0x20 +
+  `load_len`@0x24 + `img_base`@0x28 + `rsvd0[4]`@0x2C + `magic_pattern`@0x30 + `dec_key[16]`@0x34 …
+- `ctrl_flag` биты: `xip`(0) `enc`(1) `load_when_boot`(2) `enc_load`(3) `enc_key_select[2:4]`
+  `not_ready`(7) `not_obsolete`(8) `integrity_check_en_in_boot`(9) `rsvd[15:10]`.
+
+**Пакет = ДВА 1KB-хедера (оба ic_type=5, ОДИН uuid) + payload'ы + cert-trailer:**
+```
+ble_2.7.0_0015.bin (153890 Б = 0x25922):
+  0x0000..0x0400  HDR #1  (T_IMG_HEADER_FORMAT, boot/ctrl image)
+  0x0400..0x9ff4  HDR#1 payload (39924 Б) — bootloader + flash/OTA-драйвер (PLAINTEXT)
+  0x9ff4..0xa000  gap (60 Б)
+  0xa000..0xa400  HDR #2  (main app image, XIP)
+  0xa400..~0x2542d HDR#2 payload — main app (CIPHERTEXT ~110.7 КБ, XIP-decrypt)
+  ~0x2542d..0x258d1 cert chain (2 PEM: Mijia CA + leaf O=cert) + ECDSA-sig (FOTA-trailer, §30/§42/§44)
+```
+
+**HDR #1 @0x0000 (boot/ctrl image):**
+- `ic_type=5` (RTL8762C/"bee2"), `secure_version=0`, `image_id=0x2792`, `crc16=0`,
+  `payload_len=39924 (0x9bf4)`.
+- `ctrl_flag=0x4196`: **xip=0, enc=1, load_when_boot=1, enc_key_select=1** (SCEK+RTKCONST),
+  not_ready=1, not_obsolete=1.
+- `uuid[16]=6d67def1 3e33e811 b1024d2d f40cde01` (package/device ID — общий с HDR #2).
+- `exe_base=0x203800` (RAM), `load_base=0x1805fc8` (flash src), `load_len=11776 (0x2e00)`,
+  `img_base=0x1803000`. → образ **загружается в RAM и расшифровывается** (не XIP).
+
+**HDR #2 @0xa000 (main app image):**
+- `ic_type=5`, `secure_version=0`, `image_id=0x2793` (последовательный ID после 0x2792),
+  `crc16=0`, `payload_len=111496 (0x1b388)`.
+- `ctrl_flag=0x2181`: **xip=1, enc=0** (legacy-флаги — см. ниже), not_ready=1, not_obsolete=1.
+- `uuid[16]` = тот же (6d67def1…).
+- Поля exe_base/load_base/load_len/img_base здесь не несут RAM-адресов (XIP-образ
+  исполняется с флеша; значения — служебные/начало данных).
+
+**SCEK/XIP-модель (SDK + §6.11, важно):**
+- Флаги `enc`/`xip` в хедере — **legacy**: реальное flash-at-rest шифрование управляет
+  **аппаратный XIP-decrypt чипа по OTP/eFuse-ключу**, независимо от этих битов. Поэтому
+  main-app (HDR #2, `enc=0`) на диске всё равно CIPHERTEXT.
+- `enc_key_select`: 1 = SCEK+RTKCONST (HDR #1), 0 = default (HDR #2). Ключи — в eFuse чипа.
+- **Обход шифра статикой невозможен** (ключ в OTP, декрипт аппаратный). Единственный путь к
+  плейнтексту main-app = **SWD-дамп XIP-региона** на живом чипе (§6.11: OpenOCD, TAPID
+  `0x2ba01477`, flash bank `0x00800000`, work-area RAM `0x00200000`; риск — SWD залочен в OTP).
+
+**Чеклист для снятия шифра (когда появится аппаратный доступ):**
+1. Физдоступ к SWD-пинам BLE-модуля (RTL8762C) + CMSIS-DAP/ST-Link/J-Link.
+2. OpenOCD (`debug/rtl8762c.cfg` из SDK), проверка что SWD не залочен в OTP.
+3. Дамп XIP-региона main-app (через шину с inline-декриптом) → плейнтекст 110 КБ.
+4. Альтернатива: чтение eFuse (SCEK/OCEK) — даёт ключ для офлайн-расшифровки `.bin`.
+
+**Итог:** структура FOTA-пакета BLE полностью задокументирована на уровне полей (SDK-подтверждено).
+Плейн-часть (bootloader/OTA, 39 КБ) доступна для декомпиляции; main-app (110 КБ) — только через SWD/XIP.
