@@ -3317,6 +3317,129 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.7: мелкие inline-фрагменты 0x1A938 (между крупными блоками)
+# (a) 0x1b470..0x1b488 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2:
+#       if r0<=r2: (v2c,v30,v34)=(r1, r2−r0, −r0)  else: (r0−r2, r1, −r2)
+#     (связка блок 1 cross+dot → блок 3 коммутация)
+# (b) 0x1b584..0x1b5e2 — хвост: масштабирование выходов блока 3 + offset + фазы:
+#       svX=asr15(4500·vX) → r4+0x44/0x48/0x4c (V38/V3C/V40); pool-константа 4500
+#       offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset)
+# ---------------------------------------------------------------------------
+
+
+def _s32(v):
+    v &= 0xFFFFFFFF
+    return v - 0x100000000 if (v & 0x80000000) else v
+
+
+def _asr(v, n):
+    return _s32(v) >> n
+
+
+@t(0x1B470, '§60.7a: inline-фрагмент 0x1A938 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2−r0,−r0) else: (r0−r2,r1,−r2). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b492)')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(80):
+        r0 = rng.randrange(-50000, 50000); r1 = rng.randrange(-50000, 50000)
+        r2 = rng.randrange(-50000, 50000)
+        uc.mem_write(RAM, bytes(0x20000))
+        r4 = RAM + 0x040
+        SP = 0x20017F00
+        uc.mem_write(SP + 0x18, struct.pack('<I', r4))
+        from unicorn import UC_HOOK_CODE as _H
+        def _st(uc_, addr, size, u):
+            a = addr & ~1
+            if a >= 0x1B492 or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(_H, _st)
+        uc.reg_write(UC_ARM_REG_SP, SP); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        uc.reg_write(UC_ARM_REG_R0, r0 & 0xFFFFFFFF); uc.reg_write(UC_ARM_REG_R1, r1 & 0xFFFFFFFF)
+        uc.reg_write(UC_ARM_REG_R2, r2 & 0xFFFFFFFF)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1B470 | 1, 0, count=15)
+        except UcError:
+            pass
+        uc.hook_del(sh)
+        got = (struct.unpack_from('<i', uc.mem_read(r4 + 0x2c, 4), 0)[0],
+               struct.unpack_from('<i', uc.mem_read(r4 + 0x30, 4), 0)[0],
+               struct.unpack_from('<i', uc.mem_read(r4 + 0x34, 4), 0)[0])
+        exp = (r1, r2 - r0, -r0) if _s32(r0) <= _s32(r2) else (r0 - r2, r1, -r2)
+        assert got == exp, f'0x1b470: r0={r0} r1={r1} r2={r2} got={got} exp={exp}'
+
+
+@t(0x1B584, '§60.7b: inline-фрагмент 0x1A938 — хвост: svX=asr15(4500·vX)→r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b5e4)')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(80):
+        v38 = rng.randrange(-20000, 20000); v3c = rng.randrange(-20000, 20000)
+        v40 = rng.randrange(-20000, 20000)
+        uc.mem_write(RAM, bytes(0x20000))
+        r4 = RAM + 0x040
+        for o, v in ((0x38, v38), (0x3c, v3c), (0x40, v40)):
+            uc.mem_write(r4 + o, struct.pack('<i', v))
+        SP = 0x20017F00
+        uc.mem_write(SP + 0x18, struct.pack('<I', r4))
+        from unicorn import UC_HOOK_CODE as _H
+        def _st(uc_, addr, size, u):
+            a = addr & ~1
+            if a >= 0x1B5E4 or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(_H, _st)
+        uc.reg_write(UC_ARM_REG_SP, SP); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1B584 | 1, 0, count=60)
+        except UcError:
+            pass
+        uc.hook_del(sh)
+        o44 = struct.unpack_from('<i', uc.mem_read(r4 + 0x44, 4), 0)[0]
+        o48 = struct.unpack_from('<i', uc.mem_read(r4 + 0x48, 4), 0)[0]
+        o4c = struct.unpack_from('<i', uc.mem_read(r4 + 0x4c, 4), 0)[0]
+        o50 = struct.unpack_from('<i', uc.mem_read(r4 + 0x50, 4), 0)[0]
+        qa = struct.unpack_from('<H', uc.mem_read(RAM + 0x382, 2), 0)[0]
+        qb = struct.unpack_from('<H', uc.mem_read(RAM + 0x384, 2), 0)[0]
+        qc = struct.unpack_from('<H', uc.mem_read(RAM + 0x386, 2), 0)[0]
+        sv38 = _asr(4500 * v38, 15); sv3c = _asr(4500 * v3c, 15); sv40 = _asr(4500 * v40, 15)
+        e50 = _asr(2250 - max(sv38, sv3c, sv40), 1)
+        assert (o44, o48, o4c, o50) == (sv38, sv3c, sv40, e50), \
+            f'0x1b584 scale: v=({v38},{v3c},{v40}) got=({o44},{o48},{o4c},{o50}) exp=({sv38},{sv3c},{sv40},{e50})'
+        exp_q = ((2250 - (sv38 + e50)) & 0xFFFF, (2250 - (sv3c + e50)) & 0xFFFF, (2250 - (sv40 + e50)) & 0xFFFF)
+        assert (qa, qb, qc) == exp_q, \
+            f'0x1b584 phase: v=({v38},{v3c},{v40}) got=({qa},{qb},{qc}) exp={exp_q}'
+
+
+@t(0x1A9F2, '§60.7c: inline-фрагмент 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (затем bl 0x1d7ac). Изоляция mid-function jump (stop 0x1aa04)')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(50):
+        a = rng.getrandbits(16); b = rng.getrandbits(16)
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(RAM + 0xa0, struct.pack('<H', a)); uc.mem_write(RAM + 0xa2, struct.pack('<H', b))
+        SP = 0x20017F00
+        from unicorn import UC_HOOK_CODE as _H
+        def _st(uc_, addr, size, u):
+            aa = addr & ~1
+            if aa >= 0x1AA04 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(_H, _st)
+        uc.reg_write(UC_ARM_REG_SP, SP); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1A9F2 | 1, 0, count=12)
+        except UcError:
+            pass
+        uc.hook_del(sh)
+        s18 = struct.unpack_from('<I', uc.mem_read(SP + 0x18, 4), 0)[0]
+        s4 = struct.unpack_from('<H', uc.mem_read(SP + 4, 2), 0)[0]
+        s6 = struct.unpack_from('<H', uc.mem_read(SP + 6, 2), 0)[0]
+        assert (s18, s4, s6) == (RAM + 0xa0, a, b), \
+            f'0x1a9f2: a={a} b={b} got=({s18:#x},{s4},{s6}) exp={(RAM+0xa0,a,b)}'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
