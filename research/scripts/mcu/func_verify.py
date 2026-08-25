@@ -2905,6 +2905,90 @@ def _(run, rng):
         for b, o in zip(DFD8_BLS, orig):
             uc.mem_write(FLASH0 + b, o)
 
+
+# ---------------------------------------------------------------------------
+# §60: 0x1be1c — TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938)
+#
+# Аргумент: r0 = указатель на struct. Гейт: бит15 низких 16 бит u32[0x40012C54]
+# (= TIMER_A+0x14): ==0 → режим 1, ==1 → режим 2.
+#
+# Режим 1 (гейт положит.): OUT @RAM+0x838/0x83C/0x840 = clamp(r0[+0xc/+0x10/+0x14]).
+#
+# Режим 2 (гейт отрицат.): dispatch по u16[r0+2] (сектор) через computed-goto
+# 0x21b52 (byte jump-table, count=7, idx≥7 → table[7]=null):
+#   0→null, 1→B, 2/3→C, 4/5→A, 6→B, ≥7→null.
+# Хендлеры (T28/T2C/T30 = u32[0x40012440+0x28/0x2c/0x30], C18/C1A/C1C = u16[r0+0x18/0x1a/0x1c]):
+#   A: o_c=(T28-C18)<<4, o_10=(T2C-C1A)<<4, o_14=-(o_c+o_10)
+#   B: o_10=(T2C-C1A)<<4, o_14=(T30-C1C)<<4, o_c=-(o_10+o_14)
+#   C: o_c=(T28-C18)<<4, o_14=(T30-C1C)<<4, o_10=-(o_c+o_14)
+# null: r0[+0xc..] не меняются. Затем OUT = clamp(o_c,o_10,o_14) в [-30000,30000].
+# ---------------------------------------------------------------------------
+
+TIMER_A_GATE = 0x40012C54      # u32[0x40012C40+0x14] — гейт (бит15 низких 16)
+TIMER_B = 0x40012440           # база таблицы capture (+0x28/+0x2c/+0x30)
+FOC_OUT = 0x838                # OUT @RAM+0x838/0x83C/0x840
+
+
+def ref_foc_clamp(v):
+    return max(-30000, min(30000, v))
+
+
+def ref_1be1c(gate_low16, r0vals, sector, T, C):
+    """r0vals=(o_c,o_10,o_14) начальные; T=(T28,T2C,T30); C=(C18,C1A,C1C)"""
+    if (gate_low16 & 0x8000) == 0:
+        return tuple(ref_foc_clamp(v) for v in r0vals)
+    i = sector if sector < 7 else 7
+    h = [None, 'B', 'C', 'C', 'A', 'A', 'B', None][i]
+    oc, o10, o14 = r0vals
+    if h == 'A':
+        oc = (T[0] - C[0]) << 4; o10 = (T[1] - C[1]) << 4; o14 = -(oc + o10)
+    elif h == 'B':
+        o10 = (T[1] - C[1]) << 4; o14 = (T[2] - C[2]) << 4; oc = -(o10 + o14)
+    elif h == 'C':
+        oc = (T[0] - C[0]) << 4; o14 = (T[2] - C[2]) << 4; o10 = -(oc + o14)
+    return ref_foc_clamp(oc), ref_foc_clamp(o10), ref_foc_clamp(o14)
+
+
+@t(0x1BE1C, '§60: TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938): гейт = бит15 низких16 u32[0x40012C54]; режим1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); режим2(=1) dispatch u16[r0+2] (0→null,1→B,2/3→C,4/5→A,6→B,≥7→null), хендлер A/B/C: две фазы (T-C)<<4 из u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], третья=-(сумма), clamp [-30000,30000]')
+def _(run, rng):
+    uc = run.uc
+    S = 0x1F000   # r0-структ в RAM
+    # --- режим 1: гейт положит. (бит15=0), clamp+copy ---
+    for _ in range(16):
+        gate = rng.getrandbits(16) & 0x7FFF   # бит15=0
+        vals = tuple(rng.randrange(-40000, 40000) for _ in range(3))
+        uc.mem_write(TIMER_A_GATE, struct.pack('<I', gate & 0xFFFFFFFF))
+        uc.mem_write(RAM + S + 0x0c, struct.pack('<i', vals[0]))
+        uc.mem_write(RAM + S + 0x10, struct.pack('<i', vals[1]))
+        uc.mem_write(RAM + S + 0x14, struct.pack('<i', vals[2]))
+        run.call(0x1BE1C, (RAM + S,), max_insn=50000)
+        got = tuple(struct.unpack_from('<i', uc.mem_read(RAM + FOC_OUT + i * 4, 4), 0)[0] for i in range(3))
+        exp = ref_1be1c(gate, vals, 0, (0, 0, 0), (0, 0, 0))
+        assert got == exp, f'режим1: gate={gate:#x} vals={vals} got={got} exp={exp}'
+    # --- режим 2: гейт отрицат. (бит15=1), dispatch + хендлеры ---
+    for _ in range(40):
+        gate = 0x8000 | (rng.getrandbits(16) & 0x7FFF)   # бит15=1
+        T = tuple(rng.randrange(0, 2000) for _ in range(3))
+        C = tuple(rng.randrange(0, 500) for _ in range(3))
+        init = tuple(rng.randrange(-40000, 40000) for _ in range(3))   # для null-кейса
+        sector = rng.randrange(0, 9)
+        uc.mem_write(TIMER_A_GATE, struct.pack('<I', gate & 0xFFFFFFFF))
+        uc.mem_write(TIMER_B + 0x28, struct.pack('<I', T[0]))
+        uc.mem_write(TIMER_B + 0x2c, struct.pack('<I', T[1]))
+        uc.mem_write(TIMER_B + 0x30, struct.pack('<I', T[2]))
+        uc.mem_write(RAM + S + 0x18, struct.pack('<H', C[0] & 0xFFFF))
+        uc.mem_write(RAM + S + 0x1a, struct.pack('<H', C[1] & 0xFFFF))
+        uc.mem_write(RAM + S + 0x1c, struct.pack('<H', C[2] & 0xFFFF))
+        uc.mem_write(RAM + S + 0x0c, struct.pack('<i', init[0]))
+        uc.mem_write(RAM + S + 0x10, struct.pack('<i', init[1]))
+        uc.mem_write(RAM + S + 0x14, struct.pack('<i', init[2]))
+        uc.mem_write(RAM + S + 0x02, struct.pack('<H', sector & 0xFFFF))
+        run.call(0x1BE1C, (RAM + S,), max_insn=50000)
+        got = tuple(struct.unpack_from('<i', uc.mem_read(RAM + FOC_OUT + i * 4, 4), 0)[0] for i in range(3))
+        exp = ref_1be1c(gate, init, sector, T, C)
+        assert got == exp, f'режим2: sector={sector} T={T} C={C} init={init} got={got} exp={exp}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
