@@ -17,11 +17,11 @@ code-секций A–J; остальное — literal-пулы и данные
 
 | статус | функций | байт | % байт |
 |---|---|---|---|
-| разобран | 631 | 88400 | 91.2% |
+| разобран | 633 | 89002 | 91.8% |
 | частично | 9 | 6354 | 6.6% |
-| ID | 31 | 1232 | 1.3% |
+| ID | 29 | 630 | 0.6% |
 | не начат | 7 | 946 | 1.0% |
-| **всего** | **678** | **96932** | **94.8% декомпилировано** |
+| **всего** | **678** | **96932** | **95.3% декомпилировано** |
 
 Подробности по каждой функции: `functions_mcu/func_0x<off>.md` (дизассембляция,
 литералы, callees/callers). Разделы REPORT.md — где описана семантика.
@@ -638,7 +638,7 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x1bedc`](functions_mcu/func_0x1bedc.md) | 66 | код I | GPIO init @0x48000400: zero-буфер; 0x22000(пины 0x40/0x80/0xFF); byte@r4+0x14=7 | §50 | разобран | 100% |
 | [`0x1bf48`](functions_mcu/func_0x1bf48.md) | 78 | код I | МОТОР-ИНИТ: bl 0x1d640/0x1c0b0/0x1c1ac/0x1bedc | §39 | частично | 50% |
 | [`0x1bfa0`](functions_mcu/func_0x1bfa0.md) | 150 | код I | табличный шифр (&table @0x16aa, src) | §27.2 | разобран | 100% |
-| [`0x1c0b0`](functions_mcu/func_0x1c0b0.md) | 238 | код I | инициализация сенсоров ADC1 | §40 | ID | 25% |
+| [`0x1c0b0`](functions_mcu/func_0x1c0b0.md) | 238 | код I | **ADC1 sensor-init (полный разбор §58)**: struct @sp {base=0x40012400, [4]=0, [8]=0, [0xA]=3, [0xB]=3} → bl 0x21FB8 (reset) → bl **0x21CA8** (configurator) → 4×bl **0x21E18** (chan_cfg @sp+0x50: ch {0xC,0xB,0xA,0xF} = A/B/C/F, rank {1,2,3,4}, smp=4, sqr=0, low=3) → финальные OR: [ADC1+0x20]\|=0x04040403 (ch0-2 smp=4 + поле[2:0]=3), [+0x24/28/2C]\|=0x04040404 (ch3-14 smp=4; ch7-10 — компенсация raw-shift no-op'а 0x21E18), common-блок @+0x40: [+0x40]\|=0x0E1C6104, [+0x44]\|=9, [+0x54]\|=0x40; [ADC1+0x1C]\|=1, [ADC1+0]\|=0x40; bl 0x23544(0xC,1), bl 0x21C74(sp,0x20/4); **[ADC1+0x18]\|=1 (ADON) в конце**; эмуляторно верифицирован (батч 11) | §40/§58 | разобран | 100% |
 | [`0x1c1ac`](functions_mcu/func_0x1c1ac.md) | 106 | код I | **DMA1 ch9 init**: DMA1+4=1; poll [base+0xFF] == 0x40012450 и == u32@0x1692; 0x2359c(DMA1, 0x5D000041); +0x28/+0x14=1, +0x70=0x19, +0x50\|=1; [0x40020100+8]\|=1; **NVIC ISER[0] \|= 1<<9** | §50 | разобран | 100% |
 | [`0x1c234`](functions_mcu/func_0x1c234.md) | 228 | код I | throttle ADC processing: byte@RAM[0x33A]==1 → reset RAM[0x262/0x263], u16@RAM[0x21E]; else v=byte@RAM[0x234]<<15; 0x19968(v,0x64) (u64 helper); u32[RAM+0x3C8+0x54]=r0; u16[RAM+0x260]=r0*0x2D0>>16 (Q16); state machine byte[RAM+0x3C8+9]: {0: flags RAM[0x262/0x263], u32[RAM+0x448/0x44C]=[RAM+0x1E0/0x1E4], u16[RAM+0x21E]\|=4; 1: ..} | §51 | разобран | 100% |
 | [`0x1c34c`](functions_mcu/func_0x1c34c.md) | 1244 | код I | **fixed-point position/velocity controller (мотор)**: byte[RAM+0x32A] ? u32[RAM+0x37C]=850 : 680 (0x55<<3); temp=s16[RAM+0x3C8+8]×240; v1=**0x19994**(temp, u32[RAM+0x3C8+0x4C]) (signed-деление §55) → u32[RAM+0x3C8+0x50]; v2=**0x19994**(v1×65520, s16[RAM+0x1768+0x38]) → u32[RAM+0x224] = clamp(v2, 0, **0x7FF8 (32760)**); середина: r6/r5 = u32-пара [pool+0/+4] (позиция), byte mode (0/1/other): деление через **0x19968** (§55) с константами 0x64<<0xF, 0x2D<<4, пороги **0x1E (30)**/**0x4B (75)**, константа **0x7D00 (32000)**; запись u32[pool+0x80+0x18/+0x1C] (позиция/скорость x2), u16-flags: OR/CLEAR bit2, byte[+5]=0/1; signed-shift трюк (lsl #0x17 + bpl = знак); pool: RAM+0x32A/+0x3C8/+0x1768/+0x224/+0x33A/+0x30E/+0x311/+0x1E0/+0x233/+0x27C/+0x21E/+0x220/+0x231/+0x27E/+0x245/+0x230/+0x380; **callers: не найдены в bl-скане** (косвенный вызов?) | §54 | разобран | 100% |
@@ -682,8 +682,8 @@ code-секций A–J; остальное — literal-пулы и данные
 | [`0x21c0c`](functions_mcu/func_0x21c0c.md) | 6 | код I | getter u32@RAM[0x2C] (пул=0x20000028 + 4; фиксированный адрес, НЕ двойная индирекция; §50.7) | §48/§50.7 | разобран | 100% |
 | [`0x21c18`](functions_mcu/func_0x21c18.md) | 34 | код I | NVIC-приоритеты: *(u32@RAM[0x4]) vs flash 0x2710; 0x19968/0x1e2c8; r4!=3 → 0x21b84(~0, r4) | §49 | разобран | 100% |
 | [`0x21c64`](functions_mcu/func_0x21c64.md) | 12 | код I | «own»: входной шифр/проверка кадра (initiator BLE) | §36.3, §37 | разобран | 100% |
-| [`0x21ca8`](functions_mcu/func_0x21ca8.md) | 364 | код I | инициализация сенсоров ADC1 | §40 | ID | 25% |
-| [`0x21e18`](functions_mcu/func_0x21e18.md) | 412 | код I | **validated frame parser (assert)**: byte[0] ≤ 0x12, byte[1] ≤ 4, u32[+8] ≤ 0xFFF, byte[+0xC] ≤ 3 — каждый с **cpsid i; b .** (assert!); pool 0xFFF; код-регион I (USART3-протокол) | §52 | разобран | 100% |
+| [`0x21ca8`](functions_mcu/func_0x21ca8.md) | 364 | код I | **ADC1 validated channel-configurator (полный разбор §58)**: asserts (cpsid i; b .): base==0x40012400, cfg[4]∈{0,1}, cfg[0xB]≤4, cfg[0xC]≤5, cfg[0xA]≤3, cfg[6]≤0xF, cfg[9]≤7; последовательность: [CR2+0x18]\|=2 (SWSTART) → bl 0x21FB8 (reset) → state byte[struct+0x39]=2 → SMPR1(+0x1C): поле[7:5]=cfg[4], поле[5:3]=cfg[0xA]; ветка cfg[8]: 1→\|=bit16, 2→\|=bit20, else→clear bit16/20; поле[19:17]=cfg[9] (ветки 1/2); SMPR2(+0x20) поле[2:0]=cfg[0xB]; [+0x40] поле[3:0]=cfg[6]; SMPR1 bit13=cfg[5]; [+0x7C]=0, поле[20:18]=cfg[0xC]; state=1; **[CR2+0x18]\|=1 (ADON)**; return 0; эмуляторно верифицирован (батч 11) | §40/§58 | разобран | 100% |
+| [`0x21e18`](functions_mcu/func_0x21e18.md) | 412 | код I | **ADC1 validated channel-sequencer (полный разбор §58)**: args (r0=main struct {base, [8]=mode}, r1=chan_cfg); asserts (cpsid i; b .): chan≤18, rank≤4, u32[+8]≤0xFFF, byte[+0xC]≤3; **[base+0x54]**: бит-слоты — clear 2 бита @rank*6+2, set chan<<(rank*6+2) (поле rank→канал), low-2-бита=cfg[0xC]; **sampling** (3-битное поле, value=u32[chan_cfg+4]): ch0-2→[+0x20]@8/16/24, ch3-6→[+0x24]@0/8/16/24, ch7-10→[+0x28], ch11-14→[+0x2C], ch15-18→[+0x30] — НО **raw-shift (не mod-32!): сдвиги ≥32 → 0, достижимы только ch0..6** (ch7-10 компенсирует caller 0x1C0B0 финальным OR); **SQR[rank]**: rank 1-4 → [base+0x58/5C/60/64] = u32[chan_cfg+8]; SMPR1 bit25 = (cfg[0xD]==1); mode==2 && cfg[0xD]!=0 → state-флаги byte[struct+0x39]\|=8, [+0x3A]\|=1; return 0; эмуляторно верифицирован (батч 11) | §52/§58 | разобран | 100% |
 | [`0x22000`](functions_mcu/func_0x22000.md) | 406 | код I | **validated timer descriptor setter (assert)**: arg0 ∈ {9<<0x1B=0x120000, 0x48000400, 0x48000800, 0x48000C00} иначе **cpsid i; b .** (assert!); arg1 ∈ {1..0x80, 0x100, 0x1FA, 0x400..0x10000}; struct-байты: [0]∈0..3, [1]∈0..2, [2..5]∈0..1, [6]∈0..9 — каждый с cpsid i assert; запись поля по (base, mask) | §52 | разобран | 100% |
 | [`0x221a4`](functions_mcu/func_0x221a4.md) | 66 | код I | критсекция + атомарный u32-инкремент с валидацией (0x23688/0x235d4) | §50 | разобран | 100% |
 | [`0x221e6`](functions_mcu/func_0x221e6.md) | 78 | код I | критсекция + insert в список (0x2360c); только если r4>>30==0 | §50 | разобран | 100% |

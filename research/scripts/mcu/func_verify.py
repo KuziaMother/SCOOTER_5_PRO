@@ -2097,6 +2097,232 @@ def _(run, rng):
                 f'v1={v1:#x} v2={v2:#x}: {ret} ≠ [0x3a08]'
 
 
+# --- ADC1-кластер (§58): 0x21FB8 reset / 0x21CA8 конфигуратор / 0x21E18 секвенсор ---
+ADC1 = 0x40012400
+
+
+def _adc_hook(run):
+    """запись в ADC1-блок: (hook, список (off, size, val))"""
+    from unicorn import UC_HOOK_MEM_WRITE
+    uc = run.uc
+    writes = []
+
+    def h(u_, access, addr, size, val, usr):
+        if ADC1 <= addr < ADC1 + 0x100:
+            writes.append((addr - ADC1, size, val))
+    return uc.hook_add(UC_HOOK_MEM_WRITE, h), writes
+
+
+def _adc_zero(run):
+    """обнулить ADC1-блок (кроме +0x20 reset-helper НЕ трогает — RMW!)"""
+    for off in range(0, 0x80, 4):
+        run.periph_write(ADC1 + off, 0)
+
+
+def _adc_struct(run, fields, slot=0):
+    """struct @ (STACK_TOP-0x80-slot*0x40): fields = {off: int}; возвращает адрес (r0/r1-аргумент)"""
+    csp = STACK_TOP - 0x80 - slot * 0x40
+    rr = csp - RAM
+    buf = bytearray(0x40)
+    for off, val in fields.items():
+        if val < 256:
+            buf[off] = val & 0xFF
+        else:
+            struct.pack_into('<I', buf, off, val & M32)
+    run.ram_write(rr, bytes(buf))
+    return csp
+
+
+@t(0x21FB8, '§58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, блок +0x40..+0x64=0, state-байты struct+0x39/+0x3A=0')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE
+    uc = run.uc
+    _adc_zero(run)
+    csp = _adc_struct(run, {0: ADC1})
+    hook, writes = _adc_hook(run)
+    # ВАЖНО (§58.4): в этом билде Unicorn bx lr с вручную записанным LR
+    # «сквозит» на следующую инструкцию → стоп сразу после bx lr @0x21FF8,
+    # чтобы fall-through в 0x22000 не испачкал состояние
+    stop_at = []
+
+    def h(u_, a, s, usr):
+        if (a & ~1) == 0x21FFA:   # fall-through точка
+            u_.emu_stop()
+    hook2 = uc.hook_add(UC_HOOK_CODE, h)
+    try:
+        ret = run.call(0x21FB8, [csp])
+    finally:
+        uc.hook_del(hook)
+        uc.hook_del(hook2)
+    assert ret[0] == 0
+    exp = [(0x18, 4, 0), (0x1C, 4, 0), (0x7C, 4, 0), (0x3C, 4, 0x0FFF0000),
+           (0x58, 4, 0), (0x5C, 4, 0), (0x60, 4, 0), (0x64, 4, 0), (0x54, 4, 0),
+           (0x40, 4, 0), (0x44, 4, 0), (0x48, 4, 0), (0x4C, 4, 0)]
+    assert writes == exp, f'writes={writes}'
+    # state-байты в struct
+    st = run.ram_read(csp - RAM + 0x39, 2)
+    assert st == b'\x00\x00', f'state={st.hex()}'
+
+
+@t(0x21CA8, '§58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) → cpsid i; нормальный путь: SMPR1/SMPR2/+0x40/+0x7C поля + ADON')
+def _(run, rng):
+    # --- assert-пути: спин без записей в ADC
+    bad = ({0: 0xDEADBEEF}, {4: 2}, {0xB: 5}, {0xC: 6}, {0xA: 4}, {6: 0x10}, {9: 8})
+    for f in bad:
+        d = {k: v for k, v in ((0, ADC1), (4, 0), (0xA, 0), (0xB, 0), (0xC, 0), (6, 0), (9, 0))}
+        d.update(f)
+        csp = _adc_struct(run, d)
+        hook, writes = _adc_hook(run)
+        try:
+            run.call(0x21CA8, [csp], max_insn=300)
+        finally:
+            run.uc.hook_del(hook)
+        assert not writes, f'assert {f}: были записи в ADC!'
+    # --- нормальный путь, ветка cfg[8]=0
+    _adc_zero(run)
+    csp = _adc_struct(run, {0: ADC1, 4: 1, 5: 1, 6: 3, 8: 0, 9: 3, 0xA: 2, 0xB: 4, 0xC: 5})
+    hook, writes = _adc_hook(run)
+    try:
+        ret = run.call(0x21CA8, [csp])
+    finally:
+        run.uc.hook_del(hook)
+    assert ret[0] == 0
+    last = {}
+    for off, sz, val in writes:
+        last[off] = val
+    cr2_seq = [val for off, sz, val in writes if off == 0x18]
+    assert 2 in cr2_seq and last[0x18] == 1, \
+        f'CR2: последовательность {cr2_seq} (ждём ...2...1: SWSTART до reset, ADON в конце)'
+    # SMPR1 = cfg[4]<<5 | cfg[0xA]<<3 | bit13(cfg[5])
+    assert last[0x1C] == (1 << 5) | (2 << 3) | (1 << 0xD), f'SMPR1={last[0x1C]:#06x}'
+    assert last[0x20] == 4, f'SMPR2={last[0x20]:#x}'                          # [2:0]=cfg[0xB]
+    assert last[0x40] == 3, f'+0x40={last[0x40]:#x}'                          # [3:0]=cfg[6]
+    assert last[0x7C] == 5 << 0x18, f'+0x7C={last[0x7C]:#08x}'               # [20:18]=cfg[0xC]
+    # --- ветка cfg[8]=1: SMPR1 |= bit16, поле [19:17]=cfg[9]
+    _adc_zero(run)
+    csp = _adc_struct(run, {0: ADC1, 4: 0, 5: 0, 6: 0, 8: 1, 9: 3, 0xA: 0, 0xB: 0, 0xC: 0})
+    hook, writes = _adc_hook(run)
+    try:
+        run.call(0x21CA8, [csp])
+    finally:
+        run.uc.hook_del(hook)
+    last = {}
+    for off, sz, val in writes:
+        last[off] = val
+    assert last[0x1C] == 0x10000 | (3 << 17), f'veтка1 SMPR1={last[0x1C]:#06x}'
+    # --- ветка cfg[8]=2: SMPR1 |= bit18, поле [19:17]=cfg[9]
+    _adc_zero(run)
+    csp = _adc_struct(run, {0: ADC1, 4: 0, 5: 0, 6: 0, 8: 2, 9: 7, 0xA: 0, 0xB: 0, 0xC: 0})
+    hook, writes = _adc_hook(run)
+    try:
+        run.call(0x21CA8, [csp])
+    finally:
+        run.uc.hook_del(hook)
+    last = {}
+    for off, sz, val in writes:
+        last[off] = val
+    assert last[0x1C] == 0x100000 | (7 << 17), f'veтка2 SMPR1={last[0x1C]:#06x}'
+
+
+@t(0x21E18, '§58: ADC1 validated channel-sequencer: asserts (chan≤18, rank≤4, sqr≤0xFFF, low≤3); sampling-поле по диапазонам каналов; SQR[rank]; SMPR1 bit25')
+def _(run, rng):
+    # --- assert-пути
+    def mkmain(mode=0):
+        return _adc_struct(run, {0: ADC1, 8: mode})
+    m = mkmain()
+    bad = ({0: 19}, {1: 5}, {8: 0x1000}, {0xC: 4})
+    for f in bad:
+        d = {k: v for k, v in ((0, 0), (1, 1), (8, 0), (0xC, 0))}
+        d.update(f)
+        cc = _adc_struct(run, d, slot=1)
+        hook, writes = _adc_hook(run)
+        try:
+            run.call(0x21E18, [m, cc], max_insn=300)
+        finally:
+            run.uc.hook_del(hook)
+        assert not writes, f'assert {f}: были записи в ADC!'
+    # --- нормальный путь: все 5 диапазонов каналов
+    cases = [
+        (0, 1, 4, 0x111, 3, 0),   # ch0 → +0x20 pos8;  rank1 → +0x58
+        (2, 2, 5, 0x222, 2, 1),   # ch2 → +0x20 pos24; rank2 → +0x5C; bit23=1
+        (3, 3, 6, 0x333, 1, 0),   # ch3 → +0x24 pos0;  rank3 → +0x60
+        (6, 4, 7, 0x444, 0, 0),   # ch6 → +0x24 pos24; rank4 → +0x64
+        (7, 1, 4, 0x555, 3, 0),   # ch7 → +0x28 pos0
+        (10, 2, 5, 0x666, 3, 0),  # ch10 → +0x28 pos24
+        (11, 3, 6, 0x777, 3, 0),  # ch11 → +0x2C pos0
+        (14, 4, 7, 0x888, 3, 0),  # ch14 → +0x2C pos24
+        (15, 1, 4, 0x999, 3, 0),  # ch15 → +0x30 pos0
+        (18, 2, 5, 0xAAA, 3, 0),  # ch18 → +0x30 pos24
+    ]
+    for chan, rank, smp_val, sqr, low, d in cases:
+        _adc_zero(run)
+        m = mkmain()
+        cc = _adc_struct(run, {0: chan, 1: rank, 4: smp_val, 8: sqr, 0xC: low, 0xD: d}, slot=1)
+        hook, writes = _adc_hook(run)
+        try:
+            ret = run.call(0x21E18, [m, cc])
+        finally:
+            run.uc.hook_del(hook)
+        assert ret[0] == 0
+        last = {}
+        for off, sz, val in writes:
+            last[off] = val
+        # sampling-поле: реальный сдвиг из кода (chan*8+8 для ch0-2, chan*8-24 остальным)
+        if chan <= 2:
+            reg, shift = 0x20, chan * 8 + 8
+        elif chan <= 6:
+            reg, shift = 0x24, chan * 8 - 24
+        elif chan <= 10:
+            reg, shift = 0x28, chan * 8 - 24
+        elif chan <= 14:
+            reg, shift = 0x2C, chan * 8 - 24
+        else:
+            reg, shift = 0x30, chan * 8 - 24
+        # §58.4: RAW-shift (не mod-32!): сдвиг ≥32 → 0. Только ch0..6 достижимы;
+        # ch7..18 — no-op (caller 0x1C0B0 компенсирует ch7..10 финальным
+        # |= 0x04040404 в [+0x28])
+        exp = (smp_val << shift) & 0xFFFFFFFF if shift < 32 else 0
+        assert last.get(reg, 0) == exp, \
+            f'ch{chan}: [{reg:#04x}]={last.get(reg, 0):#x} ≠ {exp:#x}'
+        # SQR[rank]
+        sqr_reg = (0x58, 0x5C, 0x60, 0x64)[rank - 1]
+        assert last.get(sqr_reg, 0) == sqr, f'ch{chan} rank{rank}: [{sqr_reg:#04x}]={last.get(sqr_reg, 0):#x}'
+        # [base+0x54] = chan << (rank*6+2) | low
+        assert last.get(0x54, 0) == (chan << (rank * 6 + 2)) | low, \
+            f'ch{chan} rank{rank}: [+0x54]={last.get(0x54, 0):#x}'
+        # SMPR1 bit25
+        exp_bit25 = 1 if d == 1 else 0
+        assert (last.get(0x1C, 0) >> 25) & 1 == exp_bit25, \
+            f'ch{chan} d={d}: SMPR1 bit25 ≠ {exp_bit25}'
+
+
+@t(0x1C0B0, '§58: ADC1 sensor-init (caller): reset → 0x21CA8 → 4×0x21E18 (ch C/B/A/F, rank 1-4, smp=4) → финальные OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) → ADON')
+def _(run, rng):
+    _adc_zero(run)
+    csp = _adc_struct(run, {0: ADC1})   # struct строит сам 0x1C0B0 (r0 не нужен)
+    hook, writes = _adc_hook(run)
+    try:
+        ret = run.call(0x1C0B0, [])
+    finally:
+        run.uc.hook_del(hook)
+    last = {}
+    for off, sz, val in writes:
+        last[off] = val
+    # финальные OR-константы caller'а (поверх значений из 0x21CA8/0x21E18)
+    assert last.get(0x24, 0) & 0x04040404 == 0x04040404, f'+0x24={last.get(0x24, 0):#x}'
+    assert last.get(0x28, 0) & 0x04040404 == 0x04040404, f'+0x28={last.get(0x28, 0):#x}'
+    assert last.get(0x2C, 0) & 0x04040404 == 0x04040404, f'+0x2C={last.get(0x2C, 0):#x}'
+    assert last.get(0x40, 0) & 0x0E1C6104 == 0x0E1C6104, f'common+0x0={last.get(0x40, 0):#x}'
+    assert last.get(0x44, 0) & 9 == 9, f'common+4={last.get(0x44, 0):#x}'
+    assert last.get(0x54, 0) & 0x40 == 0x40, f'common+0x14={last.get(0x54, 0):#x}'
+    # ADON в самом конце
+    cr2_seq = [val for off, sz, val in writes if off == 0x18]
+    assert cr2_seq and cr2_seq[-1] & 1, f'CR2 последняя={cr2_seq and hex(cr2_seq[-1])}'
+    # SQR rank-регистры: все 4 записаны (value = [sp+0x58] = 0 в caller'е)
+    for sq in (0x58, 0x5C, 0x60, 0x64):
+        assert sq in last, f'SQR [{sq:#04x}] не записан'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
