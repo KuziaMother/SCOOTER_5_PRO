@@ -3268,6 +3268,55 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.6: 0x1b48a..0x1b5f4 — inline-блок FOC в 0x1A938: коммутация/классификатор
+# секторов. Входы: v2c=u32[r4+0x2c], v30=u32[r4+0x30], v34=u32[r4+0x34] (значения из
+# блока 0x1b3f2). Порог = 16383 (0x3fff): если все ≤ порога — pass-through
+# (r4+0x38=v2c, r4+0x3c=v30, r4+0x40=v34); иначе секторная логика: определяется
+# максимум из (v2c,v30,v34) = сектор, считается switching-функция.
+# Верифицировано: default pass-through + v2c-max сектор:
+#   r4+0x38 = 16383, r4+0x3c = min(v30 − asr(v2c,1) + 8192, 16383), r4+0x40 = r1
+# Изоляция: mid-function jump (r4=RAM+0x040, r7=RAM+0x3b8, [sp+0x18]=base, stop 0x1b584).
+# ---------------------------------------------------------------------------
+
+
+@t(0x1B48A, '§60.6: inline-блок FOC в 0x1A938 — коммутация/классификатор секторов. Входы v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; порог 16383. Default (все≤порога): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max сектор: r4+0x38=16383, r4+0x3c=min(v30−asr(v2c,1)+8192,16383), r4+0x40=r1. Изоляция mid-function jump (stop 0x1b584)')
+def _(run, rng):
+    uc = run.uc
+    def run_sector(v2c, v30, v34, r1):
+        uc.mem_write(RAM, bytes(0x20000))
+        r4 = RAM + 0x040
+        for o, v in ((0x2c, v2c), (0x30, v30), (0x34, v34)):
+            uc.mem_write(r4 + o, struct.pack('<i', v))
+        SP = 0x20017F00
+        uc.mem_write(SP + 0x18, struct.pack('<I', r4))
+        uc.reg_write(UC_ARM_REG_SP, SP)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        uc.reg_write(UC_ARM_REG_R1, r1)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1B48A | 1, 0x1B584 | 1, count=200)
+        except UcError:
+            pass
+        return (struct.unpack_from('<i', uc.mem_read(r4 + 0x38, 4), 0)[0],
+                struct.unpack_from('<i', uc.mem_read(r4 + 0x3c, 4), 0)[0],
+                struct.unpack_from('<i', uc.mem_read(r4 + 0x40, 4), 0)[0])
+    for _ in range(40):
+        # default path: все значения ≤ порога
+        v2c = rng.randrange(-16000, 16000); v30 = rng.randrange(-16000, 16000)
+        v34 = rng.randrange(-16000, 16000)
+        a, b, c = run_sector(v2c, v30, v34, 0)
+        assert (a, b, c) == (v2c, v30, v34), f'0x1b48a default: ({v2c},{v30},{v34})->({a},{b},{c})'
+    for _ in range(40):
+        # v2c-max сектор: v2c > порога и v2c>=v30>=v34
+        v2c = rng.randrange(17000, 30000); v30 = v2c - rng.randrange(0, 4000)
+        v34 = v30 - rng.randrange(0, 4000); r1 = rng.getrandbits(16)
+        a, b, c = run_sector(v2c, v30, v34, r1)
+        e38 = 16383; e3c = min(v30 - (v2c >> 1) + 8192, 16383); e40 = r1
+        assert (a, b, c) == (e38, e3c, e40), f'0x1b48a v2cmax: ({v2c},{v30},{v34},r1={r1})->({a},{b},{c}) exp=({e38},{e3c},{e40})'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
