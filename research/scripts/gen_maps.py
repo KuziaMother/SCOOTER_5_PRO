@@ -919,9 +919,20 @@ BLE_REGIONS = [
     (0x2542D, BLE_TOTAL, "FOTA-трейлер: PEM + ECDSA-SHA256", "разобран", "цепочка c1←c0←MijiaRoot верифицирована — §42, §44"),
 ]
 
+# §63: каталог PLAIN-функций BLE (bootloader + flash/OTA). Оффсеты = смещения в файле.
+# Периферия RTL8762C (SDK): SPIC_FLASH=0x40080000, HW_AES=0x40014000, GPIO=0x40001000,
+# TIM0=0x40002000, PERIPH=0x40000000. Эмулятор: emulator/ble_emu.py.
+ANALYZED_BLE = [
+    (0x2A50, "**trampoline-dispatch table**: цепочка `movw/movt ip; bx ip` — косвенные прыжки на цели (вкл. RAM-функции 0x2xxxxxx); вызывается как `bl 0x2a50+idx*6`", "§63", "разобран"),
+    (0x2A78, "**trampoline-dispatch table** (продолжение 0x2a50): `movw/movt ip; bx ip` на цели 0x9e9b/0x36edd/…", "§63", "разобран"),
+    (0x639A, "**SPIC flash-регистр accessor**: возвращает адрес регистра SPIC+0x11c (0x4008011c); movw #0xfff — маска/команда; 1 periph-write", "§63", "разобран"),
+    (0x63A4, "**SPIC config**: [base+8]=0 → bl 0x639a → [base+8]=1; затем read-modify-write [r0+0x300] (SPIC-регистр, bic #0xff | byte); r0=PERIPH base", "§63", "частично"),
+    (0x645E, "**memory init/copy**: 22 RAM-writes, r0=RAM-указатель (0x2007fbb8); читает u16[base+8]; инициализация буфера/структуры", "§63", "ID"),
+]
+
 def write_ble(path):
     funcs = parse_readme(os.path.join(RES, 'functions_ble', 'README.md'), has_vaddr=True)
-    att = attach_catalog(funcs, [])   # BLE-функции семантически не разбирались
+    att = attach_catalog(funcs, ANALYZED_BLE)
     n, total, by, pct = stats(funcs, att)
 
     L = []
@@ -948,25 +959,37 @@ def write_ble(path):
     A("")
     A("## 2. Функции PLAIN-регионов (детекция gen_functions.py)")
     A("")
-    A(f"Подтверждено: **{n}** функций, всего {total} Б кода. Семантический разбор — **0%**")
-    A("(есть только авто-дизассембляция в `functions_ble/func_0x*.md`); это низкоуровневый")
-    A("bootloader + flash/OTA-драйвер, «говорящий» код — в зашифрованном APP-регионе.")
+    A(f"Подтверждено: **{n}** функций, всего {total} Б кода. Это низкоуровневый bootloader +")
+    A("flash/OTA-драйвер; «говорящий» код — в зашифрованном APP-регионе (§62). Семантический")
+    A(f"разбор PLAIN-кода: **{pct:.1f}%** (взвешено по байтам; каталог ANALYZED_BLE, §63).")
+    A("")
+    A("**Модель % декомпиляции:** разобран=100%, частично=50%, ID=25%, не начат=0%.")
     A("")
     A("Перегенерация: `python research/scripts/gen_maps.py` (список функций — из")
-    A("`functions_ble/README.md`).")
+    A("`functions_ble/README.md`; каталог — ANALYZED_BLE в gen_maps.py). Эмулятор: `emulator/ble_emu.py`.")
     A("")
-    A("| offset | vaddr | размер | регион | статус | % |")
-    A("|---|---|---|---|---|---|")
+    A("| offset | vaddr | размер | регион | имя / роль | разделы | статус | % |")
+    A("|---|---|---|---|---|---|---|---|")
     for off, size, region in funcs:
-        A(f"| [`0x{off:05x}`](functions_ble/func_0x{off:05x}.md) | `0x{0x01800000+off:08x}` | {size} | {esc(region)} | не начат | 0% |")
+        name, secs, st = att[off]
+        if st:
+            A(f"| [`0x{off:05x}`](functions_ble/func_0x{off:05x}.md) | `0x{0x01800000+off:08x}` | {size} | {esc(region)} | {esc(name)} | {esc(secs)} | {st} | {PCT[st]}% |")
+        else:
+            A(f"| [`0x{off:05x}`](functions_ble/func_0x{off:05x}.md) | `0x{0x01800000+off:08x}` | {size} | {esc(region)} | — | — | не начат | 0% |")
     A("")
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(L))
+    csv_rows = []
+    for off, size, region in funcs:
+        name, secs, st = att[off]
+        if st:
+            csv_rows.append([f'0x{off:05x}', f'0x{0x01800000+off:08x}', size, region, name, secs, st, f'{PCT[st]}%'])
+        else:
+            csv_rows.append([f'0x{off:05x}', f'0x{0x01800000+off:08x}', size, region, '', '', 'не начат', '0%'])
     write_csv(os.path.join(RES, 'BLE_MAP.csv'),
-              ['offset', 'vaddr', 'size', 'region', 'status', 'pct'],
-              [[f'0x{off:05x}', f'0x{0x01800000+off:08x}', size, region, 'не начат', '0%']
-               for off, size, region in funcs])
-    print(f"BLE_MAP.md: функций {n}, байт кода {total}; шифр {enc} Б ({100.0*enc/BLE_TOTAL:.1f}%)(+ BLE_MAP.csv)")
+              ['offset', 'vaddr', 'size', 'region', 'name_role', 'sections', 'status', 'pct'],
+              csv_rows)
+    print(f"BLE_MAP.md: функций {n}, байт кода {total}; PLAIN-разобрано {pct:.1f}%; шифр {enc} Б ({100.0*enc/BLE_TOTAL:.1f}%)(+ BLE_MAP.csv)")
 
 if __name__ == '__main__':
     write_mcu(os.path.join(RES, 'MCU_MAP.md'))

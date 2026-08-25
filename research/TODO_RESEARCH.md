@@ -61,9 +61,13 @@ _(оригинальный список завершён — см. таблиц�
       **BLE (НАЧАТО, §62):** структура FOTA-пакета задокументирована (SDK-подтверждено,
       полный SDK RTL8762C в репо `zip_archives/rtl8762c-sdk-full/`); два 1KB-хедера
       декодированы (HDR#1 boot/ctrl RAM-load enc=1, HDR#2 main-app XIP); SCEK/XIP-модель +
-      чеклист SWD-извлечения в §62. **Дальше по BLE:** (A) декомпиляция PLAIN bootloader/
-      OTA-драйвера (39 КБ, 170 функций — как MCU, нужен эмулятор RTL8762C); (B) подготовка
-      SWD-дамп XIP-региона (открывает 110 КБ main-app); (C) BLE app-протокол из APK + live.
+      чеклист SWD-извлечения в §62. **§63: фундамент PLAIN-декомпиляции готов** — эмулятор
+      RTL8762C (`emulator/ble_emu.py`), SDK-карта периферии (SPIC=0x40080000, HW_AES=0x40014000),
+      flash-драйвер локализован (кластер 0x6xxx: 0x639a SPIC-accessor, 0x63a4 config), каталог
+      ANALYZED_BLE + BLE_MAP.md (PLAIN-разобрано 0.4%). **Дальше по BLE:** (A) **декодировать
+      PLAIN bootloader/OTA** (170 функций; топ 0x07dea/0x08588; flash read/write/erase/
+      validate/install — приоритет; по caller-графу от хабов + эмуляторная верификация);
+      (B) подготовка SWD-дамп XIP-региона (открывает 110 КБ main-app); (C) BLE app-протокол из APK + live.
       **MCU-хвост:** response-сборщики RX-парсера ('a'/'B'..'J', §59.6), motor SM 0x7494 целиком,
       fixed-point 0x1c34c (17 pool-адресов RAM), BLE-сессии 0x6ccc/0x6e50
       (0x16f42 разобран в §57: OOB-баг на текущих таблицах — верифицировать только
