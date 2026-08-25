@@ -30,8 +30,9 @@ sys.path.insert(0, os.path.join(RES, 'scripts'))
 
 from unicorn import UcError, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
-                               UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_SP,
-                               UC_ARM_REG_LR, UC_ARM_REG_CPSR)
+                               UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5,
+                               UC_ARM_REG_R6, UC_ARM_REG_SP, UC_ARM_REG_LR,
+                               UC_ARM_REG_CPSR)
 
 from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
 
@@ -3213,6 +3214,57 @@ def _(run, rng):
                for o in (0x3b8, 0x3bc, 0x5c, 0x60, 0x68, 0x64)]
         exp = ref_1b3f2(P, X_lo, X_hi, R6)
         assert got == exp, f'0x1b3f2: P={P} Xlo={X_lo} Xhi={X_hi} R6={R6} got={got} exp={exp}'
+
+
+# ---------------------------------------------------------------------------
+# §60.5: 0x1aa08..0x1aae6 — inline-блок FOC в 0x1A938: обработка/кламп моторных
+# параметров + leaky-интегратор. Зависит от live-in регистров (r4=RAM+0x040 base,
+# r5=RAM+0x108, r6=0x2033) и stack-frame ([sp+0x18]=base). Изоляция: mid-function
+# jump в 0x1aa08 с этими регистрами + [sp+0x18]=RAM+0x040, stop в 0x1abd4.
+# Верифицированные операции (ключевые из ~13 выходов):
+#   (1) u16[RAM+0x044] = lo16(r0)          — store результата cross+dot (из bl 0x1d7ac)
+#   (2) u16[RAM+0x38c] = clamp(−s16[RAM+0x0a6], ±s16[RAM+0x390])  — симм. кламп
+#   (3) leaky-интегратор: acc=u32[RAM+0x094] (new=acc+delta−old_out),
+#       u16[RAM+0x046] = asr(acc_new, 5)   — тот же паттерн, что 0x1DFD8 (§59.8)
+# ---------------------------------------------------------------------------
+
+
+def _asr5(v):
+    s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
+    return s >> 5
+
+
+@t(0x1AA08, '§60.5: inline-блок FOC в 0x1A938 — обработка/кламп параметров + leaky-интегратор. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(−s16[RAM+0x0a6],±s16[RAM+0x390]); (3) интегратор acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (паттерн 0x1DFD8). Изоляция mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4)')
+def _(run, rng):
+    uc = run.uc
+    for _ in range(60):
+        r0val = rng.getrandbits(32)
+        a0a6 = rng.randrange(-1000, 1000); limit = rng.randrange(1, 800); acc0 = rng.getrandbits(24)
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(RAM + 0x0a6, struct.pack('<h', a0a6))
+        uc.mem_write(RAM + 0x390, struct.pack('<h', limit))
+        uc.mem_write(RAM + 0x094, struct.pack('<i', acc0))
+        SP = 0x20017F00
+        uc.mem_write(SP + 0x18, struct.pack('<I', RAM + 0x040))
+        uc.reg_write(UC_ARM_REG_SP, SP)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R0, r0val)
+        uc.reg_write(UC_ARM_REG_R4, RAM + 0x040)
+        uc.reg_write(UC_ARM_REG_R5, RAM + 0x108)
+        uc.reg_write(UC_ARM_REG_R6, 0x2033)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1AA08 | 1, 0x1ABD4 | 1, count=200)
+        except UcError:
+            pass
+        o44 = struct.unpack_from('<H', uc.mem_read(RAM + 0x044, 2), 0)[0]
+        o38c = struct.unpack_from('<H', uc.mem_read(RAM + 0x38c, 2), 0)[0]
+        o94 = struct.unpack_from('<i', uc.mem_read(RAM + 0x094, 4), 0)[0]
+        o46 = struct.unpack_from('<H', uc.mem_read(RAM + 0x046, 2), 0)[0]
+        assert o44 == (r0val & 0xFFFF), f'0x1aa08(1): r0={r0val:#x} got={o44} exp={r0val&0xFFFF}'
+        cv = max(-limit, min(limit, -a0a6))
+        assert o38c == (cv & 0xFFFF), f'0x1aa08(2): a0a6={a0a6} limit={limit} got={o38c} exp={cv&0xFFFF}'
+        assert o46 == (_asr5(o94) & 0xFFFF), f'0x1aa08(3): acc={o94} got_out={o46} exp={_asr5(o94)&0xFFFF}'
 
 
 # ---------------------------------------------------------------------------
