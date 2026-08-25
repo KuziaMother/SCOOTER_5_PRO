@@ -928,6 +928,14 @@ ANALYZED_BLE = [
     (0x639A, "**SPIC flash-регистр accessor**: возвращает адрес регистра SPIC+0x11c (0x4008011c); movw #0xfff — маска/команда; 1 periph-write", "§63", "разобран"),
     (0x63A4, "**SPIC config**: [base+8]=0 → bl 0x639a → [base+8]=1; затем read-modify-write [r0+0x300] (SPIC-регистр, bic #0xff | byte); r0=PERIPH base", "§63", "частично"),
     (0x645E, "**memory init/copy**: 22 RAM-writes, r0=RAM-указатель (0x2007fbb8); читает u16[base+8]; инициализация буфера/структуры", "§63", "ID"),
+    # §64: CTR/DFU-протокол (BLE↔MCU по USART3) + flash-драйвер
+    (0x23F0, "**CTR length-gate**: r1=кадр, r2=u16[r1+2]=длина. Доп. длины: {5} ∪ [0x12c..0x12e] (контрольный 5Б + data-кадры 300-302Б); остальные → return 0. Гейт: валидная длина → callee (0x2e24 для len==5, 0x2388/0x2e1a для data) — полная валидация = гейт+содержимое", "§64", "частично"),
+    (0x245A, "**DFU event dispatcher**: арг (r1=тип события, r3=подсост). type==4&&[r3]==1 или type==2 → таймер: [base+0x1c0]×0x3e8(1000) → bl 0x2df2; type==4&&[r3]==3 → bl 0x2e2e. Управляет dfuPacketWaitTimer", "§64", "частично"),
+    (0x23D6, "**pattern-search helper**: ищет 6-байтовый паттерн в буфере (bl 0x2bae); результат → state [base+0x1c9]=1/2; используется CTR-валидатором", "§64", "ID"),
+    (0x6110, "**SPIC base getter/init**: возвращает SPIC base (0x40080000), трогает ctrlr0", "§64", "ID"),
+    (0x6570, "**SPIC ctrl setup**: настраивает ctrlr0 (126Б)", "§64", "ID"),
+    (0x6A12, "**SPIC op → RAM buffer**: ctrlr0, r0=RAM-указатель (0x2007fbe0); flash-операция с буфером (170Б)", "§64", "ID"),
+    (0x7A08, "**SPIC ctrl op**: ctrlr0, r0=0xffc00000 (110Б)", "§64", "ID"),
 ]
 
 def write_ble(path):

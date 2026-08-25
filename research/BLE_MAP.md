@@ -23,7 +23,7 @@
 
 Подтверждено: **170** функций, всего 22988 Б кода. Это низкоуровневый bootloader +
 flash/OTA-драйвер; «говорящий» код — в зашифрованном APP-регионе (§62). Семантический
-разбор PLAIN-кода: **0.4%** (взвешено по байтам; каталог ANALYZED_BLE, §63).
+разбор PLAIN-кода: **1.2%** (взвешено по байтам; каталог ANALYZED_BLE, §63).
 
 **Модель % декомпиляции:** разобран=100%, частично=50%, ID=25%, не начат=0%.
 
@@ -81,8 +81,8 @@ flash/OTA-драйвер; «говорящий» код — в зашифров�
 | [`0x022f8`](functions_ble/func_0x022f8.md) | `0x018022f8` | 144 | заголовок + bootloader | — | — | не начат | 0% |
 | [`0x02388`](functions_ble/func_0x02388.md) | `0x01802388` | 78 | заголовок + bootloader | — | — | не начат | 0% |
 | [`0x023d8`](functions_ble/func_0x023d8.md) | `0x018023d8` | 20 | заголовок + bootloader | — | — | не начат | 0% |
-| [`0x023f0`](functions_ble/func_0x023f0.md) | `0x018023f0` | 106 | заголовок + bootloader | — | — | не начат | 0% |
-| [`0x0245a`](functions_ble/func_0x0245a.md) | `0x0180245a` | 70 | заголовок + bootloader | — | — | не начат | 0% |
+| [`0x023f0`](functions_ble/func_0x023f0.md) | `0x018023f0` | 106 | заголовок + bootloader | **CTR length-gate**: r1=кадр, r2=u16[r1+2]=длина. Доп. длины: {5} ∪ [0x12c..0x12e] (контрольный 5Б + data-кадры 300-302Б); остальные → return 0. Гейт: валидная длина → callee (0x2e24 для len==5, 0x2388/0x2e1a для data) — полная валидация = гейт+содержимое | §64 | частично | 50% |
+| [`0x0245a`](functions_ble/func_0x0245a.md) | `0x0180245a` | 70 | заголовок + bootloader | **DFU event dispatcher**: арг (r1=тип события, r3=подсост). type==4&&[r3]==1 или type==2 → таймер: [base+0x1c0]×0x3e8(1000) → bl 0x2df2; type==4&&[r3]==3 → bl 0x2e2e. Управляет dfuPacketWaitTimer | §64 | частично | 50% |
 | [`0x024a4`](functions_ble/func_0x024a4.md) | `0x018024a4` | 42 | заголовок + bootloader | — | — | не начат | 0% |
 | [`0x0256c`](functions_ble/func_0x0256c.md) | `0x0180256c` | 300 | заголовок + bootloader | — | — | не начат | 0% |
 | [`0x02698`](functions_ble/func_0x02698.md) | `0x01802698` | 110 | заголовок + bootloader | — | — | не начат | 0% |
@@ -96,7 +96,7 @@ flash/OTA-драйвер; «говорящий» код — в зашифров�
 | [`0x0608c`](functions_ble/func_0x0608c.md) | `0x0180608c` | 44 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x060b8`](functions_ble/func_0x060b8.md) | `0x018060b8` | 44 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x060e4`](functions_ble/func_0x060e4.md) | `0x018060e4` | 44 | flash-драйвер / OTA-код | — | — | не начат | 0% |
-| [`0x06110`](functions_ble/func_0x06110.md) | `0x01806110` | 16 | flash-драйвер / OTA-код | — | — | не начат | 0% |
+| [`0x06110`](functions_ble/func_0x06110.md) | `0x01806110` | 16 | flash-драйвер / OTA-код | **SPIC base getter/init**: возвращает SPIC base (0x40080000), трогает ctrlr0 | §64 | ID | 25% |
 | [`0x06120`](functions_ble/func_0x06120.md) | `0x01806120` | 118 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x061a2`](functions_ble/func_0x061a2.md) | `0x018061a2` | 38 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x061c8`](functions_ble/func_0x061c8.md) | `0x018061c8` | 112 | flash-драйвер / OTA-код | — | — | не начат | 0% |
@@ -105,7 +105,7 @@ flash/OTA-драйвер; «говорящий» код — в зашифров�
 | [`0x063a4`](functions_ble/func_0x063a4.md) | `0x018063a4` | 46 | flash-драйвер / OTA-код | **SPIC config**: [base+8]=0 → bl 0x639a → [base+8]=1; затем read-modify-write [r0+0x300] (SPIC-регистр, bic #0xff \| byte); r0=PERIPH base | §63 | частично | 50% |
 | [`0x063d2`](functions_ble/func_0x063d2.md) | `0x018063d2` | 136 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x0645e`](functions_ble/func_0x0645e.md) | `0x0180645e` | 272 | flash-драйвер / OTA-код | **memory init/copy**: 22 RAM-writes, r0=RAM-указатель (0x2007fbb8); читает u16[base+8]; инициализация буфера/структуры | §63 | ID | 25% |
-| [`0x06570`](functions_ble/func_0x06570.md) | `0x01806570` | 126 | flash-драйвер / OTA-код | — | — | не начат | 0% |
+| [`0x06570`](functions_ble/func_0x06570.md) | `0x01806570` | 126 | flash-драйвер / OTA-код | **SPIC ctrl setup**: настраивает ctrlr0 (126Б) | §64 | ID | 25% |
 | [`0x065f6`](functions_ble/func_0x065f6.md) | `0x018065f6` | 192 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x066b6`](functions_ble/func_0x066b6.md) | `0x018066b6` | 56 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x066ee`](functions_ble/func_0x066ee.md) | `0x018066ee` | 90 | flash-драйвер / OTA-код | — | — | не начат | 0% |
@@ -114,7 +114,7 @@ flash/OTA-драйвер; «говорящий» код — в зашифров�
 | [`0x067f2`](functions_ble/func_0x067f2.md) | `0x018067f2` | 184 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x068aa`](functions_ble/func_0x068aa.md) | `0x018068aa` | 210 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x0697c`](functions_ble/func_0x0697c.md) | `0x0180697c` | 150 | flash-драйвер / OTA-код | — | — | не начат | 0% |
-| [`0x06a12`](functions_ble/func_0x06a12.md) | `0x01806a12` | 170 | flash-драйвер / OTA-код | — | — | не начат | 0% |
+| [`0x06a12`](functions_ble/func_0x06a12.md) | `0x01806a12` | 170 | flash-драйвер / OTA-код | **SPIC op → RAM buffer**: ctrlr0, r0=RAM-указатель (0x2007fbe0); flash-операция с буфером (170Б) | §64 | ID | 25% |
 | [`0x06abc`](functions_ble/func_0x06abc.md) | `0x01806abc` | 42 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x06ae6`](functions_ble/func_0x06ae6.md) | `0x01806ae6` | 548 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x06d0a`](functions_ble/func_0x06d0a.md) | `0x01806d0a` | 12 | flash-драйвер / OTA-код | — | — | не начат | 0% |
@@ -141,7 +141,7 @@ flash/OTA-драйвер; «говорящий» код — в зашифров�
 | [`0x078bc`](functions_ble/func_0x078bc.md) | `0x018078bc` | 68 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x07900`](functions_ble/func_0x07900.md) | `0x01807900` | 142 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x0798e`](functions_ble/func_0x0798e.md) | `0x0180798e` | 122 | flash-драйвер / OTA-код | — | — | не начат | 0% |
-| [`0x07a08`](functions_ble/func_0x07a08.md) | `0x01807a08` | 110 | flash-драйвер / OTA-код | — | — | не начат | 0% |
+| [`0x07a08`](functions_ble/func_0x07a08.md) | `0x01807a08` | 110 | flash-драйвер / OTA-код | **SPIC ctrl op**: ctrlr0, r0=0xffc00000 (110Б) | §64 | ID | 25% |
 | [`0x07ac0`](functions_ble/func_0x07ac0.md) | `0x01807ac0` | 272 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x07c24`](functions_ble/func_0x07c24.md) | `0x01807c24` | 10 | flash-драйвер / OTA-код | — | — | не начат | 0% |
 | [`0x07c64`](functions_ble/func_0x07c64.md) | `0x01807c64` | 24 | flash-драйвер / OTA-код | — | — | не начат | 0% |
