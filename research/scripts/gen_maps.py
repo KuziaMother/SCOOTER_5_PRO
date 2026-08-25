@@ -936,6 +936,9 @@ ANALYZED_BLE = [
     (0x6570, "**SPIC ctrl setup**: настраивает ctrlr0 (126Б)", "§64", "ID"),
     (0x6A12, "**SPIC op → RAM buffer**: ctrlr0, r0=RAM-указатель (0x2007fbe0); flash-операция с буфером (170Б)", "§64", "ID"),
     (0x7A08, "**SPIC ctrl op**: ctrlr0, r0=0xffc00000 (110Б)", "§64", "ID"),
+    # §65: таксономия PLAIN-кода — семейство setter'ов глобального config-struct
+    (0x6008, "**setter config-struct**: хранит arg в 3 поля [base+0/+4/+8] + callback (blx). Семья 0x6008..0x60e4 (6×44Б) — setter'ы для разных групп полей; r0=arg", "§65", "частично"),
+    (0x9F80, "**init global struct**: возвращает 4, обнуляет фикс. struct @RAM 0x2007fbe8 (leaf, аргументы игнорирует)", "§65", "ID"),
 ]
 
 def write_ble(path):

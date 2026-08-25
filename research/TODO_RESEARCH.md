@@ -64,10 +64,13 @@ _(оригинальный список завершён — см. таблиц�
       чеклист SWD-извлечения в §62. **§63: фундамент PLAIN-декомпиляции готов** — эмулятор
       RTL8762C (`emulator/ble_emu.py`), SDK-карта периферии (SPIC=0x40080000, HW_AES=0x40014000),
       flash-драйвер локализован (кластер 0x6xxx: 0x639a SPIC-accessor, 0x63a4 config), каталог
-      ANALYZED_BLE + BLE_MAP.md (PLAIN-разобрано 0.4%). **Дальше по BLE:** (A) **декодировать
-      PLAIN bootloader/OTA** (170 функций; топ 0x07dea/0x08588; flash read/write/erase/
-      validate/install — приоритет; по caller-графу от хабов + эмуляторная верификация);
-      (B) подготовка SWD-дамп XIP-региона (открывает 110 КБ main-app); (C) BLE app-протокол из APK + live.
+      ANALYZED_BLE + BLE_MAP.md. **§64: CTR length-gate (дл. {5}∪[0x12c..0x12e]) + DFU
+      dispatcher + flash-локация. §65: таксономия 170 функций + ПОТОЛОК статической
+      декомпиляции** — глубинная логика (CTR/DFU/flash read-write-erase) = trampoline в RAM,
+      тела не в образе; SPIC-функции требуют точного рантайм-состояния. PLAIN-разобрано 1.9%.
+      **Дальше по BLE:** (A) статикой — только тривиальные setter/init (низкая отдача, потолок);
+      (B) **SWD/XIP-дамп расшифрованного main-app** (пробивает потолок, открывает 110 КБ + RAM-функции);
+      (C) **live: снуп USART3 (CTR в действии) + SWD-RAM при OTA**; (D) BLE app-протокол из APK.
       **MCU-хвост:** response-сборщики RX-парсера ('a'/'B'..'J', §59.6), motor SM 0x7494 целиком,
       fixed-point 0x1c34c (17 pool-адресов RAM), BLE-сессии 0x6ccc/0x6e50
       (0x16f42 разобран в §57: OOB-баг на текущих таблицах — верифицировать только
