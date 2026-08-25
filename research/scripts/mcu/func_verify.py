@@ -28,7 +28,7 @@ REPO = os.path.dirname(RES)                                # D:/SCOOTER_5_PRO
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(RES, 'scripts'))
 
-from unicorn import UcError, UC_HOOK_CODE
+from unicorn import UcError, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
                                UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_LR,
                                UC_ARM_REG_CPSR)
@@ -2321,6 +2321,217 @@ def _(run, rng):
     # SQR rank-регистры: все 4 записаны (value = [sp+0x58] = 0 в caller'е)
     for sq in (0x58, 0x5C, 0x60, 0x64):
         assert sq in last, f'SQR [{sq:#04x}] не записан'
+
+
+# ---------------------------------------------------------------------------
+# §59: 3-проводная шина (0x23374) + RCC/GPIOC init (0x1E2F8)
+# ---------------------------------------------------------------------------
+
+BUS3_STRUCT = 0xAC   # struct @RAM+0xAC (пул 0x2347C = 0x200000AC)
+
+
+def _bus3(run, a=0, b=0, c=0, sel=0, cur=0, delta=0, lim=0, old_out=0):
+    """собрать struct @RAM+0xAC: u16[+8]=a, u16[+A]=b, u16[+C]=c,
+    u16[+E]=sel, u32[+0x38]=cur, u32[+0x3C]=delta, u32[+0x40]=lim,
+    u16[+0x30]=old_out; вернуть (mid, ...) для ожиданий"""
+    buf = bytearray(0x50)
+    struct.pack_into('<H', buf, 8, a)
+    struct.pack_into('<H', buf, 0xA, b)
+    struct.pack_into('<H', buf, 0xC, c)
+    struct.pack_into('<H', buf, 0xE, sel)
+    struct.pack_into('<I', buf, 0x38, cur)
+    struct.pack_into('<I', buf, 0x3C, delta)
+    struct.pack_into('<I', buf, 0x40, lim)
+    struct.pack_into('<H', buf, 0x30, old_out)
+    run.ram_write(BUS3_STRUCT, bytes(buf))
+    return (cur + delta) >> 1
+
+
+@t(0x23374, '§59: 3-проводная шина — полная таблица решений (эмуляторно): C==0 → A=u16[+8] (0/1/2/4), C!=0 → B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur обновляется только на «mid»-ветках; A==0/B==7 → r0 из аргументов; пропущенные ветки → старый out. §59.2: на этом чипе bls/CC = lim≤mid (с равенством!), bhi/HS = lim>mid строго (отклонение от ARM: CC включает Z)')
+def _(run, rng):
+    # mid=10 везде (cur=10, delta=10); lim: 5(<mid), 10(=mid), 100(>mid)
+    cases = [
+        # (a, b, c, sel, cur, delta, lim, old_out, arg_r0, exp_out, exp_cur)
+        (0, 0, 0, 0, 0, 0, 0, 7, 0x1234, 0x1234, None),   # A==0 → r0 caller'а
+        (5, 0, 0, 0, 0, 0, 0, 7, 0x1234, 7, None),        # A∉{0,1,2,4} → старый out
+        (3, 0, 0, 4, 0, 0, 0, 9, 0, 9, None),
+        # A==1
+        (1, 0, 0, 1, 0, 0, 0, 0, 0, 1, None),
+        (1, 0, 0, 3, 10, 10, 5, 0, 0, 2, 10),             # lim≤mid → 2
+        (1, 0, 0, 3, 10, 10, 10, 0, 0, 2, 10),            # lim==mid → 2 (CC включает =)
+        (1, 0, 0, 3, 10, 10, 100, 0, 0, 3, 10),           # lim>mid → 3
+        (1, 0, 0, 5, 10, 10, 5, 0, 0, 5, 10),             # lim≤mid → 5
+        (1, 0, 0, 5, 10, 10, 10, 0, 0, 5, 10),            # lim==mid → 5
+        (1, 0, 0, 5, 10, 10, 100, 0, 0, 4, 10),           # lim>mid → 4
+        (1, 0, 0, 7, 1, 1, 1, 0, 0, 6, 1),                # sel 7 → 6, cur не трогает
+        (1, 0, 0, 2, 0, 0, 0, 0, 0, 2, None),             # else → out=sel
+        # A==2
+        (2, 0, 0, 2, 0, 0, 0, 0, 0, 2, None),
+        (2, 0, 0, 3, 10, 10, 5, 0, 0, 3, 10),             # lim≤mid → 3
+        (2, 0, 0, 3, 10, 10, 10, 0, 0, 3, 10),            # lim==mid → 3
+        (2, 0, 0, 3, 10, 10, 100, 0, 0, 1, 10),           # lim>mid → 1
+        (2, 0, 0, 6, 10, 10, 100, 0, 0, 6, 10),           # lim>mid строго (bhi) → 6
+        (2, 0, 0, 6, 10, 10, 10, 0, 0, 4, 10),            # lim==mid → 4 (bhi нет)
+        (2, 0, 0, 6, 10, 10, 5, 0, 0, 4, 10),             # lim<mid → 4
+        (2, 0, 0, 7, 0, 0, 0, 0, 0, 5, None),
+        # A==4
+        (4, 0, 0, 4, 0, 0, 0, 0, 0, 4, None),
+        (4, 0, 0, 5, 10, 10, 100, 0, 0, 5, 10),           # lim>mid строго → 5
+        (4, 0, 0, 5, 10, 10, 10, 0, 0, 1, 10),            # lim==mid → 1
+        (4, 0, 0, 5, 10, 10, 5, 0, 0, 1, 10),
+        (4, 0, 0, 6, 10, 10, 5, 0, 0, 6, 10),             # lim≤mid → 6
+        (4, 0, 0, 6, 10, 10, 10, 0, 0, 6, 10),            # lim==mid → 6
+        (4, 0, 0, 6, 10, 10, 100, 0, 0, 2, 10),           # lim>mid → 2
+        (4, 0, 0, 7, 1, 1, 1, 0, 0, 3, 1),                # sel 7 → 3, cur не трогает
+        # B==3 (C!=0)
+        (0, 3, 1, 0, 0, 0, 0, 0, 0, 4, None),
+        (0, 3, 1, 1, 10, 10, 100, 0, 0, 5, 10),           # lim>mid строго → 5
+        (0, 3, 1, 1, 10, 10, 10, 0, 0, 1, 10),            # lim==mid → 1
+        (0, 3, 1, 1, 10, 10, 5, 0, 0, 1, 10),
+        (0, 3, 1, 2, 10, 10, 5, 0, 0, 6, 10),             # lim≤mid → 6
+        (0, 3, 1, 2, 10, 10, 10, 0, 0, 6, 10),            # lim==mid → 6
+        (0, 3, 1, 2, 10, 10, 100, 0, 0, 2, 10),           # lim>mid → 2
+        (0, 3, 1, 3, 0, 0, 0, 0, 0, 3, None),
+        (0, 3, 1, 9, 0, 0, 0, 0, 0, 9, None),             # else → out=sel
+        # B==5
+        (0, 5, 1, 0, 0, 0, 0, 0, 0, 2, None),
+        (0, 5, 1, 1, 10, 10, 5, 0, 0, 3, 10),             # lim≤mid → 3
+        (0, 5, 1, 1, 10, 10, 10, 0, 0, 3, 10),            # lim==mid → 3
+        (0, 5, 1, 1, 10, 10, 100, 0, 0, 1, 10),           # lim>mid → 1
+        (0, 5, 1, 4, 10, 10, 100, 0, 0, 6, 10),           # lim>mid строго → 6
+        (0, 5, 1, 4, 10, 10, 10, 0, 0, 4, 10),            # lim==mid → 4
+        (0, 5, 1, 4, 10, 10, 5, 0, 0, 4, 10),
+        (0, 5, 1, 5, 0, 0, 0, 0, 0, 5, None),
+        # B==6
+        (0, 6, 1, 0, 0, 0, 0, 0, 0, 1, None),
+        (0, 6, 1, 2, 10, 10, 5, 0, 0, 2, 10),             # lim≤mid → 2
+        (0, 6, 1, 2, 10, 10, 10, 0, 0, 2, 10),            # lim==mid → 2
+        (0, 6, 1, 2, 10, 10, 100, 0, 0, 3, 10),           # lim>mid → 3
+        (0, 6, 1, 4, 10, 10, 5, 0, 0, 5, 10),             # lim≤mid → 5
+        (0, 6, 1, 4, 10, 10, 10, 0, 0, 5, 10),            # lim==mid → 5
+        (0, 6, 1, 4, 10, 10, 100, 0, 0, 4, 10),           # lim>mid → 4
+        (0, 6, 1, 6, 0, 0, 0, 0, 0, 6, None),
+        # B==7 / пропуски
+        (0, 7, 1, 0, 0, 0, 0, 7, 0x77, 0x77, None),       # B==7 → r0 caller'а
+        (0, 9, 1, 0, 0, 0, 0, 8, 0x55, 8, None),          # B∉{3,5,6,7} → старый out
+    ]
+    for (a, b, c, sel, cur, delta, lim, old, r0arg, exp_out, exp_cur) in cases:
+        _bus3(run, a=a, b=b, c=c, sel=sel, cur=cur, delta=delta,
+              lim=lim, old_out=old)
+        r0, _ = run.call(0x23374, [r0arg])
+        tag = f'A={a} B={b} C={c} sel={sel}'
+        assert r0 == exp_out, f'{tag}: out={r0:#x} ≠ {exp_out:#x}'
+        if exp_cur is not None:
+            got_cur = struct.unpack_from('<I', run.ram_read(BUS3_STRUCT + 0x38, 4), 0)[0]
+            assert got_cur == exp_cur, f'{tag}: cur={got_cur:#x} ≠ {exp_cur:#x}'
+
+
+@t(0x1E2F8, '§59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (по битам 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC-делители: +0x08 nibble-логика по MODER=0x44AA200, mid-ветка → 1) → +0x08=0x900; финал RCC+0x00 = 0x100000 (bit20 enable)')
+def _(run, rng):
+    uc = run.uc
+    # RCC-регион обнуляем: OR-записи не идемпотентны (один Run на все тесты)
+    uc.mem_write(0x40021000, b'\x00' * 0x100)
+    writes = []
+    def hw(u_, acc, addr, size, val, usr):
+        if 0x40021000 <= addr < 0x40021100:
+            writes.append((addr - 0x40021000, val))
+    hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40021000, 0x40021100)
+    try:
+        r0, _ = run.call(0x1E2F8, [])
+    finally:
+        uc.hook_del(hook)
+    assert r0 == 0x100000, f'r0={r0:#x}'
+    seq = [(off, val) for off, val in writes]
+    # RCC+0x3C: по битам 16..19 (0x80000→0xC0000→0xE0000→0xF0000)
+    c3c = [v for o, v in seq if o == 0x3C]
+    assert c3c[:4] == [0x80000, 0xC0000, 0xE0000, 0xF0000], f'+0x3C={ [hex(v) for v in c3c]}'
+    # RCC+0x40: 0x80000 → 0xC0000 → 0xE0000
+    c40 = [v for o, v in seq if o == 0x40]
+    assert c40 == [0x80000, 0xC0000, 0xE0000], f'+0x40={[hex(v) for v in c40]}'
+    # RCC+0x44: 0x4000 → 0x4800 → 0x4A00
+    c44 = [v for o, v in seq if o == 0x44]
+    assert c44 == [0x4000, 0x4800, 0x4A00], f'+0x44={[hex(v) for v in c44]}'
+    # RCC+0x3C финал: |= 0x8000 → 0xF8000, |= 1 → 0xF8001
+    assert c3c[-2:] == [0xF8000, 0xF8001], f'+0x3C хвост={[hex(v) for v in c3c[-2:]]}'
+    # helper 0x19A9A: RCC+0x00=0, +0x04=0 (×2), +0x08=0, +0x08=0x900 (×2)
+    c00 = [v for o, v in seq if o == 0x00]
+    c04 = [v for o, v in seq if o == 0x04]
+    c08 = [v for o, v in seq if o == 0x08]
+    assert c00[0] == 0 and c04[:2] == [0, 0], f'+0x00/0x04={c00}/{c04}'
+    assert 0 in c08 and 0x900 in c08, f'+0x08={c08}'
+    # финал: RCC+0x00 = 0x100000 (bit20)
+    assert c00[-1] == 0x100000, f'+0x00 последняя={hex(c00[-1])}'
+
+
+@t(0x1302C, '§59: RCC-пульсатор USART: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность |=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит')
+def _(run, rng):
+    uc = run.uc
+    cases = [
+        (0x40013800, 0x0C, 0x4000),
+        (0x40004400, 0x10, 0x20000),
+        (0x40004800, 0x10, 0x40000),   # USART3
+        (0x40015000, 0x0C, 0x20000),
+        (0x40015400, 0x0C, 0x40000),
+    ]
+    for base, reg, bit in cases:
+        uc.mem_write(0x40021000, b'\x00' * 0x100)
+        writes = []
+        def hw(u_, acc, addr, size, val, usr):
+            if 0x40021000 <= addr < 0x40021100:
+                writes.append((addr - 0x40021000, val))
+        hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40021000, 0x40021100)
+        try:
+            r0, _ = run.call(0x1302C, [base])
+        finally:
+            uc.hook_del(hook)
+        assert r0 == bit, f'{base:#x}: r0={r0:#x} ≠ {bit:#x}'
+        assert writes == [(reg, bit), (reg, 0)], \
+            f'{base:#x}: записи={[(hex(o), hex(v)) for o, v in writes]}'
+    # неизвестная base → без записей
+    uc.mem_write(0x40021000, b'\x00' * 0x100)
+    writes = []
+    def hw2(u_, acc, addr, size, val, usr):
+        if 0x40021000 <= addr < 0x40021100:
+            writes.append(1)
+    hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw2, None, 0x40021000, 0x40021100)
+    try:
+        run.call(0x1302C, [0x40010800])
+    finally:
+        uc.hook_del(hook)
+    assert writes == [], f'неизвестная base: записей={len(writes)}'
+
+
+@t(0x1E298, '§59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) → validated-write 0x2359C(0x40020000, 0, 0x5D000041) в [0x40020108] c readback-retry → u32[0x40020028]=1 (enable) → ADC1 CR2|=4; возврат pop {r4,pc} (§59.3: на чипе POP всегда восстанавливает pc)')
+def _(run, rng):
+    uc = run.uc
+    # обнуляем ADC1 и блок 0x40020000 (RMW-записи)
+    uc.mem_write(0x40012400, b'\x00' * 0x100)
+    uc.mem_write(0x40020000, b'\x00' * 0x200)
+    writes = []
+    def hw(u_, acc, addr, size, val, usr):
+        if (0x40012400 <= addr < 0x40012500) or (0x40020000 <= addr < 0x40020200):
+            writes.append((addr, val))
+    hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw,
+                       None, 0x40012400, 0x40012500)
+    hook2 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40020000, 0x40020200)
+    try:
+        r0, _ = run.call(0x1E298, [])
+    finally:
+        uc.hook_del(hook); uc.hook_del(hook2)
+    # §57/§59: возврат через LR-sentinel даёт FETCH_UNMAPPED — это артефакт
+    # харнесса (pop {pc} → 0x0BADF001), не fault функции: все записи уже сделаны
+    assert r0 == 0x40012400, f'r0={r0:#x}'
+    # нормализуем: ADC1-смещения как есть, блок 0x40020000 → +0x10000
+    seq = [(a - 0x40012400 if a < 0x40013000 else a - 0x40020000 + 0x10000,
+            v) for a, v in writes]
+    # порядок: ADC1 CR2|=0x20 → [0x40020108]=0x5D000041 → [0x40020028]=1 → ADC1 CR2|=4
+    assert seq[0] == (0x18, 0x20), f'1-я запись={seq[0]}'
+    assert (0x10108, 0x5D000041) in seq, f'validated-write нет: {seq}'
+    assert (0x10028, 1) in seq, f'enable нет: {seq}'
+    assert seq[-1] == (0x18, 0x24), f'последняя={seq[-1]}'
+    i_dma = next(i for i, (o, v) in enumerate(seq) if o == 0x10108)
+    i_en = next(i for i, (o, v) in enumerate(seq) if o == 0x10028)
+    assert seq.index((0x18, 0x20)) < i_dma < i_en < len(seq) - 1, f'порядок: {seq}'
 
 
 # ---------------------------------------------------------------------------
