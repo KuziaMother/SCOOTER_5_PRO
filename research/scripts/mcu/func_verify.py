@@ -2534,6 +2534,122 @@ def _(run, rng):
     assert seq.index((0x18, 0x20)) < i_dma < i_en < len(seq) - 1, f'порядок: {seq}'
 
 
+@t(0x1D640, '§59: мотор-TIM init (TIM @0x40012C00 + channel-блоки @0x48000000/0x48000400): детерминированная последовательность 107 записей; финал TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B→0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — ПОСЛЕДНИЙ; блоки 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41')
+def _(run, rng):
+    import struct as _st
+    uc = run.uc
+    for base, sz in ((0x40012c00, 0x400), (0x48000000, 0x2000)):
+        uc.mem_write(base, b'\x00' * sz)
+    writes = []
+    def hw(u_, acc, addr, size, val, usr):
+        if (0x40012C00 <= addr < 0x40012C60) or (0x48000000 <= addr < 0x48000500):
+            writes.append((addr, val))
+    h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40012C00, 0x40012C60)
+    h2 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x48000000, 0x48000500)
+    try:
+        r0, _ = run.call(0x1D640, [], max_insn=300000)
+    finally:
+        uc.hook_del(h1); uc.hook_del(h2)
+    assert r0 == 0x41, f'r0={r0:#x}'
+    assert len(writes) == 107, f'записей={len(writes)} (ожидалось 107)'
+    # финальные состояния
+    def rd(a):
+        return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
+    tim = {off: rd(0x40012C00 + off) for off in range(0, 0x60, 4)}
+    assert tim[0x00] == 0x41 and tim[0x04] == 0x2A00 and tim[0x0C] == 0x80
+    assert tim[0x24] == 1 and tim[0x28] == 0x6060 and tim[0x2C] == 0x6060
+    assert tim[0x30] == 0x1DDD and tim[0x3C] == 0x8CA
+    assert tim[0x50] == 0x8C9 and tim[0x54] == 0x1D24
+    assert all(tim[o] == 0 for o in (0x44, 0x48, 0x4C)), 'CCR не очищены'
+    a = {off: rd(0x48000000 + off) for off in range(0, 0x40, 4)}
+    b = {off: rd(0x48000400 + off) for off in range(0, 0x40, 4)}
+    assert a[0x2C] == 0x666 and a[0x10] == 0x2A0000
+    assert b[0x2C] == 0x66660000 and b[0x10] == 0xAA000000
+    assert all(a[o] == 0 for o in (0x14, 0x18, 0x1C, 0x20, 0x24))
+    # порядок: CCR-константы 0x45B пишутся ДО их очистки; enable — последняя запись
+    i_45b = next(i for i, (ad, v) in enumerate(writes) if ad == 0x40012C44 and v == 0x45B)
+    i_clr = next(i for i, (ad, v) in enumerate(writes) if ad == 0x40012C44 and v == 0)
+    assert i_45b < i_clr
+    assert writes[-1] == (0x40012C00, 0x41), f'последняя запись={writes[-1]}'
+
+
+@t(0x1BF48, '§59: МОТОР-ИНИТ (221 запись, детерминированно): 1) bl 0x1D640 (мотор-TIM @0x40012C00 + channel-блоки 0x48000000/0x48000400; enable TIM — запись #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: финал +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO-блок @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) → +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) → +0x10=5 (bit0+bit2); r0=0x48000C00')
+def _(run, rng):
+    import struct as _st
+    uc = run.uc
+    for base, sz in ((0x40012400, 0x1000), (0x40012c00, 0x400), (0x48000000, 0x2000)):
+        uc.mem_write(base, b'\x00' * sz)
+    writes = []
+    def hw(u_, acc, addr, size, val, usr):
+        if (0x40012000 <= addr < 0x40013000) or (0x48000000 <= addr < 0x48002000):
+            writes.append((addr, val))
+    h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40012000, 0x40013000)
+    h2 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x48000000, 0x48002000)
+    try:
+        r0, _ = run.call(0x1BF48, [], max_insn=500000)
+    finally:
+        uc.hook_del(h1); uc.hook_del(h2)
+    assert r0 == 0x48000C00, f'r0={r0:#x}'
+    assert len(writes) == 221, f'записей={len(writes)} (ожидалось 221)'
+    # фаза 1 (0x1D640) кончается enable TIM — запись #106
+    assert writes[106] == (0x40012C00, 0x41), f'#106={writes[106]}'
+    def rd(a):
+        return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
+    # ADC1-финал (§58)
+    a1 = {off: rd(0x40012400 + off) for off in range(0, 0x80, 4)}
+    assert a1[0x00] == 0x40 and a1[0x18] == 1 and a1[0x1C] == 0x19
+    assert a1[0x20] == 0x4040403 and a1[0x24] == a1[0x28] == a1[0x2C] == 0x4040404
+    assert a1[0x3C] == 0xFFF0000 and a1[0x40] == 0xE1C6104 and a1[0x44] == 9
+    assert a1[0x54] == 0x3CA2CC43, f'SQR={a1[0x54]:#x}'
+    # TIM-финал (из 0x1D640)
+    tim = {off: rd(0x40012C00 + off) for off in range(0, 0x60, 4)}
+    assert tim[0x00] == 0x41 and tim[0x3C] == 0x8CA and tim[0x50] == 0x8C9
+    # channel-блоки 0x48
+    assert rd(0x4800002C) == 0x666 and rd(0x48000010) == 0x2A0000
+    assert rd(0x4800042C) == 0x66660000 and rd(0x48000410) == 0xAA000000
+    # GPIO-блок @0x48000C00: только +0x10 = 5, CRL очищен
+    c = {off: rd(0x48000C00 + off) for off in range(0, 0x40, 4)}
+    assert c[0x10] == 5 and c[0x04] == 0, f'блок C: { {hex(k): hex(v) for k, v in c.items() if v} }'
+    # хвост: последовательность CRL/0x22000 на блоке C
+    tail = [(a, v) for a, v in writes[107:] if 0x48000C00 <= a < 0x48000C40]
+    assert tail[0] == (0x48000C04, 0), f'хвост[0]={tail[0]}'
+    i_m2 = next(i for i, (a, v) in enumerate(tail) if a == 0x48000C10 and v == 4)
+    i_m1 = next(i for i, (a, v) in enumerate(tail) if a == 0x48000C10 and v == 5)
+    assert tail[i_m2 + 1] == (0x48000C04, 0), 'CRL &= ~2 между mode-2 и mode-1'
+    assert tail[-1] == (0x48000C10, 5), f'хвост[-1]={tail[-1]}'
+
+
+@t(0x1C1AC, '§59: ADC-DMA transfer setup (блок @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C → [+0x108]=0x5D000041 (ctrl, тот же что в 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ-хвост: [**0xE000E100**]=0x200 (прямая запись bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear биты 8..15); r0=0')
+def _(run, rng):
+    uc = run.uc
+    uc.mem_write(0x40020000, b'\x00' * 0x200)
+    # SYS-регион обнуляем: [0xE000E408] &= ~0xFF00 — значение зависит от предыдущего
+    uc.mem_write(0xE000E000, b'\x00' * 0x1000)
+    writes = []
+    def hw(u_, acc, addr, size, val, usr):
+        if addr >= 0x20017F00:   # стек отбрасываем
+            writes.append((addr, val))
+    h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw)   # всё пространство
+    try:
+        r0, _ = run.call(0x1C1AC, [], max_insn=100000)
+    finally:
+        uc.hook_del(h1)
+    assert r0 == 0, f'r0={r0:#x}'
+    seq = [(a, v) for a, v in writes if not (0x20017F00 <= a < 0x20018000)]
+    assert len(seq) == 11, f'записей={len(seq)}: {seq}'
+    # порядок: src → dst → ctrl → enable-группа → ctrl |= 1 → IRQ
+    assert seq[0] == (0x40020004, 1)
+    assert seq[1] == (0x40020100, 0x40012450), f'src={seq[1]}'
+    assert seq[2] == (0x40020104, 0x20001692), f'dst={seq[2]}'
+    assert seq[3] == (0x40020108, 0x5D000041)
+    assert seq[4] == (0x40020028, 1) and seq[5] == (0x40020014, 1)
+    assert seq[6] == (0x40020070, 0x19) and seq[7] == (0x40020050, 1)
+    assert seq[8] == (0x40020108, 0x5D000041), 'ctrl |= 1 (bit0 уже стоит — значение не меняется)'
+    # IRQ-хвост: ядро + NVIC
+    assert seq[9] == (0xE000E100, 0x200), f'IRQ enable={seq[9]}'
+    assert seq[10] == (0xE000E408, 0), f'NVIC+0x08={seq[10]}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

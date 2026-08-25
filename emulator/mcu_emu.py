@@ -33,6 +33,10 @@ RAM = 0x20000000
 RAM_SIZE = 0x20000           # 128K
 PERIPH = 0x40000000
 PERIPH_SIZE = 0x00100000
+# §59.3: расширенная область периферии чипа (блоки 0x48000400 DMA-подобный,
+# 0x48000C00 GPIO-подобный; используют 0x1D640/0x1BF48/0x1C040)
+PERIPH2 = 0x48000000
+PERIPH2_SIZE = 0x00020000
 SYS = 0xE0000000             # Cortex-M NVIC/SCB
 SYS_SIZE = 0x00100000
 STACK_TOP = 0x20018000
@@ -69,6 +73,7 @@ class McuEmu:
             self.uc.mem_write(base, fw)
         self.uc.mem_map(RAM, RAM_SIZE)
         self.uc.mem_map(PERIPH, PERIPH_SIZE)
+        self.uc.mem_map(PERIPH2, PERIPH2_SIZE)
         self.uc.mem_map(SYS, SYS_SIZE)
         self.fw_len = len(fw)
 
@@ -131,6 +136,7 @@ class McuEmu:
         механизм: Unicorn не даёт менять значение в READ-хуке напрямую, поэтому
         предзаполняем регион единицами."""
         self.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
+        self.uc.mem_write(PERIPH2, b"\x00" * PERIPH2_SIZE)
         self.uc.mem_write(SYS, b"\x00" * SYS_SIZE)
 
     def seed_scheduler(self):
@@ -158,6 +164,7 @@ class McuEmu:
         self.spins = 0
         self.mapped_pages = 0
         self.uc.mem_write(PERIPH, bytes(PERIPH_SIZE))
+        self.uc.mem_write(PERIPH2, bytes(PERIPH2_SIZE))
         self.uc.mem_write(SYS, bytes(SYS_SIZE))
         self.uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
         self.uc.reg_write(UC_ARM_REG_LR, 1)
@@ -186,6 +193,7 @@ class McuEmu:
     def run_func(self, addr, args=(), fill_desc=None, seed_sched=False):
         if seed_sched:
             self.uc.mem_write(PERIPH, bytes(PERIPH_SIZE))   # status-биты сброшены
+            self.uc.mem_write(PERIPH2, bytes(PERIPH2_SIZE))
             self.uc.mem_write(SYS, bytes(SYS_SIZE))
             self.seed_scheduler()
         else:
