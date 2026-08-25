@@ -2990,6 +2990,86 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.1: 0x1e410 — табличная декодировка Q15-вектора (подфункция FOC)
+# Аргумент r0 = u32 A. Ветвь b=A[15:14]; i1=(A>>6)&0xFF; i2=(0xFF−i1)&0xFF.
+# t1=s16[TBL[i1]], t2=s16[TBL[i2]] (TBL = 256×u16 @flash 0xA6C6). По ветви:
+#   b0: lo=−t2, hi=−t1   b1: lo=t1, hi=−t2   b2: lo=t2, hi=t1   b3: lo=−t1, hi=t2
+# Возврат u32 = (hi<<16)|lo. (4-квадрантная знаковая инверсия одной пары.)
+# ---------------------------------------------------------------------------
+
+FOC_TBL_OFF = 0xA6C6   # flash-offset таблицы 256×u16 (FLASH0 base)
+
+
+def _foc_tbl(uc):
+    raw = uc.mem_read(FLASH0 + FOC_TBL_OFF, 512)
+    return list(struct.unpack('<256h', raw))
+
+
+def ref_1e410(A, tbl):
+    b = (A >> 14) & 3
+    i1 = (A >> 6) & 0xFF
+    i2 = (0xFF - i1) & 0xFF
+    t1, t2 = tbl[i1], tbl[i2]
+    if b == 0: lo, hi = -t2, -t1
+    elif b == 1: lo, hi = t1, -t2
+    elif b == 2: lo, hi = t2, t1
+    else: lo, hi = -t1, t2
+    return ((hi & 0xFFFF) << 16) | (lo & 0xFFFF)
+
+
+def _s16(v):
+    v &= 0xFFFF
+    return v - 0x10000 if (v & 0x8000) else v
+
+
+def _asr32(v, n):
+    s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
+    return s >> n
+
+
+def _div15(p):
+    """значное деление /2^15 с округлением: if p<0 → p+=0x7FFF; asr 15"""
+    pu = p & 0xFFFFFFFF
+    if p < 0:
+        pu = (pu + 0x7FFF) & 0xFFFFFFFF
+    return _asr32(pu, 15)
+
+
+def ref_1d7ac(arg0, arg1, tbl):
+    """cross+dot двух Q15-векторов: X=0x1e410(arg1), A=arg0."""
+    X = ref_1e410(arg1, tbl)
+    X_lo, X_hi = _s16(X), _s16(X >> 16)
+    a_lo, a_hi = _s16(arg0), _s16(arg0 >> 16)
+    P = _div15(X_hi * a_lo)   # a_lo·X_hi
+    Q = _div15(X_lo * a_hi)   # a_hi·X_lo
+    R = _div15(X_lo * a_lo)   # a_lo·X_lo
+    S = _div15(X_hi * a_hi)   # a_hi·X_hi
+    out_lo = (Q - P) & 0xFFFF   # cross: a_hi·X_lo − a_lo·X_hi
+    out_hi = (R + S) & 0xFFFF   # dot:   a_lo·X_lo + a_hi·X_hi
+    return (out_hi << 16) | out_lo
+
+
+@t(0x1E410, '§60.1: табличная декодировка Q15-вектора (подфункция FOC): ветвь=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(−t2,−t1) b1:(t1,−t2) b2:(t2,t1) b3:(−t1,t2) → u32=(hi<<16)|lo')
+def _(run, rng):
+    tbl = _foc_tbl(run.uc)
+    for _ in range(60):
+        A = rng.getrandbits(32)
+        r0, _ = run.call(0x1E410, (A,), max_insn=50000)
+        exp = ref_1e410(A, tbl)
+        assert r0 == exp, f'0x1e410: A={A:#010x} got={r0:#010x} exp={exp:#010x}'
+
+
+@t(0x1D7AC, '§60.1: cross+dot двух Q15-векторов (подфункция FOC): X=0x1e410(arg1), A=arg0; lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF)')
+def _(run, rng):
+    tbl = _foc_tbl(run.uc)
+    for _ in range(60):
+        a0 = rng.getrandbits(32); a1 = rng.getrandbits(32)
+        r0, _ = run.call(0x1D7AC, (a0, a1), max_insn=50000)
+        exp = ref_1d7ac(a0, a1, tbl)
+        assert r0 == exp, f'0x1d7ac: a0={a0:#010x} a1={a1:#010x} got={r0:#010x} exp={exp:#010x}'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
