@@ -3440,6 +3440,97 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
+# §60.8: 0x1A938 entry (0x1a938..0x1a9d0) — prologue + setup + табличная выборка.
+# (a) Табличная выборка (главный расчёт), вход s16[r4+2]=value, таблица E в flash
+#     @0x9E38 (2048 u16). Треугольный mapping:
+#       idx = value>>4  (value<16384)  |  1023−(value−16384)>>4  (value>=16384)
+#       u16[r4+4]=idx;  u16[RAM+0x108]=tableE[idx];
+#       r0 = tableE[1024−idx] (value<16384)  |  −tableE[1024−idx] (value>=16384)
+#     (branch C неактивен — branch B покрывает весь верхний диапазон [16384,32767])
+# (b) scaled-delta: u16[r4+0x60]=u16[poolC=RAM+0x838],
+#     u16[r4+0x62]=asr16(0x93cc·(u32[poolC+4]−u32[poolC+8]))
+# (bl 0x1be1c — уже верифицированная подфункция)
+# ---------------------------------------------------------------------------
+
+_ENTRY_TBL_BASE = 0x9E38   # flash-таблица E
+_ENTRY_TBL = None          # кэш: список 2048 u16
+
+
+def _entry_table():
+    global _ENTRY_TBL
+    if _ENTRY_TBL is None:
+        with open(r'D:/SCOOTER_5_PRO/research/images/mcu_0007.bin', 'rb') as f:
+            img = bytearray(f.read())
+        _ENTRY_TBL = [struct.unpack_from('<H', img, _ENTRY_TBL_BASE + i * 2)[0]
+                      for i in range(2048)]
+    return _ENTRY_TBL
+
+
+@t(0x1A938, '§60.8: entry 0x1A938 — табличная выборка (треугольный mapping по flash-таблице @0x9E38): idx=value>>4 | 1023−(value−16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta). Изоляция mid-function jump (r4=RAM+0x040)')
+def _(run, rng):
+    uc = run.uc
+    tbl = _entry_table()
+    # (a) табличная выборка — полный диапазон value [0, 32767]
+    for _ in range(150):
+        val = rng.randrange(0, 32768)
+        uc.mem_write(RAM, bytes(0x20000))
+        r4 = RAM + 0x040
+        uc.mem_write(r4 + 2, struct.pack('<h', val))
+        from unicorn import UC_HOOK_CODE as _H
+        def _st(uc_, addr, size, u):
+            aa = addr & ~1
+            if aa >= 0x1A9D0 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(_H, _st)
+        uc.reg_write(UC_ARM_REG_SP, 0x20017F00); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1A966 | 1, 0, count=30)
+        except UcError:
+            pass
+        uc.hook_del(sh)
+        idx_got = struct.unpack_from('<H', uc.mem_read(r4 + 4, 2), 0)[0]
+        b_got = struct.unpack_from('<H', uc.mem_read(RAM + 0x108, 2), 0)[0]
+        r0_got = uc.reg_read(UC_ARM_REG_R0) & 0xFFFF
+        if val < 16384:
+            idx = val >> 4; neg = False
+        else:
+            idx = 1023 - ((val - 16384) >> 4); neg = True
+        e_b = tbl[idx]
+        e_r0 = (-tbl[1024 - idx]) & 0xFFFF if neg else tbl[1024 - idx]
+        assert (idx_got, b_got, r0_got) == (idx, e_b, e_r0), \
+            f'0x1a938 table: val={val} got=({idx_got},{b_got},{r0_got}) exp=({idx},{e_b},{e_r0})'
+    # (b) scaled-delta
+    POOLC = RAM + 0x838; POOLD = 0x93CC
+    for _ in range(50):
+        c0 = rng.getrandbits(16); c4 = rng.getrandbits(32); c8 = rng.getrandbits(32)
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(POOLC + 0, struct.pack('<H', c0))
+        uc.mem_write(POOLC + 4, struct.pack('<I', c4)); uc.mem_write(POOLC + 8, struct.pack('<I', c8))
+        r4 = RAM + 0x040
+        def _st2(uc_, addr, size, u):
+            aa = addr & ~1
+            if aa >= 0x1A966 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
+                uc_.emu_stop()
+        sh2 = uc.hook_add(_H, _st2)
+        uc.reg_write(UC_ARM_REG_SP, 0x20017F00); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1A94E | 1, 0, count=12)
+        except UcError:
+            pass
+        uc.hook_del(sh2)
+        o60 = struct.unpack_from('<H', uc.mem_read(r4 + 0x60, 2), 0)[0]
+        o62 = struct.unpack_from('<H', uc.mem_read(r4 + 0x62, 2), 0)[0]
+        delta = (c4 - c8) & 0xFFFFFFFF
+        e62 = (_s32(POOLD * delta) >> 16) & 0xFFFF
+        assert (o60, o62) == (c0, e62), \
+            f'0x1a938 delta: c0={c0} c4={c4:#x} c8={c8:#x} got=({o60},{o62}) exp=({c0},{e62})'
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
