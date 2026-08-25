@@ -1787,7 +1787,7 @@ def _(run, rng):
 
 # --- drift detector (адаптивный базлайн) ---
 
-@t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=clamp(s16[RAM+0x13A4]−s16[RAM+0x1302],±0x8000); devA≥500||devB>500 → flag + refs:=текущие')
+@t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]−s16[RAM+0x1302]|,0x7fff) (абсолютное!); devA≥500||devB>500 → flag + refs:=текущие')
 def _(run, rng):
     A = rng.getrandbits(16)
     B = rng.randint(-32768, 32767)
@@ -1800,8 +1800,7 @@ def _(run, rng):
     run.ram_write(0x500, b'\x7F')
     run.call(0xE740, (RAM + 0x500,), max_insn=5000)
     devA = abs(A - refA)
-    devB = B - refB
-    devB = max(-0x8000, min(0x7FFF, devB))
+    devB = min(abs(B - refB), 0x7FFF)   # firmware: |B−refB| (абсолютное), clamp 32767
     flag = 1 if (devA >= 500 or devB > 500) else 0
     got = run.ram_read(0x500, 1)[0]
     assert got == flag, f'A={A} refA={refA} B={B} refB={refB}: flag {got} ≠ {flag}'
