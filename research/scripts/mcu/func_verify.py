@@ -3584,7 +3584,7 @@ def _s16(x):
     x &= 0xFFFF
     return x - 0x10000 if x >= 0x8000 else x
 
-@t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp). Вериф. 200/200 random-sweep')
+@t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = setpoint замкнутого контура скорости (out2=сглаж. оценка ∝ 48000/V; вывод r4[+0x18]=structB[+0x64]=throttle/duty, НЕ скорость). Вериф. 200/200 random-sweep + setpoint 300/300')
 def _(run, rng):
     V = rng.randint(50, 60000)
     F = rng.getrandbits(1)
@@ -3622,11 +3622,13 @@ def _(run, rng):
     g_o2  = struct.unpack('<H', run.ram_read(0x1770, 2))[0]
     g_pct = struct.unpack('<H', run.ram_read(0x236, 2))[0]
     g_tgt = struct.unpack('<H', run.ram_read(0x177c, 2))[0]
+    g_set = struct.unpack('<H', run.ram_read(0x3F2, 2))[0]   # structB@0x3c8[+0x2a] setpoint
     assert g_sp0 == val & 0xFFFF, f'sp0 {g_sp0} != {val & 0xffff} (V={V},F={F})'
     assert g_o1 == e_o1 & 0xFFFF, f'out1 {g_o1} != {e_o1}'
     assert g_o2 == e_o2 & 0xFFFF, f'out2 {g_o2} != {e_o2}'
     assert g_pct == e_pct, f'pct {g_pct} != {e_pct}'
     assert g_tgt == e_tgt, f'tgt {g_tgt} != {e_tgt} (mode={mode},flag={flag})'
+    assert g_set == e_tgt, f'setpoint +0x2a {g_set} != {e_tgt} (mode={mode},flag={flag})'
 
 
 # ---------------------------------------------------------------------------
