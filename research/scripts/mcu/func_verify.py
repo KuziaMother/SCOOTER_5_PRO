@@ -3574,6 +3574,61 @@ def _(run, rng):
         assert got == exp, f'0x11bac: v={v} got={got} exp={exp}'
 
 
+# --- 0x1d078 timer capture/period + speed-limit ramp (§69, corrected by random-sweep) ---
+def _sdiv(a, b):
+    if b == 0:
+        return 0
+    q = abs(a) // abs(b)
+    return q if (a < 0) == (b < 0) else -q
+def _s16(x):
+    x &= 0xFFFF
+    return x - 0x10000 if x >= 0x8000 else x
+
+@t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp). Вериф. 200/200 random-sweep')
+def _(run, rng):
+    V = rng.randint(50, 60000)
+    F = rng.getrandbits(1)
+    acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
+    acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
+    mode = rng.choice([2, 3, 0xb, 5, 7])
+    f339 = rng.getrandbits(16)   # flag = low byte @0x339
+    c326 = rng.getrandbits(16)   # u16[RAM+0x326] (clamp-значение)
+    m2t  = rng.getrandbits(16)   # u16[RAM+0x324] (target при mode==2)
+    run.ram_write(0x158, struct.pack('<I', V))
+    run.ram_write(0x100, bytes([F]))
+    run.ram_write(0x1768, struct.pack('<H', 0))
+    run.ram_write(0x176c, struct.pack('<I', acc2))
+    run.ram_write(0x1770, struct.pack('<h', out2))
+    run.ram_write(0x1774, struct.pack('<I', acc1))
+    run.ram_write(0x1778, struct.pack('<h', out1))
+    run.ram_write(0x229, bytes([mode]))
+    run.ram_write(0x339, struct.pack('<H', f339))
+    run.ram_write(0x324, struct.pack('<H', m2t))
+    run.ram_write(0x326, struct.pack('<H', c326))
+    run.call(0x1D078, (), max_insn=400000)
+    val = 0 if F == 0 else _s16(_sdiv(48000, V))
+    na1 = (acc1 + val - out1) & 0xFFFFFFFF; e_o1 = _s16(na1 >> 5)
+    na2 = (acc2 + val - out2) & 0xFFFFFFFF; e_o2 = max(0, _s16(na2 >> 3))
+    e_pct = _sdiv(100 * e_o2, 208) & 0xFFFF
+    flag = f339 & 0xFF
+    if flag == 1: tgt = 522
+    elif mode == 0xb: tgt = 125
+    elif mode == 2: tgt = m2t
+    elif mode == 3: tgt = c326
+    else: tgt = 208
+    e_tgt = (tgt if _s16(tgt) <= c326 else c326) & 0xFFFF
+    g_sp0 = struct.unpack('<H', run.ram_read(0x1768, 2))[0]
+    g_o1  = struct.unpack('<H', run.ram_read(0x1778, 2))[0]
+    g_o2  = struct.unpack('<H', run.ram_read(0x1770, 2))[0]
+    g_pct = struct.unpack('<H', run.ram_read(0x236, 2))[0]
+    g_tgt = struct.unpack('<H', run.ram_read(0x177c, 2))[0]
+    assert g_sp0 == val & 0xFFFF, f'sp0 {g_sp0} != {val & 0xffff} (V={V},F={F})'
+    assert g_o1 == e_o1 & 0xFFFF, f'out1 {g_o1} != {e_o1}'
+    assert g_o2 == e_o2 & 0xFFFF, f'out2 {g_o2} != {e_o2}'
+    assert g_pct == e_pct, f'pct {g_pct} != {e_pct}'
+    assert g_tgt == e_tgt, f'tgt {g_tgt} != {e_tgt} (mode={mode},flag={flag})'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
