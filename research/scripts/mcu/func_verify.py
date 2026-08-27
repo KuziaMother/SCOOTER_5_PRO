@@ -4063,6 +4063,31 @@ def _(run, rng):
     assert bm.discharge(0, dt=1.0) == 50, 'разряд без нагрузки изменил SoC'
 
 
+# --- запас хода: RangeModel (0x1d898) (§73.x) ---
+@t(0x1D898, '§73.x range: RangeModel — v=i16[RAM+0x27A]→X=(8000·v)>>16, R=10000·X/(500−X) (делитель 0x19994; div-by-zero→-1, отриц. знаменатель→отриц.). Closed-form вериф. random-sweep (v≥0) против firmware 0x1d898 + edge-cases (v=0/415/535/4096).')
+def _(run, rng):
+    from emulator.mcu_emu import RangeModel
+    rm = RangeModel(run.emu)
+    def fw(v):
+        rm.set_value(v)
+        run.call(0x1D898, (0, 0, 0, 0), max_insn=300000)
+        X = struct.unpack('<H', run.uc.mem_read(RAM + 0x3E8, 2))[0]
+        R = struct.unpack('<i', run.uc.mem_read(RAM + 0x408, 4))[0]
+        return X, R
+    # --- random-sweep: closed-form vs firmware (v≥0) ---
+    for _ in range(150):
+        v = rng.randint(0, 12000)
+        mx, mr = rm.estimate(v)
+        fx, fr = fw(v)
+        assert (fx, fr) == (mx, mr), f'v={v}: fw=({fx},{fr}) model=({mx},{mr})'
+    # --- edge-cases ---
+    assert rm.estimate(0) == (0, 0) and fw(0) == (0, 0)
+    assert rm.estimate(415) == (50, 1111) and fw(415) == (50, 1111)
+    assert rm.estimate(535) == (65, 1494) and fw(535) == (65, 1494)
+    # div-by-zero: X=500 при v=4096 → R=-1
+    assert rm.estimate(4096) == (500, -1) and fw(4096) == (500, -1)
+
+
 # ---------------------------------------------------------------------------
 
 def main():

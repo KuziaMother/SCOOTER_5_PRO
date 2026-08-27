@@ -563,6 +563,48 @@ class BatteryModel:
         return self.set_soc(self.soc)
 
 
+# §73.x запас хода (0x1d898): читает i16@RAM+0x27A (батарея, ADC-регион §25),
+# пишет struct(RAM+0x3C8, общий с PID/FOC): +0x20 = X=(8000·v)>>16;
+# +0x40 = 10000·X/(500−X) (делитель 0x19994, div-by-zero→-1, отриц. знаменатель→отриц.).
+# Константы: SCALE=8000, REF=500, K=10000 (=scale/100% из §25). Формула вериф. 400/400 (v≥0).
+RANGE_VAL_OFF = 0x27A       # i16 вход (батарея)
+RANGE_CTX_OFF = 0x3C8       # struct-контекст (общий с PID/FOC)
+RANGE_SCALE = 8000          # ×8000>>16
+RANGE_REF = 500             # full-scale (div-by-zero при X==500)
+RANGE_K = 10000             # масштаб числителя делителя
+
+
+class RangeModel:
+    """§73.x: оценщик запаса хода (firmware 0x1d898).
+
+    v = i16@RAM+0x27A (батарея) → X = (8000·v)>>16; R = 10000·X/(500−X).
+    Формула верифицирована random-sweep 400/400 (v≥0, включая div-by-zero→-1 и
+    отрицательный знаменатель) против firmware. estimate() — closed-form; для сверки
+    вызывайте firmware напрямую: run.call(0x1D898, (0,0,0,0), max_insn=300000) →
+    X=u16[RAM+0x3E8], R=i32[RAM+0x408]. Физическая единица R не определена статически
+    (нужна live-корреляция); при v∈[415..535] (SoC) R≈1111..1494.
+    """
+    def __init__(self, emu):
+        self.emu = emu
+
+    def set_value(self, v):
+        """Записать входной i16@RAM+0x27A. Возвращает v."""
+        v = max(-32768, min(32767, int(v)))
+        self.emu.uc.mem_write(RAM + RANGE_VAL_OFF, struct.pack('<h', v))
+        return v
+
+    def estimate(self, v):
+        """Closed-form: (X, R). X=(8000·v)>>16; R=10000·X/(500−X), div-by-zero→-1."""
+        X = (RANGE_SCALE * v) >> 16
+        denom = RANGE_REF - X
+        if denom == 0:
+            return X, -1
+        num = RANGE_K * X
+        q = abs(num) // abs(denom)
+        R = -q if (num < 0) != (denom < 0) else q
+        return X, R
+
+
 def find_func_starts():
     """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
     import struct as _s
