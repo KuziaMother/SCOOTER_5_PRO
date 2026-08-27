@@ -3677,6 +3677,92 @@ def _(run, rng):
     assert g_28 == 0, f'toggle counter {g_28} != 0 (Phase B)'
 
 
+# --- 0x1d078 Phase B полная модель: I-term + anti-windup (§72.4) ---
+@t(0x1D078, '§72: Phase B полная модель — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; вериф. 2000/2000')
+def _(run, rng):
+    V = rng.randint(10, 60000)
+    F = rng.getrandbits(1)
+    mode = rng.choice([2, 3, 0xb, 5, 7])
+    f339 = rng.getrandbits(16)
+    c326 = rng.randint(1, 0x7fff)
+    m2t = rng.randint(1, 0x7fff)
+    acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
+    acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
+    old_int = rng.getrandbits(32)
+    s2e_old = rng.randint(0, 5)
+    u1760 = rng.choice([0, 0, rng.getrandbits(16), rng.getrandbits(20)])
+    u1764 = rng.getrandbits(24); u388 = rng.getrandbits(24); u224 = rng.getrandbits(20)
+    run.ram_write(0x158, struct.pack('<I', V))
+    run.ram_write(0x100, bytes([F]))
+    run.ram_write(0x229, bytes([mode]))
+    run.ram_write(0x339, struct.pack('<H', f339))
+    run.ram_write(0x333, b'\x00')          # skip mode-change block
+    run.ram_write(0x263, b'\x00')          # gate → ramp-core
+    run.ram_write(0x324, struct.pack('<H', m2t))
+    run.ram_write(0x326, struct.pack('<H', c326))
+    run.ram_write(0x1768, struct.pack('<H', 0))
+    run.ram_write(0x176C, struct.pack('<I', acc2))
+    run.ram_write(0x1770, struct.pack('<H', out2 & 0xFFFF))
+    run.ram_write(0x1774, struct.pack('<I', acc1))
+    run.ram_write(0x1778, struct.pack('<H', out1 & 0xFFFF))
+    run.ram_write(0x1760, struct.pack('<I', u1760))
+    run.ram_write(0x1764, struct.pack('<I', u1764))
+    run.ram_write(0x388, struct.pack('<I', u388))
+    run.ram_write(0x224, struct.pack('<I', u224))
+    run.ram_write(0x3C8, b'\x00' * 0x70)   # Phase B: counter S+0x28=1
+    run.ram_write(0x3C8 + 0x28, struct.pack('<H', 1))
+    run.ram_write(0x3C8 + 0x58, struct.pack('<I', old_int))
+    run.ram_write(0x3C8 + 0x2E, struct.pack('<H', s2e_old))
+    run.call(0x1D078, (), max_insn=400000)
+    # --- модель (совпадает с _d078_fullB.model_phaseB) ---
+    val = 0 if F == 0 else _s16(_sdiv(48000, V))
+    o1n = _s16(_s32(acc1 + val - out1) >> 5)          # asr5 + sxth
+    o2n = max(0, _s16(_s32(acc2 + val - out2) >> 3))   # asr3 + sxth + clamp>=0
+    flag = f339 & 0xFF
+    tgt = 522 if flag == 1 else (125 if mode == 0xb else
+                                 (m2t if mode == 2 else (c326 if mode == 3 else 208)))
+    tgt = (tgt if _s16(tgt) <= c326 else c326) & 0xFFFF
+    tsgn = _s16(tgt)
+    if o1n < tsgn:   # INCREASE
+        err = _s16(tsgn - o2n); interim = (5 * err + old_int) & 0xFFFFFFFF
+    else:            # DECREASE
+        err = _s16(o2n - tsgn); interim = (old_int - 5 * err) & 0xFFFFFFFF
+    adj = _s32(u1764 - u388) >> 3
+    integral = _s32(interim - adj)
+    S58 = max(8000, min(integral, 131040))            # clamp (верх → 131040!)
+    S60 = _s32(S58 & 0xFFFFFFFF) >> 2
+    if o1n < tsgn:   # INCREASE
+        e2 = _s16(tsgn - o2n); S2c = e2 if e2 <= 300 else 300
+        P = _s16(S2c & 0xFFFF) << 7; output = P + S60
+    else:            # DECREASE
+        e2 = _s16(o2n - tsgn); S2c = e2 if e2 <= 300 else 300
+        P = _s16(S2c & 0xFFFF) << 7; output = S60 - P
+    S64 = max(1000, min(32760, output))
+    if u1760 == 0:   # RESET path
+        S58 = (u224 * 4) & 0xFFFFFFFF; S64 = 0; S2e = 0
+    else:            # SLEW path
+        new2e = _s16(_s16(s2e_old) + 1)
+        if new2e > 2:
+            S2e = 2
+            if u1760 < S60:
+                S58 = (u1760 * 4) & 0xFFFFFFFF
+            up = _s32(u224 * 7) >> 1
+            if up > _s32(S58):
+                S58 = up & 0xFFFFFFFF
+        else:
+            S2e = new2e
+        if u1760 < S64:
+            S64 = u1760
+    g58 = struct.unpack('<I', run.ram_read(0x3C8 + 0x58, 4))[0]
+    g60 = struct.unpack('<I', run.ram_read(0x3C8 + 0x60, 4))[0]
+    g64 = struct.unpack('<I', run.ram_read(0x3C8 + 0x64, 4))[0]
+    g2e = struct.unpack('<H', run.ram_read(0x3C8 + 0x2E, 2))[0]
+    assert g58 == (S58 & 0xFFFFFFFF), f'S+0x58 {g58} != {S58 & 0xffffffff}'
+    assert g60 == (S60 & 0xFFFFFFFF), f'S+0x60 {g60} != {S60 & 0xffffffff}'
+    assert g64 == (S64 & 0xFFFFFFFF), f'S+0x64 {g64} != {S64 & 0xffffffff}'
+    assert g2e == S2e, f'S+0x2e {g2e} != {S2e}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
