@@ -3994,6 +3994,44 @@ def _(run, rng):
     assert sm.get_val() == 0, f'stop(): val {sm.get_val()} != 0'
 
 
+# --- 0x1d078 motor dynamics: АВТОНОМНЫЙ симул замкнутого контура (§73.x) ---
+@t(0x1D078, '§73.x motor dynamics: MotorModel (plant) замыкает АВТОНОМНЫЙ симул. target=208 → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(speed) → SpeedModel(V) → PID ... Скорость сходится к target: 0→overshoot~338→settle~207; throttle спадает. Детерминированно (fixed params).')
+def _(run, rng):
+    from emulator.mcu_emu import MotorModel, SpeedModel
+    uc = run.uc
+    target = 208
+    # начальное состояние PID: ramp-core + гейты + мощность разрешена (u1760≠0)
+    uc.mem_write(RAM, bytes(0x20000))
+    uc.mem_write(RAM + 0x229, bytes([3]))                 # mode=3 → target=u16[RAM+0x326]
+    uc.mem_write(RAM + 0x326, struct.pack('<H', target))
+    uc.mem_write(RAM + 0x339, b'\x00')
+    uc.mem_write(RAM + 0x333, b'\x00')                    # skip mode-change
+    uc.mem_write(RAM + 0x263, b'\x00')                    # gate → ramp-core
+    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))  # мощность разрешена (не reset)
+    uc.mem_write(RAM + 0x1764, struct.pack('<I', 0))
+    uc.mem_write(RAM + 0x388, struct.pack('<I', 0))
+    uc.mem_write(RAM + 0x224, struct.pack('<I', 0))
+    uc.mem_write(RAM + 0x3C8 + 0x28, struct.pack('<H', 1))  # counter → ramp-core
+    sm = SpeedModel(run.emu)
+    mm = MotorModel(run.emu, v_max=520.0, tau=15.0, throttle_ref=4000.0)
+    speeds, thrs = [], []
+    for _ in range(40):
+        sm.set_speed(int(mm.speed))
+        run.call(0x1D078, (), max_insn=400000)
+        thr = struct.unpack('<h', uc.mem_read(RAM + 0x42c, 2))[0]
+        thrs.append(thr)
+        mm.step(thr)
+        speeds.append(mm.speed)
+    # --- замкнутый контур сходится к target ---
+    assert speeds[0] > 0, f'ускорение не началось: speed[0]={speeds[0]}'
+    assert max(speeds) > target, \
+        f'скорость не достигла target: max={max(speeds):.1f} < {target}'
+    assert abs(speeds[-1] - target) < 0.5 * target, \
+        f'схождение: speed_end={speeds[-1]:.1f} вне полосы ±50% от target={target}'
+    assert thrs[0] > thrs[-1], \
+        f'throttle не спадает при подходе к target: {thrs[0]} -> {thrs[-1]}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

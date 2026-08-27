@@ -477,6 +477,39 @@ class SpeedModel:
         return struct.unpack('<h', self.emu.uc.mem_read(RAM + SPEED_SP0_OFF, 2))[0]
 
 
+class MotorModel:
+    """§73.x: модель динамики мотора (plant): throttle → скорость во времени.
+
+    Первый-порядковый lag к терминальной скорости для текущего throttle:
+      v_term = v_max * clamp(throttle/throttle_ref, 0, 1)
+      speed += (dt/tau) * (v_term - speed)
+    Терминальная скорость при full throttle = v_max; tau — постоянная времени
+    (инерция + сопротивление). Параметры НЕ определяются firmware (физика
+    конкретного самоката) → модель параметризована. Замыкает АВТОНОМНЫЙ симул:
+      target → PID 0x1d078 → throttle(u16[RAM+0x42c]) → [MotorModel] → speed →
+      SpeedModel.set_speed (V) → PID ...
+    """
+    def __init__(self, emu, v_max=520.0, tau=15.0, throttle_ref=4000.0, dt=1.0):
+        self.emu = emu
+        self.v_max = float(v_max)
+        self.tau = float(tau)
+        self.throttle_ref = float(throttle_ref)
+        self.dt = float(dt)
+        self.speed = 0.0
+
+    def step(self, throttle):
+        """Один шаг: throttle (PID-вывод) → новая скорость (val). Возвращает speed."""
+        tnorm = max(0.0, min(1.0, throttle / self.throttle_ref))
+        v_term = self.v_max * tnorm
+        self.speed += (self.dt / self.tau) * (v_term - self.speed)
+        if self.speed < 0.0:
+            self.speed = 0.0
+        return self.speed
+
+    def reset(self, speed=0.0):
+        self.speed = float(speed)
+
+
 def find_func_starts():
     """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
     import struct as _s
