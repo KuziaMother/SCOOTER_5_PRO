@@ -485,11 +485,13 @@ class MotorModel:
       speed += (dt/tau) * (v_term - speed)
     Терминальная скорость при full throttle = v_max; tau — постоянная времени
     (инерция + сопротивление). Параметры НЕ определяются firmware (физика
-    конкретного самоката) → модель параметризована. Замыкает АВТОНОМНЫЙ симул:
+    конкретного самоката) → модель параметризована. Единицы скорости = внутренние
+    val (§71): ~20.8 units/(км/ч); target 125≈6 км/ч, 208≈10 км/ч, 522≈25 км/ч (EU).
+    v_max=522 по умолчанию = максимальный target (~25 км/ч). Замыкает АВТОНОМНЫЙ симул:
       target → PID 0x1d078 → throttle(u16[RAM+0x42c]) → [MotorModel] → speed →
       SpeedModel.set_speed (V) → PID ...
     """
-    def __init__(self, emu, v_max=520.0, tau=15.0, throttle_ref=4000.0, dt=1.0):
+    def __init__(self, emu, v_max=522.0, tau=15.0, throttle_ref=4000.0, dt=1.0):
         self.emu = emu
         self.v_max = float(v_max)
         self.tau = float(tau)
@@ -508,6 +510,57 @@ class MotorModel:
 
     def reset(self, speed=0.0):
         self.speed = float(speed)
+
+
+# §73.x батарея: SoC% = u16[RAM+0x306] (из i16@0x17a0 [415..535]→[0..100]%, §25).
+# FOC читает SoC@0x306 с порогами 90/10, clamp 100; гейт byte@0x22e. Защита: 4150
+# (max 4.15 В), 3000 (cutoff 3.0 В). Контур: ADC buf[2]→IIR÷256→×410+калибровка(BLE)
+# →блок 0x40023c00→i16@0x17a0→[0..100]%→u16@0x306.
+BATT_SOC_OFF = 0x306        # u16 SoC % (RAM+0x306)
+BATT_RAW_OFF = 0x17A0       # i16 сырое значение [415..535] (RAM+0x17a0)
+BATT_RAW_MIN = 415          # → 0%
+BATT_RAW_MAX = 535          # → 100%
+
+
+class BatteryModel:
+    """§73.x: модель аккумулятора. SoC% → u16[RAM+0x306] (+ сырое i16@0x17a0).
+
+    Контур (§25): ADC buf[2] → IIR÷256 (i16@0x272) → ×410 + калибровка u16@0x1ec
+    (из BLE, raw×41/48) → блок 0x40023c00 → i16@0x17a0 [415..535] → [0..100]% →
+    u16[RAM+0x306]. FOC читает SoC@0x306 с порогами 90/10 (гейт byte@0x22e — в изоляции
+    не срабатывает, проверено). Модель задаёт SoC (set_soc) и моделирует разряд
+    (discharge: SoC падает с нагрузкой во времени). Параметры разряда параметризованы.
+    """
+    def __init__(self, emu, soc=100.0):
+        self.emu = emu
+        self.soc = float(soc)
+
+    @staticmethod
+    def _raw(pct):
+        """[0..100]% → сырое [415..535]."""
+        return BATT_RAW_MIN + int(round(pct * (BATT_RAW_MAX - BATT_RAW_MIN) / 100.0))
+
+    def set_soc(self, pct):
+        """Записать SoC% (u16[RAM+0x306]) + согласованное сырое i16@0x17a0."""
+        pct = max(0, min(100, int(pct)))
+        self.soc = float(pct)
+        self.emu.uc.mem_write(RAM + BATT_SOC_OFF, struct.pack('<H', pct))
+        self.emu.uc.mem_write(RAM + BATT_RAW_OFF, struct.pack('<h', self._raw(pct)))
+        return pct
+
+    def get_soc(self):
+        """Прочитать SoC% (u16[RAM+0x306])."""
+        return struct.unpack('<H', self.emu.uc.mem_read(RAM + BATT_SOC_OFF, 2))[0]
+
+    def discharge(self, throttle, dt=1.0, full_throttle=32760.0, rate=0.05):
+        """Разряд: SoC падает пропорционально нагрузке (throttle как прокси тока).
+
+        rate — %/шаг при full throttle (параметризовано; подгонять под live-замер).
+        Возвращает новый SoC.
+        """
+        load = max(0.0, min(1.0, throttle / full_throttle))
+        self.soc = max(0.0, self.soc - rate * load * dt)
+        return self.set_soc(self.soc)
 
 
 def find_func_starts():

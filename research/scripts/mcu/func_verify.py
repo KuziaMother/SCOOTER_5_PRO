@@ -4032,6 +4032,37 @@ def _(run, rng):
         f'throttle не спадает при подходе к target: {thrs[0]} -> {thrs[-1]}'
 
 
+# --- батарея: BatteryModel (SoC + разряд) (§73.x) ---
+@t(0x1DFD8, '§73.x battery: BatteryModel — SoC%→u16[RAM+0x306] (+сырое i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%→415/100%→535; разряд монотонно падает с нагрузкой, bounded [0,100], без нагрузки не меняется. Пороги FOC 90/10 гейтятся (byte@0x22e).')
+def _(run, rng):
+    from emulator.mcu_emu import BatteryModel, BATT_RAW_MIN, BATT_RAW_MAX
+    uc = run.uc
+    bm = BatteryModel(run.emu)
+    # --- (1) set_soc round-trip + raw mapping [415..535] ---
+    for pct in (0, 25, 50, 75, 100):
+        bm.set_soc(pct)
+        assert bm.get_soc() == pct, f'set_soc({pct}): get={bm.get_soc()}'
+        raw = struct.unpack('<h', uc.mem_read(RAM + 0x17A0, 2))[0]
+        exp_raw = BATT_RAW_MIN + round(pct * (BATT_RAW_MAX - BATT_RAW_MIN) / 100.0)
+        assert raw == exp_raw, f'set_soc({pct}): raw {raw} != {exp_raw}'
+    bm.set_soc(0)
+    assert struct.unpack('<h', uc.mem_read(RAM + 0x17A0, 2))[0] == 415
+    bm.set_soc(100)
+    assert struct.unpack('<h', uc.mem_read(RAM + 0x17A0, 2))[0] == 535
+    # --- (2) разряд: монотонно падает с нагрузкой, bounded [0,100] ---
+    bm.set_soc(80)
+    prev = 80.0
+    for _ in range(20):
+        thr = rng.randint(5000, 32760)          # нагрузка (прокси тока)
+        s = bm.discharge(thr, dt=1.0)
+        assert 0 <= s <= 100, f'разряд вне [0,100]: {s}'
+        assert s <= prev, f'разряд не монотонен: {prev} -> {s}'
+        prev = s
+    # без нагрузки SoC не меняется
+    bm.set_soc(50)
+    assert bm.discharge(0, dt=1.0) == 50, 'разряд без нагрузки изменил SoC'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
