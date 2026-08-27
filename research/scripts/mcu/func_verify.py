@@ -3812,6 +3812,66 @@ def _(run, rng):
         f'FOC timer не записал все регистры: offs={offs}'
 
 
+# --- 0x1a938 FOC + TIM clock model (§73.x) ---
+@t(0x1A938, '§73.x: TIM clock model — такт контура (tick→update по period) управляет режимом FOC через STAT бит15: =0 → обход (0 записей таймера), event → set bit15 → config (4 записи). Свободно-ходный счётчик wrap; модель параметризована (period/step).')
+def _(run, rng):
+    from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
+    uc = run.uc
+    TIM_OFFS = (MOTOR_TIM_BASE + 0x30, MOTOR_TIM_BASE + 0x44,
+                MOTOR_TIM_BASE + 0x48, MOTOR_TIM_BASE + 0x4c)
+
+    def run_foc(stat_bit15):
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(MOTOR_TIM_BASE, bytes(0x100))      # чистый моторный блок
+        r4 = RAM + 0x040
+        uc.mem_write(r4, bytes(0x80))
+        uc.mem_write(r4 + 2, struct.pack('<h', rng.randrange(0, 32768)))
+        uc.mem_write(MOTOR_TIM_BASE + 0x54,
+                     struct.pack('<I', 0x8000 if stat_bit15 else 0x0000))
+        before = len(run.emu.periph_writes)
+
+        def _st(uc_, addr, size, u):
+            aa = addr & ~1
+            if not (FLASH0 <= aa < FLASH0 + FW_LEN or
+                    FLASH1 <= aa < FLASH1 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            uc.reg_write(UC_ARM_REG_R4, r4)
+            uc.reg_write(UC_ARM_REG_R0, 0)
+            run.emu.insn = 0
+            try:
+                uc.emu_start(0x1A938 | 1, 0, count=200000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+        return sum(1 for _, a, s, v in run.emu.periph_writes[before:]
+                   if a in TIM_OFFS)
+
+    period = rng.randrange(2, 16)                        # период контура (тактов)
+    tim = TimModel(run.emu, MOTOR_TIM_BASE, period=period, step=1)
+    try:
+        # фаза 1: STAT бит15=0 → обход (0 записей таймера)
+        n_off = run_foc(stat_bit15=False)
+        assert n_off == 0, f'FOC bit15=0: записей {n_off} != 0 (ожид. обход)'
+        # такты до первого update-события (wrap счётчика)
+        t0 = tim.ticks
+        while not tim.update:
+            tim.tick()
+            assert (tim.ticks - t0) <= period + 2, 'clock не завернул за period'
+        assert tim.cnt == 0 and tim.update, \
+            f'clock: cnt={tim.cnt} update={tim.update} (ожид. wrap→0/True)'
+        # фаза 2: event → модель задает STAT бит15 → config (4 записи)
+        tim.set_status_bits(MOTOR_TIM_BASE + 0x54, 0x8000)
+        n_on = run_foc(stat_bit15=True)
+        assert n_on == 4, f'FOC bit15=1: записей {n_on} != 4 (ожид. config)'
+    finally:
+        uc.hook_del(tim._hook)
+
+
 # ---------------------------------------------------------------------------
 
 def main():

@@ -301,11 +301,17 @@ class TimModel:
     записей + named-доступ. Записи firmware уже попадают в память (источник истины);
     модель зеркалирует их для инспекции и даёт точку расширения под clock/status-флаги
     (метод tick() — заглушка под будущую тактовую модель)."""
-    def __init__(self, emu, base=MOTOR_TIM_BASE, size=0x100):
+    def __init__(self, emu, base=MOTOR_TIM_BASE, size=0x100, period=0x8000, step=1):
         self.emu = emu
         self.base = base
         self.size = size
         self.writes = []      # [(pc, offset, size, value)] записи в этот таймер
+        # --- тактовая модель (§73.x): свободно-ходный счётчик + update-событие ---
+        self.period = period  # wrap-значение счётчика (ARR)
+        self.step = step      # приращение за такт
+        self.cnt = 0          # текущее значение счётчика
+        self.update = False   # флаг update-события (wrap)
+        self.ticks = 0        # число продвинутых тактов
         self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
                                      None, base, base + size)
 
@@ -330,9 +336,34 @@ class TimModel:
         }
 
     def tick(self, n=1):
-        """Заглушка под тактовую модель (свободно-ходный счётчик/события). Пока no-op:
-        статические регистры держат записанные firmware значения."""
-        return None
+        """Продвинуть тактовую модель на n тактов. Возвращает число update-событий.
+
+        Свободно-ходный счётчик cnt += step, wrap по period; при wrap (cnt <= prev)
+        устанавливается self.update (аналог TIM update-события / события захвата).
+        Для моторного блока 0x40012xxx «такт» = один период контура управления;
+        update-событие соответствует тому, что firmware видит как STAT бит15 (гейт
+        режима FOC). Точный hardware-источник события и период статически не
+        определяются → модель параметризована (period/step задаёт вызывающий).
+        """
+        updates = 0
+        for _ in range(n):
+            self.ticks += 1
+            prev = self.cnt
+            self.cnt = (self.cnt + self.step) % self.period
+            if self.cnt <= prev:          # wrap (или step=0)
+                self.update = True
+                updates += 1
+        return updates
+
+    def set_status_bits(self, addr, mask):
+        """Задать биты mask в периферийном регистре addr (RMW, 32-bit)."""
+        cur = struct.unpack('<I', self.emu.uc.mem_read(addr, 4))[0]
+        self.emu.uc.mem_write(addr, struct.pack('<I', cur | mask))
+
+    def clear_status_bits(self, addr, mask):
+        """Сбросить биты mask в периферийном регистре addr (RMW, 32-bit)."""
+        cur = struct.unpack('<I', self.emu.uc.mem_read(addr, 4))[0]
+        self.emu.uc.mem_write(addr, struct.pack('<I', cur & ~mask))
 
 
 def find_func_starts():
