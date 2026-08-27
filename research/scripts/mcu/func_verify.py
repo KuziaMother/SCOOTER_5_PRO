@@ -3763,6 +3763,55 @@ def _(run, rng):
     assert g2e == S2e, f'S+0x2e {g2e} != {S2e}'
 
 
+# --- 0x1a938 FOC: конфигурация моторного таймера (§73) ---
+@t(0x1A938, '§73: FOC entry конфигурирует моторный таймер @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear бит 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Эмулятор: TimModel + periph-capture. Детерминизм: 4 записи для любого value.')
+def _(run, rng):
+    from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
+    uc = run.uc
+    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
+    r4 = RAM + 0x040
+    uc.mem_write(r4, bytes(0x80))
+    val = rng.randrange(0, 32768)              # вход FOC: s16[r4+2]
+    uc.mem_write(r4 + 2, struct.pack('<h', val))
+    tim = TimModel(run.emu, MOTOR_TIM_BASE)
+    tim.set(0x54, 0x8000)                      # STAT бит15=1 → гейт FOC открыт (иначе обход)
+    tim.set(0x30, 0xFFFF)                      # known pre-value для проверки RMW
+    def _st(uc_, addr, size, u):
+        aa = addr & ~1
+        if not (FLASH0 <= aa < FLASH0 + FW_LEN or
+                FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()                      # чистый возврат (bx lr → 0x0BADF001)
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        uc.reg_write(UC_ARM_REG_R0, 0)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1A938 | 1, 0, count=200000)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+        uc.hook_del(tim._hook)
+    # --- проверка конфигурации таймера ---
+    d0 = struct.unpack('<H', run.ram_read(0x386, 2))[0]
+    d1 = struct.unpack('<H', run.ram_read(0x384, 2))[0]
+    d2 = struct.unpack('<H', run.ram_read(0x382, 2))[0]
+    t0 = tim.read(0x44) & 0xFFFF
+    t1 = tim.read(0x48) & 0xFFFF
+    t2 = tim.read(0x4c) & 0xFFFF
+    ctrl = tim.read(0x30)
+    assert (t0, t1, t2) == (d0, d1, d2), \
+        f'FOC timer DATA {t0,t1,t2} != u16[RAM+0x386/384/382] {d0,d1,d2}'
+    assert ctrl == 0xDFFF, \
+        f'FOC timer CTRL 0x{ctrl:x} != 0xDFFF (RMW 0xFFFF & 0xDFFF, clear бит 13)'
+    offs = sorted(set(o for _, o, _, _ in tim.writes))
+    assert {0x30, 0x44, 0x48, 0x4c} <= set(offs), \
+        f'FOC timer не записал все регистры: offs={offs}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

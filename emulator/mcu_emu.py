@@ -44,6 +44,17 @@ STACK_TOP = 0x20018000
 USART3_DR = 0x40004804       # куда 0x1f1c0 пишет байт команды
 USART3_BASE = 0x40004800
 
+# §73: моторный таймер PWM = «TIMER_A» из каталога §60/§60.2 (подфункции FOC
+# 0x1be1c/0x1bd88). Обнаружен/подтверждён трассой полного входа FOC 0x1a938
+# (блок @0x1bde0-0x1bdfc). Блок регистров 0x40012c00..0x40012c54; данные/статус —
+# на sub-base 0x40012c40 (это и есть «TIMER_A» каталога), CTRL — на base+0x30.
+MOTOR_TIM_BASE = 0x40012c00
+MOTOR_TIM_CTRL = MOTOR_TIM_BASE + 0x30    # FOC: ldr/ands #0xDFFF/str → clear бит 13
+MOTOR_TIM_DATA0 = MOTOR_TIM_BASE + 0x44   # = TIMER_A+4;  ← u16[RAM+0x386] (PWM duty)
+MOTOR_TIM_DATA1 = MOTOR_TIM_BASE + 0x48   # = TIMER_A+8;  ← u16[RAM+0x384]
+MOTOR_TIM_DATA2 = MOTOR_TIM_BASE + 0x4c   # = TIMER_A+0xc;← u16[RAM+0x382]
+MOTOR_TIM_STAT = MOTOR_TIM_BASE + 0x54    # = TIMER_A+0x14; read (бит15 low16 = гейт FOC)
+
 # дескрипторы планировщика USART3 (из REPORT §MCU)
 DESC_BASE = 0x20000A43
 STATE_BASE = 0x20000A40
@@ -60,6 +71,11 @@ class McuEmu:
         self.insn = 0
         self.usart_out = bytearray()
         self.ram_writes = []          # (pc, addr, size, val) в области дескрипторов
+        # --- периферия: диагностика + точные значения (§73) ---
+        self.periph_overrides = {}    # {addr: u32} точные значения регистров (после fill)
+        self.periph_writes = []       # [(pc, addr, size, value)] все записи в периферию
+        self.periph_reads = {}        # {addr: [pc,...]} трассировка чтений (trace_periph)
+        self.trace_periph = False     # включить логирование чтений периферии
         self.stopped = None
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
         self._map()
@@ -81,6 +97,7 @@ class McuEmu:
         self.uc.hook_add(UC_HOOK_CODE, self._h_code)
         self.uc.hook_add(UC_HOOK_MEM_WRITE, self._h_write)
         self.uc.hook_add(UC_HOOK_MEM_READ, self._h_read, None, PERIPH, PERIPH + PERIPH_SIZE)
+        self.uc.hook_add(UC_HOOK_MEM_READ, self._h_read, None, PERIPH2, PERIPH2 + PERIPH2_SIZE)
         self.uc.hook_add(UC_HOOK_MEM_UNMAPPED, self._h_unmapped)
 
     def _h_code(self, uc, address, size, user):
@@ -111,10 +128,18 @@ class McuEmu:
         if 0x20000A00 <= address < 0x20000C10:      # область дескрипторов/стейта
             pc = uc.reg_read(UC_ARM_REG_PC)
             self.ram_writes.append((pc, address, size, value))
+        # запись в периферию (TIM/ADC/GPIO) — логируем для анализа моторного контура
+        if (PERIPH <= address < PERIPH + PERIPH_SIZE or
+                PERIPH2 <= address < PERIPH2 + PERIPH2_SIZE):
+            pc = uc.reg_read(UC_ARM_REG_PC)
+            self.periph_writes.append((pc, address, size, value))
 
     def _h_read(self, uc, access, address, size, value, user):
         # периферия: status-регистры отдают «готов» (все биты), чтобы poll-циклы
         # не зависали. Это грубо, но позволяет коду двигаться.
+        if self.trace_periph:
+            pc = uc.reg_read(UC_ARM_REG_PC)
+            self.periph_reads.setdefault(address, []).append(pc)
         return
 
     def _h_unmapped(self, uc, access, address, size, value, user):
@@ -138,6 +163,35 @@ class McuEmu:
         self.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
         self.uc.mem_write(PERIPH2, b"\x00" * PERIPH2_SIZE)
         self.uc.mem_write(SYS, b"\x00" * SYS_SIZE)
+
+    # --- §73: точные значения регистров периферии + отчёт по обращениям ---
+    def set_periph(self, addr, value):
+        """Задать точное значение 32-битного регистра периферии (вместо blanket
+        0xFF/0x00). Применяется после hook_periph_ready/run_broad-заполнения."""
+        self.periph_overrides[addr] = value & 0xFFFFFFFF
+
+    def apply_periph_overrides(self):
+        """Пропитать periph_overrides в память (вызывать после заполнения fill)."""
+        for addr, val in self.periph_overrides.items():
+            try:
+                self.uc.mem_write(addr, struct.pack('<I', val))
+            except Exception:
+                pass
+
+    def report_periph(self, max_addrs=40):
+        """Отчёт по обращениям к периферии (записи + чтения, сгруппировано по адресу)."""
+        addrs = set(a for _, a, _, _ in self.periph_writes) | set(self.periph_reads)
+        if not addrs:
+            print("[periph] обращений к периферии не было")
+            return
+        print(f"[periph] регистров затронуто: {len(addrs)} "
+              f"(записей {len(self.periph_writes)}, чтений в {len(self.periph_reads)} адр)")
+        for a in sorted(addrs)[:max_addrs]:
+            ws = [w for _, aa, _, w in self.periph_writes if aa == a]
+            rs = self.periph_reads.get(a, [])
+            wvals = sorted(set(ws))
+            wstr = ('[' + ','.join(hex(v) for v in wvals[:6]) + ']') if ws else ''
+            print(f"  0x{a:08x}: W×{len(ws)} {wstr} R×{len(rs)}")
 
     def seed_scheduler(self):
         """Предусловия планировщика 0x1f600 (из литерального пула):
@@ -198,6 +252,7 @@ class McuEmu:
             self.seed_scheduler()
         else:
             self.hook_periph_ready()
+        self.apply_periph_overrides()      # точные значения регистров (§73)
         # опционально засеять дескрипторы маркерами, чтобы увидеть их путь в USART3
         if fill_desc is not None:
             self.uc.mem_write(DESC_BASE, fill_desc)
@@ -239,6 +294,45 @@ class McuEmu:
                 print(f"      +{i:02x}: {region[i:i+16].hex(' ')}")
         except Exception:
             pass
+
+
+class TimModel:
+    """§73: поведенческая модель таймера — scoped-вид на регион в памяти Uc + реестр
+    записей + named-доступ. Записи firmware уже попадают в память (источник истины);
+    модель зеркалирует их для инспекции и даёт точку расширения под clock/status-флаги
+    (метод tick() — заглушка под будущую тактовую модель)."""
+    def __init__(self, emu, base=MOTOR_TIM_BASE, size=0x100):
+        self.emu = emu
+        self.base = base
+        self.size = size
+        self.writes = []      # [(pc, offset, size, value)] записи в этот таймер
+        self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
+                                     None, base, base + size)
+
+    def _on_w(self, uc, access, address, size, value, user):
+        self.writes.append((uc.reg_read(UC_ARM_REG_PC) & 0xFFFFF,
+                            address - self.base, size, value))
+
+    def read(self, off):
+        return struct.unpack('<I', bytes(self.emu.uc.mem_read(self.base + off, 4)))[0]
+
+    def set(self, off, val):
+        self.emu.uc.mem_write(self.base + off, struct.pack('<I', val & 0xFFFFFFFF))
+
+    def snapshot(self):
+        """Текущие значения ключевых регистров: {имя: u32}."""
+        return {
+            'ctrl': self.read(0x30),
+            'data0': self.read(0x44),
+            'data1': self.read(0x48),
+            'data2': self.read(0x4c),
+            'stat': self.read(0x54),
+        }
+
+    def tick(self, n=1):
+        """Заглушка под тактовую модель (свободно-ходный счётчик/события). Пока no-op:
+        статические регистры держат записанные firmware значения."""
+        return None
 
 
 def find_func_starts():
