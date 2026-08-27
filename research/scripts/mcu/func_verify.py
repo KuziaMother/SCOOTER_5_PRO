@@ -4088,6 +4088,53 @@ def _(run, rng):
     assert rm.estimate(4096) == (500, -1) and fw(4096) == (500, -1)
 
 
+# --- 0x1d898 аккумулятор (leaky integrator) (§73.x) ---
+@t(0x1D898, '§73.x range-acc: аккумулятор 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep против firmware + edge-cases.')
+def _(run, rng):
+    from emulator.mcu_emu import RangeModel, McuEmu
+    from unicorn import UC_HOOK_CODE, UcError
+    from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
+    rm = RangeModel(run.emu)
+    # 0x1d898 state-зависим (поздние под-вызовы, data-driven jump) → self-contained:
+    # fresh McuEmu на каждый вызов (чистый путь, как в probe 250/250). Reuse emu +
+    # re-zero RAM ломает large-A итерации (нере-zeroed periph → early unmapped fetch).
+    def fw_acc(A, B, D):
+        femu = McuEmu(max_insn=300000)
+        femu.uc.mem_write(RAM, bytes(0x20000))
+        femu.uc.mem_write(RAM + 0x404, struct.pack('<I', A & 0xFFFFFFFF))  # old_0x3c
+        femu.uc.mem_write(RAM + 0x3DC, struct.pack('<h', B))               # prev_0x14
+        femu.uc.mem_write(RAM + 0x26E, struct.pack('<h', D))               # delta
+        femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))             # v (не влияет на acc)
+        def stop(uc_, a, s, u):
+            aa = a & ~1
+            if not (0 <= aa < 0x25000 or 0x08000000 <= aa < 0x08000000 + 0x25000):
+                uc_.emu_stop()
+        sh = femu.uc.hook_add(UC_HOOK_CODE, stop)
+        femu.uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        femu.uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3):
+            femu.uc.reg_write(r, 0)
+        try:
+            femu.uc.emu_start(0x1D898 | 1, 0, count=300000)
+        except UcError:
+            pass
+        femu.uc.hook_del(sh)
+        n3c = struct.unpack('<I', femu.uc.mem_read(RAM + 0x404, 4))[0]
+        n14 = struct.unpack('<h', femu.uc.mem_read(RAM + 0x3DC, 2))[0]
+        return n3c, n14
+    # --- stateful-sweep: closed-form vs firmware (fresh emu per call) ---
+    for _ in range(80):
+        A = rng.randint(0, 0xFFFFFFFF)
+        B = rng.randint(-3000, 3000)
+        D = rng.randint(-5000, 5000)
+        mx, ms = rm.acc_step(A, B, D)
+        fx, fs = fw_acc(A, B, D)
+        assert (fx, fs) == (mx, ms), f'A={A:#x} B={B} D={D}: fw=({fx},{fs}) model=({mx},{ms})'
+    # --- edge-cases ---
+    assert fw_acc(0, 0, 0) == rm.acc_step(0, 0, 0) == (0, 0)
+    assert fw_acc(0, 0, 1024) == rm.acc_step(0, 0, 1024) == (1024, 1)
+
+
 # ---------------------------------------------------------------------------
 
 def main():

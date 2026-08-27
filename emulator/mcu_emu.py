@@ -572,6 +572,11 @@ RANGE_CTX_OFF = 0x3C8       # struct-контекст (общий с PID/FOC)
 RANGE_SCALE = 8000          # ×8000>>16
 RANGE_REF = 500             # full-scale (div-by-zero при X==500)
 RANGE_K = 10000             # масштаб числителя делителя
+# аккумулятор 0x1d898 (leaky integrator): new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF;
+# new_0x14=asr(new_0x3c,10)[i16]. delta=i16@RAM+0x26E. Вериф. 250/250.
+RANGE_ACC_OFF = 0x404       # u32 аккумулятор (struct+0x3c)
+RANGE_ACC_SCALED_OFF = 0x3DC  # i16 = acc>>10 (struct+0x14)
+RANGE_DELTA_OFF = 0x26E     # i16 delta-вход
 
 
 class RangeModel:
@@ -603,6 +608,26 @@ class RangeModel:
         q = abs(num) // abs(denom)
         R = -q if (num < 0) != (denom < 0) else q
         return X, R
+
+    def set_delta(self, d):
+        """Записать delta-вход аккумулятора i16@RAM+0x26E. Возвращает d."""
+        d = max(-32768, min(32767, int(d)))
+        self.emu.uc.mem_write(RAM + RANGE_DELTA_OFF, struct.pack('<h', d))
+        return d
+
+    def acc_step(self, old_acc, old_scaled, delta):
+        """Leaky integrator (0x1d898): возвращает (new_acc u32, new_scaled i16).
+
+        new_acc = (old_acc + delta − old_scaled) & 0xFFFFFFFF
+        new_scaled = asr(new_acc, 10) как i16 (низкие 16 бит арифметического сдвига).
+        Верифицировано stateful-sweep 250/250 против firmware.
+        """
+        new_acc = (old_acc + delta - old_scaled) & 0xFFFFFFFF
+        s = new_acc if new_acc < 0x80000000 else new_acc - 0x100000000
+        asr = s >> 10                      # Python arithmetic shift == ARM asr
+        ns = asr & 0xFFFF
+        new_scaled = ns if ns < 0x8000 else ns - 0x10000
+        return new_acc, new_scaled
 
 
 def find_func_starts():
