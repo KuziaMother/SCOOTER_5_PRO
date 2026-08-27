@@ -4135,6 +4135,44 @@ def _(run, rng):
     assert fw_acc(0, 0, 1024) == rm.acc_step(0, 0, 1024) == (1024, 1)
 
 
+# --- 0x1d898 state-machine: гейты статус-флагов (§73.x) ---
+@t(0x1D898, '§73.x range-sm: state-machine 0x1d898 — дефолт (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); гейт +0x286≠0 → (0x290,0x292)=(0,0); гейт +0x29e≠0 → (0x2a8,0x2aa)=(0,0). Флаги mode/LUT-driven (LUT 0x614-0x6c4/0x738-0x808), v/SoC не влияют. Fresh emu/call.')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE, UcError
+    from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
+    def status(extra):
+        femu = McuEmu(max_insn=300000)
+        femu.uc.mem_write(RAM, bytes(0x20000))
+        femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))
+        for off, val in extra.items():
+            femu.uc.mem_write(RAM + off, struct.pack('<B', val))
+        def stop(uc_, a, s, u):
+            aa = a & ~1
+            if not (0 <= aa < 0x25000 or 0x08000000 <= aa < 0x08000000 + 0x25000):
+                uc_.emu_stop()
+        sh = femu.uc.hook_add(UC_HOOK_CODE, stop)
+        femu.uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        femu.uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3):
+            femu.uc.reg_write(r, 0)
+        try:
+            femu.uc.emu_start(0x1D898 | 1, 0, count=300000)
+        except UcError:
+            pass
+        femu.uc.hook_del(sh)
+        def h(o):
+            return struct.unpack('<h', femu.uc.mem_read(RAM + o, 2))[0]
+        return (h(0x290), h(0x292), h(0x2a8), h(0x2aa))
+    # --- дефолт (zeroed state) ---
+    assert status({}) == (2, 140, 1, 78)
+    # --- гейт +0x286: (0x290,0x292)→(0,0), (0x2a8,0x2aa) не меняется ---
+    assert status({0x286: 1}) == (0, 0, 1, 78)
+    # --- гейт +0x29e: (0x2a8,0x2aa)→(0,0), (0x290,0x292) не меняется ---
+    assert status({0x29E: 1}) == (2, 140, 0, 0)
+    # --- оба гейта ---
+    assert status({0x286: 1, 0x29E: 1}) == (0, 0, 0, 0)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
