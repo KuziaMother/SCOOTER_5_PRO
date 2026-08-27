@@ -3631,6 +3631,52 @@ def _(run, rng):
     assert g_set == e_tgt, f'setpoint +0x2a {g_set} != {e_tgt} (mode={mode},flag={flag})'
 
 
+# --- 0x1d078 ramp-core PI-регулятор: P-term + 2-фазный toggle (§72) ---
+@t(0x1D078, '§72: ramp-core (Phase B, counter S+0x28=1) = PI-регулятор. P-term: S+0x2c=min(err,300), err=(target−out2_new) if out1_new<target else (out2_new−target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1→2→reset 0. positive-target домен; вериф. 400/400')
+def _(run, rng):
+    V = rng.randint(10, 60000)
+    F = rng.getrandbits(1)
+    mode = rng.choice([2, 3, 0xb, 5, 7])
+    f339 = rng.getrandbits(16)
+    c326 = rng.randint(1, 0x7fff)   # positive s16 (реалистичный speed-setpoint)
+    m2t = rng.randint(1, 0x7fff)
+    acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
+    acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
+    run.ram_write(0x158, struct.pack('<I', V))
+    run.ram_write(0x100, bytes([F]))
+    run.ram_write(0x229, bytes([mode]))
+    run.ram_write(0x339, struct.pack('<H', f339))
+    run.ram_write(0x324, struct.pack('<H', m2t))
+    run.ram_write(0x326, struct.pack('<H', c326))
+    run.ram_write(0x1768, struct.pack('<H', 0))
+    run.ram_write(0x176C, struct.pack('<I', acc2))
+    run.ram_write(0x1770, struct.pack('<H', out2 & 0xFFFF))
+    run.ram_write(0x1774, struct.pack('<I', acc1))
+    run.ram_write(0x1778, struct.pack('<H', out1 & 0xFFFF))
+    for off in (0x1760, 0x1764, 0x388, 0x224):   # anti-windup inходы = 0
+        run.ram_write(off, struct.pack('<I', 0))
+    run.ram_write(0x3C8, b'\x00' * 0x70)          # Phase B: counter S+0x28=1
+    run.ram_write(0x3C8 + 0x28, struct.pack('<H', 1))
+    run.call(0x1D078, (), max_insn=400000)
+    val = 0 if F == 0 else _s16(_sdiv(48000, V))
+    o1n = _s16(((acc1 + val - out1) & 0xFFFFFFFF) >> 5)
+    o2n = max(0, _s16(((acc2 + val - out2) & 0xFFFFFFFF) >> 3))
+    flag = f339 & 0xFF
+    tgt = 522 if flag == 1 else (125 if mode == 0xb else
+                                 (m2t if mode == 2 else (c326 if mode == 3 else 208)))
+    tgt = (tgt if _s16(tgt) <= c326 else c326) & 0xFFFF
+    tsgn = _s16(tgt)
+    err = (tsgn - o2n) if o1n < tsgn else (o2n - tsgn)
+    e_2c = min(err, 300)
+    e_5c = (_s16(e_2c & 0xFFFF) << 7) & 0xFFFFFFFF
+    g_2c = struct.unpack('<H', run.ram_read(0x3C8 + 0x2C, 2))[0]
+    g_5c = struct.unpack('<I', run.ram_read(0x3C8 + 0x5C, 4))[0]
+    g_28 = struct.unpack('<H', run.ram_read(0x3C8 + 0x28, 2))[0]
+    assert g_2c == (e_2c & 0xFFFF), f'S+0x2c {g_2c} != {e_2c & 0xffff} (tgt={tsgn},o1n={o1n},o2n={o2n})'
+    assert g_5c == e_5c, f'S+0x5c {g_5c:#x} != {e_5c:#x}'
+    assert g_28 == 0, f'toggle counter {g_28} != 0 (Phase B)'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
