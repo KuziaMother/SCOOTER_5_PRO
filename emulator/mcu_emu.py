@@ -366,6 +366,70 @@ class TimModel:
         self.emu.uc.mem_write(addr, struct.pack('<I', cur & ~mask))
 
 
+# §73.x ADC: capture-регистра измерения фазных токов (ADC-inject PWM). 0x1be1c
+# читает T28/T2C/T30 и реконструирует токи: фаза = (T−C)<<4, третья фаза = −сумма
+# двух измеренных (закон Кирхгофа), финальный clamp [−30000,30000]. Гейт режима —
+# STAT бит15 (u32[0x40012c54]): =1 → capture, =0 → skip (только clamp).
+ADC_CAP_BASE = 0x40012440
+ADC_CAP_T28 = ADC_CAP_BASE + 0x28    # 0x40012468
+ADC_CAP_T2C = ADC_CAP_BASE + 0x2c    # 0x4001246c
+ADC_CAP_T30 = ADC_CAP_BASE + 0x30    # 0x40012470
+# sector → handler (конвенция каталога §60, поведение эмпирически верифицировано §73.x):
+# 0→null, 1→B, 2/3→C, 4/5→A, 6→B.
+ADC_SECTOR_HANDLER = {0: None, 1: 'B', 2: 'C', 3: 'C', 4: 'A', 5: 'A', 6: 'B'}
+# handler → измеренные фазы: (t_reg_off, c_struct_off, out_struct_off).
+# C-ссылки (zero-current refs) в struct FOC: C18=+0x18, C1A=+0x1a, C1C=+0x1c;
+# выходы: o_c=+0xc, o_10=+0x10, o_14=+0x14.
+ADC_HANDLER_MEASURED = {
+    'A': [(0x28, 0x18, 0xc), (0x2c, 0x1a, 0x10)],   # T28→o_c, T2C→o_10; o_14=−sum
+    'B': [(0x2c, 0x1a, 0x10), (0x30, 0x1c, 0x14)],   # T2C→o_10, T30→o_14; o_c=−sum
+    'C': [(0x28, 0x18, 0xc), (0x30, 0x1c, 0x14)],    # T28→o_c, T30→o_14; o_10=−sum
+}
+
+
+class AdcModel:
+    """§73.x: модель ADC/capture-канала фазных токов (вход FOC).
+
+    Hardware: ADC-inject PWM — ADC сэмплирует ток, таймер захватывает момент
+    сравнения; 0x1be1c читает T28/T2C/T30 (periph) и реконструирует токи.
+    Модель даёт app доступ к T-регистрам (set_captures) и convenience set_currents
+    (инжект желаемых токов под C-ссылки). Ток квантуется ×16 (масштаб <<4).
+    """
+    def __init__(self, emu):
+        self.emu = emu
+
+    def _w(self, off, val):
+        self.emu.uc.mem_write(ADC_CAP_BASE + off,
+                              struct.pack('<I', val & 0xFFFFFFFF))
+
+    def set_captures(self, t28, t2c, t30):
+        """Записать сырые capture-значения T28/T2C/T30 (periph)."""
+        self._w(0x28, t28)
+        self._w(0x2c, t2c)
+        self._w(0x30, t30)
+
+    def get_captures(self):
+        """Прочитать текущие (T28, T2C, T30) как u32."""
+        return (struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T28, 4))[0],
+                struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T2C, 4))[0],
+                struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T30, 4))[0])
+
+    def set_currents(self, r0, currents, sector):
+        """Инжект желаемых pre-clamp токов, задав capture под C-ссылки из r0.
+
+        currents = {0xc: o_c, 0x10: o_10, 0x14: o_14}. Для двух измеренных фаз
+        (по sector→handler) T = C + (ток>>4); третья фаза = −сумма (автоматически).
+        Ток квантуется ×16; sector определяет, какие 2 фазы измеряются.
+        """
+        h = ADC_SECTOR_HANDLER.get(sector & 7)
+        if h is None:
+            return
+        for t_off, c_off, out_off in ADC_HANDLER_MEASURED[h]:
+            cref = struct.unpack('<h', self.emu.uc.mem_read(r0 + c_off, 2))[0]
+            target = currents[out_off]
+            self._w(t_off, (cref + (target >> 4)) & 0xFFFFFFFF)
+
+
 def find_func_starts():
     """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
     import struct as _s

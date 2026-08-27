@@ -3872,6 +3872,89 @@ def _(run, rng):
         uc.hook_del(tim._hook)
 
 
+# --- 0x1be1c ADC/capture model (§73.x) ---
+@t(0x1BE1C, '§73.x: ADC/capture model — 0x1be1c реконструирует фазные токи из T28/T2C/T30 (periph @0x40012468/6c/70): фаза=(T−C)<<4, 3-я=−сумма (Кирхгоф). sector→handler: 0→null,1→B,2/3→A,4/5→C,6→B. AdcModel.set_captures/set_currents.')
+def _(run, rng):
+    from emulator.mcu_emu import (AdcModel, ADC_SECTOR_HANDLER,
+                                  ADC_HANDLER_MEASURED)
+    uc = run.uc
+    r0 = RAM + 0x100
+
+    def setup(sector, c18, c1a, c1c):
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(r0, bytes(0x40))
+        uc.mem_write(r0 + 2, struct.pack('<H', sector))
+        uc.mem_write(r0 + 0x18, struct.pack('<h', c18))
+        uc.mem_write(r0 + 0x1a, struct.pack('<h', c1a))
+        uc.mem_write(r0 + 0x1c, struct.pack('<h', c1c))
+        uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))   # mode-2 гейт
+
+    def run_be1c():
+        def _st(uc_, addr, size, u):
+            aa = addr & ~1
+            if not (FLASH0 <= aa < FLASH0 + FW_LEN or
+                    FLASH1 <= aa < FLASH1 + FW_LEN):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            uc.reg_write(UC_ARM_REG_R0, r0)
+            run.emu.insn = 0
+            try:
+                uc.emu_start(0x1BE1C | 1, 0, count=200000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+        return (struct.unpack('<i', uc.mem_read(r0 + 0xc, 4))[0],
+                struct.unpack('<i', uc.mem_read(r0 + 0x10, 4))[0],
+                struct.unpack('<i', uc.mem_read(r0 + 0x14, 4))[0])
+
+    adc = AdcModel(run.emu)
+    c18 = rng.randrange(500, 2000)
+    c1a = rng.randrange(500, 2000)
+    c1c = rng.randrange(500, 2000)
+    # --- (1) set_captures: raw T → pre-clamp (T−C)<<4 + −sum по handler ---
+    for sector in range(7):
+        setup(sector, c18, c1a, c1c)
+        t28 = rng.randrange(0, 4000)
+        t2c = rng.randrange(0, 4000)
+        t30 = rng.randrange(0, 4000)
+        adc.set_captures(t28, t2c, t30)
+        oc, o10, o14 = run_be1c()
+        h = ADC_SECTOR_HANDLER[sector]
+        if h is None:
+            assert (oc, o10, o14) == (0, 0, 0), \
+                f'sector={sector} null: got {(oc, o10, o14)} != (0,0,0)'
+            continue
+        d28 = (t28 - c18) << 4
+        d2c = (t2c - c1a) << 4
+        d30 = (t30 - c1c) << 4
+        if h == 'A':
+            e = (d28, d2c, -(d28 + d2c))       # A: o_c=T28, o_10=T2C, o_14=−sum
+        elif h == 'B':
+            e = (-(d2c + d30), d2c, d30)       # B: o_c=−sum, o_10=T2C, o_14=T30
+        else:  # C
+            e = (d28, -(d28 + d30), d30)       # C: o_c=T28, o_10=−sum, o_14=T30
+        assert (oc, o10, o14) == e, \
+            f'sector={sector} h={h}: got {(oc, o10, o14)} != exp {e}'
+    # --- (2) set_currents: инжект токов → измеренные фазы совпадают (×16 квант) ---
+    for sector in (1, 2, 4, 6):
+        setup(sector, c18, c1a, c1c)
+        h = ADC_SECTOR_HANDLER[sector]
+        meas_out = [m[2] for m in ADC_HANDLER_MEASURED[h]]
+        targets = {0xc: rng.randrange(-500, 500) * 16,
+                   0x10: rng.randrange(-500, 500) * 16,
+                   0x14: rng.randrange(-500, 500) * 16}
+        adc.set_currents(r0, targets, sector)
+        oc, o10, o14 = run_be1c()
+        got = {0xc: oc, 0x10: o10, 0x14: o14}
+        for off in meas_out:
+            assert got[off] == targets[off], \
+                f'set_currents sector={sector} h={h}: out{off:#x} {got[off]} != {targets[off]}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
