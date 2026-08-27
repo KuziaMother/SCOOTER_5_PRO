@@ -430,6 +430,53 @@ class AdcModel:
             self._w(t_off, (cref + (target >> 4)) & 0xFFFFFFFF)
 
 
+# §73.x скорость: V=u32[RAM+0x158]=timer-capture период; F=byte[RAM+0x100] гейт;
+# val=s16(48000/V) if F!=0 else 0 (0x1d874). val → u16[RAM+0x1768], читается PID 0x1d078.
+SPEED_V_OFF = 0x158        # u32 период (RAM+0x158)
+SPEED_F_OFF = 0x100        # byte гейт (RAM+0x100): 0 → val=0
+SPEED_SP0_OFF = 0x1768     # u16 вычисленный val (RAM+0x1768) — скорость для PID
+SPEED_DIV = 48000          # делитель: val = s16(48000/V)
+
+
+class SpeedModel:
+    """§73.x: модель замера скорости (вход PID 0x1d078), замыкает контур.
+
+    Hardware: timer-capture период между импульсами энкодера → V; скорость ∝ 1/V.
+    Firmware: val = s16(48000/V) if F=byte[RAM+0x100]!=0 else 0 (0x1d874),
+    val → u16[RAM+0x1768]. Модель задаёт V/F (set_period / set_speed / stop).
+    Точный ISR-писатель гейтится по аппаратному состоянию (импульс/pending) и в
+    изолированной эмуляции не триггерится (writer-sweep: 0 хитов) → модель
+    параметризована (app даёт измеренную скорость).
+    """
+    def __init__(self, emu):
+        self.emu = emu
+
+    def set_period(self, v):
+        """Записать период V (u32[RAM+0x158]) + открыть гейт F=1."""
+        self.emu.uc.mem_write(RAM + SPEED_V_OFF,
+                              struct.pack('<I', v & 0xFFFFFFFF))
+        self.emu.uc.mem_write(RAM + SPEED_F_OFF, bytes([1]))
+
+    def set_speed(self, val):
+        """Инжект желаемой измеренной скорости val: V = max(1, 48000//val).
+
+        val<=0 → stop() (F=0). val>48000 кэпится (V=1 → val=48000).
+        """
+        if val <= 0:
+            self.stop()
+            return
+        v = max(1, SPEED_DIV // int(val))
+        self.set_period(v)
+
+    def stop(self):
+        """Останов: F=0 → val=0."""
+        self.emu.uc.mem_write(RAM + SPEED_F_OFF, bytes([0]))
+
+    def get_val(self):
+        """Прочитать вычисленный val (s16 u16[RAM+0x1768]) после прогона PID."""
+        return struct.unpack('<h', self.emu.uc.mem_read(RAM + SPEED_SP0_OFF, 2))[0]
+
+
 def find_func_starts():
     """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
     import struct as _s

@@ -3955,6 +3955,45 @@ def _(run, rng):
                 f'set_currents sector={sector} h={h}: out{off:#x} {got[off]} != {targets[off]}'
 
 
+# --- 0x1d078 closed loop: SpeedModel (замер скорости) (§73.x) ---
+@t(0x1D078, '§73.x closed loop: SpeedModel — замер скорости замыкает контур. set_period(V)→PID вычисляет val=s16(48000/V); set_speed(val) (V=48000//val) → PID даёт ровно val (для делителей 48000); stop() (F=0) → val=0. V=u32[RAM+0x158], F=byte[RAM+0x100].')
+def _(run, rng):
+    from emulator.mcu_emu import SpeedModel
+    sm = SpeedModel(run.emu)
+
+    def run_pid():
+        # минимальное безопасное состояние 0x1d078 (как §69)
+        run.ram_write(0x229, bytes([3]))                 # mode=3 → target=u16[RAM+0x326]
+        run.ram_write(0x326, struct.pack('<H', 200))
+        run.ram_write(0x339, b'\x00')                    # flag=0
+        run.ram_write(0x1768, struct.pack('<H', 0))      # чистый val
+        run.ram_write(0x176c, struct.pack('<I', 0))      # acc2
+        run.ram_write(0x1770, struct.pack('<h', 0))      # out2
+        run.ram_write(0x1774, struct.pack('<I', 0))      # acc1
+        run.ram_write(0x1778, struct.pack('<h', 0))      # out1
+        run.call(0x1D078, (), max_insn=400000)
+
+    # --- (1) set_period: V → PID val=s16(48000/V) ---
+    for _ in range(6):
+        V = rng.randint(1, 48000)
+        sm.set_period(V)
+        run_pid()
+        got = sm.get_val()
+        exp = _s16(_sdiv(48000, V))
+        assert got == exp, f'set_period V={V}: PID val {got} != s16(48000/V)={exp}'
+    # --- (2) set_speed: делители 48000 → PID даёт ровно val ---
+    for val in (100, 200, 480, 1200, 4800, 12000):
+        sm.set_speed(val)
+        run_pid()
+        got = sm.get_val()
+        assert got == val, f'set_speed val={val}: PID {got} != {val}'
+    # --- (3) stop: F=0 → val=0 ---
+    sm.set_period(1000)
+    sm.stop()
+    run_pid()
+    assert sm.get_val() == 0, f'stop(): val {sm.get_val()} != 0'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
