@@ -4275,6 +4275,60 @@ def _(run, rng):
     assert all(speeds[i + 1] >= speeds[i] for i in range(len(speeds) - 1)), f'скорость не монотонна в рост: {speeds}'
 
 
+# --- FOC current-ref→P copy + электро-контур (§73.x) ---
+def _foc_run_pp(uc, current_ref, xlo=0, xhi=0, gate=False):
+    """FOC 0x1a938: возвращает (ccr_a,ccr_b,ccr_c, P). current-ref u16[RAM+0x224], вектор 0x108/0x10a."""
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
+    r4 = RAM + 0x040
+    uc.mem_write(r4, bytes(0x80))
+    uc.mem_write(r4 + 2, struct.pack('<h', 16384))
+    uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
+    uc.mem_write(RAM + 0x108, struct.pack('<h', xlo))
+    uc.mem_write(RAM + 0x10a, struct.pack('<h', xhi))
+    if gate:
+        uc.mem_write(0x40012C54, struct.pack('<I', 0x8000))   # STAT bit15=1
+    def stop(uc_, a, s, u):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, stop)
+    uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+    uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+    uc.reg_write(UC_ARM_REG_R4, r4)
+    uc.reg_write(UC_ARM_REG_R0, 0)
+    try:
+        uc.emu_start(0x1A938 | 1, 0, count=200000)
+    except Exception:
+        pass
+    uc.hook_del(sh)
+    ccr = tuple(struct.unpack('<H', uc.mem_read(RAM + o, 2))[0] for o in (0x382, 0x384, 0x386))
+    P = struct.unpack('<I', uc.mem_read(RAM + 0x388, 4))[0]
+    return ccr, P
+
+
+@t(0x1A938, '§73.x FOC current-ref→P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref идёт в cross+dot (§60.4) как P. Электро-контур НЕАКТИВЕН в изолированном FOC: measured vector s16[RAM+0x108/0x10a] не меняет PWM CCR (ни с gate=0, ни с STAT bit15=1) — feedback требует полного state-machine (сектор+реконструкция из ADC+PI) и live-gains мотора.')
+def _(run, rng):
+    # --- P = [0x224] (1:1 copy), для нескольких ref ---
+    for ref in (4000, 8000, 16384):
+        femu = McuEmu(trace=False, max_insn=200000)
+        femu.uc.mem_write(RAM, bytes(0x20000))
+        femu.hook_periph_ready()
+        ccr, P = _foc_run_pp(femu.uc, ref)
+        assert P == (ref & 0xFFFF), f'P({P:#x}) != [0x224]({ref:#x})'
+    # --- электро-контур неактивен: вектор 0x108/0x10a не меняет CCR ---
+    femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
+    ccr_base, _ = _foc_run_pp(femu.uc, 8000, 0, 0)
+    for (xlo, xhi) in ((1000, 0), (0, 2000), (3000, -3000)):
+        femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
+        ccr, _ = _foc_run_pp(femu.uc, 8000, xlo, xhi)
+        assert ccr == ccr_base, f'veктор ({xlo},{xhi}) изменил CCR: {ccr} != {ccr_base}'
+    # --- даже с активным гейтом (STAT bit15=1) feedback не включается в изоляции ---
+    femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
+    ccr_g, _ = _foc_run_pp(femu.uc, 8000, 3000, -3000, gate=True)
+    assert ccr_g == ccr_base, f'гейт включил feedback: {ccr_g} != {ccr_base}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
