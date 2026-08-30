@@ -6807,3 +6807,26 @@ SoC падает, range>0. Тесты **165/165 PASS**.
 **Дальше (Фазы ②–④, TODO):** ② периферия под задачи (GPIO/UART/SPI-flash/RTC) + точная сходимость
 (live-калибровка); ③ полный cold-boot (реконструкция initial-RAM / live-дамп RAM при reset — класс C);
 ④ BLE co-proc.
+
+### 74.1 Main-loop entry: статический потолок (RAM function-pointer dispatch)
+Искали точный main-loop entry (подготовка к cold-boot, Фаза ③). Вывод: **статически не
+определяется** — main-loop и task-таблицы = runtime RAM state.
+
+**Что установлено:**
+- Reset-handler (0x315c): init-цепочка (0xcd0d→0xcc69/0xc9dd/0x5971/0xcb41=WWDG config, магия
+  0xCA/0x53) → **возврат через trampoline** (stage-2 `pop {r4,pc}`; stage-1 `pop {pc}`→[SP_init+12],
+  SP_init=`0x20004e40`). Handler НЕ входит в main-loop сам — возвращает вызывающему.
+- **SysTick = источник тика** системы (конфигурируется boot'ом; 0x3600: LOAD=val/0x3E8−1,
+  CTRL(0xE000E010)=7). Это tick, который гоняет планировщик/ISR.
+- **Мажорные функции диспатчатся через RAM function-pointer, НЕ статическим `bl`:** PID 0x1d078,
+  FOC 0x1a938, scheduler 0x1f600, clock-init 0x3600/0x30e0 — **0 статических вызывающих** у всех
+  (полный скан `bl`/литералов по образцу). Механизмы диспатча: command-dispatcher 0x2e0c
+  (r0=ID→handler: bl 0xc665/0x97f5) + USART3 TX frame-слоты @0xa43 (150B, round-robin 0x1f600).
+- Кандидаты «main-loop» по backward-циклам (0x02eb7/0x11a23/0x0285f) — это **I2C/clock init +
+  retry-loop'ы** (0x02e90: I2C-опрос 0x9874 + RCC 0x30e0 + SysTick 0x3600), не top-level цикл.
+
+**Вывод:** main-loop entry + task-таблицы устанавливаются runtime (startup trampoline + init).
+Статический потолок: нужен **live RAM-dump при reset** (класс C, SWD GD32) для захвата:
+(1) начальный стек @SP_init=`0x20004e40` (trampoline-цели [SP+12] и др.),
+(2) task function-pointer таблицы (RAM). Альтернатива — full cold-boot с реконструкцией
+initial-RAM (неопределённая стоимость, §74).

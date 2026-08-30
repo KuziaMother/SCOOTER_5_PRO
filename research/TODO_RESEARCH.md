@@ -118,6 +118,10 @@ _(оригинальный список завершён — см. таблиц�
             контура (live-калибровка plant v_max/tau + FOC-gains). →~60–70%.
       - [ ] ③ **полный cold-boot** (реконструкция initial-RAM/stack всех `pop {pc}` trampoline
             ИЛИ live-дамп RAM при reset — класс C «SWD GD32»). →~85–90%.
+            **§74.1 уточнение:** main-loop + task-таблицы = runtime RAM (PID/FOC/scheduler/clock-init
+            диспатчатся через function-pointer, 0 стат. `bl`; SysTick=тик). Дамп должен захватить:
+            начальный стек @SP_init=`0x20004e40` (trampoline-цели [SP+12] и др.) + task function-
+            pointer таблицы (RAM).
       - [ ] ④ **BLE co-proc** (отдельно, `emulator/ble_emu.py`, сейчас на статическом потолке §65).
       **Зависимости на live:** cold-boot (A) → класс C «SWD GD32» (дамп RAM при reset);
       точная сходимость контура → класс B (live-калибровка plant/FOC-gains). — **§73.15**
