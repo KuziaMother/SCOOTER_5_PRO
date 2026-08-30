@@ -6702,3 +6702,34 @@ v=500) + write-source-mapping (PC каждой записи) + sensitivity-sweep
 live-данные LUT + разбор под-вызовов (отдельная задача).
 
 Тест @t(0x1D898) §73.x range-sm: дефолт + оба гейта (fresh emu/call). Тесты **161/161 PASS**.
+
+### 73.14 FOC в автономном контуре: throttle→current-ref связь + transfer-функция
+Встраиваем реальный FOC 0x1a938 в замкнутый контур (раньше `_motor_sim.py` обходил его —
+plant ехал напрямую от throttle). Ключевой вопрос: как throttle из PID попадает во вход FOC.
+
+**Связь throttle→current-ref.** PID 0x1d078 пишет **throttle = s16[RAM+0x42c]** (write-trace).
+FOC 0x1a938 **не читает 0x42c**; его current-reference — **u16[RAM+0x224]** (найдено
+sensitivity-sweep: только 0x224 ломает симметрию CCR и управляет PWM). Связь: `0x224 = throttle`
+(1:1). Точный коннектор-функция (копирует/масштабирует 0x42c→0x224) — одна из FOC-кластера
+(пул `0x20000224` встречается в `0x1ad90/0x1baa4/0x1c74c/0x1d310`); декодировать отдельно.
+
+**Transfer-функция FOC (current-ref → PWM).** CCR-источники `RAM+0x382/384/386` пишутся в
+PC 0x1b5d2/da/e2: `duty_X = r3 − v_X − base` (3-фазная комплементарная схема, center≈1125).
+Эмпирика (sweep 0x224): **amp ≈ 0.0103·|ref|**, монотонно: ref=0→amp0, 4000→41, 8000→83,
+16384→169, 28624→296, 32767→338; center≈1125..1131. `CCR_A↑ / CCR_B↓` (2-фазная FOC-модуляция),
+`CCR_C≈center`. Отрицательный ref сатурится в ту же амплитуду (~338).
+
+**Интегрированный сим (`_foc_sim.py`).** Один McuEmu, общий RAM (как на реальном MCU). Каждый
+шаг: `SpeedModel(speed→V) → PID 0x1d078 → throttle 0x42c → 0x224=throttle → FOC 0x1a938 →
+PWM CCR → plant(throttle→speed, first-order lag)`. Результат: target=208 → speed 0→overshoot
+~380→settle ~318; target=300 → 0→~430→settle ~394. **Полная цепочка прошивки (PID+FOC)
+исполняется каждый шаг**; FOC-amp трекает throttle (295→170).
+
+**Plant-caveat.** Overshoot/осцилляция — из-за rough plant-параметров (v_max=522, tau=15,
+tref=28624), НЕ live-калиброванных. Контур замыкается (скорость трекает target, throttle
+модулируется); точная сходимость = 1 live-замер (speed vs throttle). Электрический контур
+(фазные токи→back-EMF) не моделируется явно — plant абстрагирует механический отклик на ток.
+
+Тесты: @t(0x1A938) FOC-transfer (amp монотонна в ref, center∈[1120,1135], CCR_A↑/CCR_B↓) +
+@t(0x1D078) FOC-контур (один emu, 6 шагов: скорость монотонно растёт, throttle>0, amp>10).
+Тесты **163/163 PASS**.

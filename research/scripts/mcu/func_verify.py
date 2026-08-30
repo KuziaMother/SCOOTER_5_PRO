@@ -34,7 +34,7 @@ from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
                                UC_ARM_REG_R6, UC_ARM_REG_SP, UC_ARM_REG_LR,
                                UC_ARM_REG_CPSR)
 
-from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
+from emulator.mcu_emu import McuEmu, SpeedModel, FLASH0, FLASH1, RAM, STACK_TOP
 
 FW = open(os.path.join(RES, 'images', 'mcu_0007.bin'), 'rb').read()
 FW_LEN = len(FW)
@@ -4171,6 +4171,108 @@ def _(run, rng):
     assert status({0x29E: 1}) == (2, 140, 0, 0)
     # --- оба гейта ---
     assert status({0x286: 1, 0x29E: 1}) == (0, 0, 0, 0)
+
+
+# --- FOC-интеграция в автономный контур (§73.x) ---
+FW_LEN = 0x25000
+
+def _foc_amp(ccr):
+    center = sum(ccr) / 3.0
+    return max(abs(c - center) for c in ccr), center
+
+
+def _foc_run(uc, current_ref):
+    """Полный FOC 0x1a938 на данном uc (общий RAM): current-ref u16[RAM+0x224] → CCR (RAM+0x382/384/386)."""
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
+    r4 = RAM + 0x040
+    uc.mem_write(r4, bytes(0x80))
+    uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — не управляет PWM
+    uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
+    def stop(uc_, a, s, u):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, stop)
+    uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+    uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+    uc.reg_write(UC_ARM_REG_R4, r4)
+    uc.reg_write(UC_ARM_REG_R0, 0)
+    try:
+        uc.emu_start(0x1A938 | 1, 0, count=200000)
+    except Exception:
+        pass
+    uc.hook_del(sh)
+    return tuple(struct.unpack('<H', uc.mem_read(RAM + o, 2))[0] for o in (0x382, 0x384, 0x386))
+
+
+@t(0x1A938, '§73.x FOC-интеграция: transfer-функция current-ref u16[RAM+0x224]→PWM CCR (RAM+0x382/384/386): amp монотонно растёт с ref (0→~0, 4000→~41, 8000→~83, 16384→~169, 28624→~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-фазная FOC-модуляция). Интегрир. контур: PID(0x1d078)→throttle 0x42c→0x224→FOC→PWM, скорость растёт от 0.')
+def _(run, rng):
+    # --- transfer-функция FOC: amp монотонна в current-ref (fresh emu/call для чистоты) ---
+    refs = (0, 4000, 8000, 16384, 28624)
+    amps = []; centers = []
+    for ref in refs:
+        femu = McuEmu(trace=False, max_insn=200000)
+        femu.uc.mem_write(RAM, bytes(0x20000))
+        femu.hook_periph_ready()
+        ccr = _foc_run(femu.uc, ref)
+        amp, center = _foc_amp(ccr)
+        amps.append(amp); centers.append(center)
+    assert amps[0] < 1.0, f'ref=0 → amp должен ≈0, got {amps[0]}'
+    for i in range(1, len(refs)):
+        assert amps[i] > amps[i - 1], f'amp не монотонен: {amps}'
+    for c in centers:
+        assert 1120.0 <= c <= 1135.0, f'center вне [1120,1135]: {centers}'
+    # CCR_A растёт, CCR_B падает с ref (2-фазная модуляция)
+    femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
+    ccr_lo = _foc_run(femu.uc, 4000)
+    femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
+    ccr_hi = _foc_run(femu.uc, 28624)
+    assert ccr_hi[0] > ccr_lo[0], f'CCR_A не растёт: {ccr_lo} -> {ccr_hi}'
+    assert ccr_hi[1] < ccr_lo[1], f'CCR_B не падает: {ccr_lo} -> {ccr_hi}'
+
+
+# --- интегрированный контур: PID → throttle → FOC → PWM → plant (ОДИН emu, общий RAM) ---
+@t(0x1D078, '§73.x FOC-контур (интегрир.): ОДИН McuEmu, общий RAM. Шаги: SpeedModel(speed→V)→PID 0x1d078→throttle s16[RAM+0x42c]→u16[RAM+0x224]=throttle→FOC 0x1a938 (тот же emu)→PWM CCR→plant(throttle→speed). За 6 шагов скорость монотонно растёт от 0, throttle>0, FOC-amp>0 (полная цепочка прошивки — PID+FOC — исполняется каждый шаг на общем RAM).')
+def _(run, rng):
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
+    emu = McuEmu(max_insn=400000)
+    uc = emu.uc
+    sm = SpeedModel(emu)
+    uc.mem_write(RAM, bytes(0x20000))
+    uc.mem_write(RAM + 0x229, bytes([3]))
+    uc.mem_write(RAM + 0x326, struct.pack('<H', 208))   # target
+    uc.mem_write(RAM + 0x339, b'\x00'); uc.mem_write(RAM + 0x333, b'\x00'); uc.mem_write(RAM + 0x263, b'\x00')
+    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))
+    uc.mem_write(RAM + 0x1764, struct.pack('<I', 0))
+    uc.mem_write(RAM + 0x388, struct.pack('<I', 0))
+    uc.mem_write(RAM + 0x3C8 + 0x28, struct.pack('<H', 1))
+    def stop(uc_, a, s, u):
+        aa = a & ~1
+        if not (0 <= aa < FW_LEN or FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()
+    speed = 0.0; v_max = 522.0; tau = 15.0; tref = 28624.0
+    speeds = []
+    for it in range(6):
+        sm.set_speed(int(speed))
+        sh = uc.hook_add(UC_HOOK_CODE, stop)
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80); uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r in (UC_ARM_REG_R0, UC_ARM_REG_R4): uc.reg_write(r, 0)
+        try: uc.emu_start(0x1D078 | 1, 0, count=400000)
+        except Exception: pass
+        uc.hook_del(sh)
+        thr = struct.unpack('<h', uc.mem_read(RAM + 0x42c, 2))[0]
+        ccr = _foc_run(uc, thr & 0xFFFF)   # FOC на ТОМ ЖЕ emu (общий RAM)
+        amp, center = _foc_amp(ccr)
+        if it == 0:
+            assert thr > 0, f'PID не дал throttle: {thr}'
+            assert amp > 10.0, f'FOC не дал PWM из throttle: amp={amp}'
+        tnorm = max(0.0, min(1.0, thr / tref)) if tref else 0.0
+        speed += (1.0 / tau) * (v_max * tnorm - speed)
+        speeds.append(speed)
+    assert speeds[-1] > speeds[0], f'скорость не растёт: {speeds}'
+    assert all(speeds[i + 1] >= speeds[i] for i in range(len(speeds) - 1)), f'скорость не монотонна в рост: {speeds}'
 
 
 # ---------------------------------------------------------------------------
