@@ -4329,6 +4329,29 @@ def _(run, rng):
     assert ccr_g == ccr_base, f'гейт включил feedback: {ccr_g} != {ccr_base}'
 
 
+# --- §74: ControlLoop — автономный time-driven контур (warm-start) ---
+@t(0x1D078, '§74: ControlLoop — автономный time-driven warm-start контур. Виртуальные часы + реальный firmware PID(0x1d078)+FOC(0x1a938) на каждом tick + plant/battery/range (один emu, общий RAM). target=208: скорость растёт от 0 (max>150), throttle>0 всюду, FOC-amp>0 (FOC исполняется каждый шаг), SoC падает с нагрузкой, range>0. Сходится ВЫШЕ target (~325) — свойство калибровки plant/PID; траектория совпадает с _foc_sim.py 40/40.')
+def _(run, rng):
+    from emulator.mcu_emu import ControlLoop, McuEmu
+    femu = McuEmu(trace=False, max_insn=400000)
+    cl = ControlLoop(emu=femu, v_max=522.0, tau=15.0, throttle_ref=28624.0)
+    cl.setup(target=208, mode=3, soc=100.0)
+    traj = cl.run(24)
+    # старт: скорость >0 и мала
+    assert traj[0]['speed'] > 0 and traj[0]['speed'] < 60, f"start: {traj[0]}"
+    # тяга есть всюду (throttle>0)
+    assert all(st['throttle'] > 0 for st in traj), 'throttle<=0 (нет тяги)'
+    # FOC исполняется каждый шаг (amp>0)
+    assert all(st['pwm_amp'] > 0 for st in traj), 'FOC-amp=0 (FOC не исполняется)'
+    # скорость растёт к target (достигает >150)
+    assert max(st['speed'] for st in traj) > 150, \
+        f"max speed {max(s['speed'] for s in traj)} < 150"
+    # батарея разряжается с нагрузкой
+    assert traj[-1]['soc'] < 100.0, f"SoC не падает: {traj[-1]['soc']}"
+    # запас хода вычисляется (R>0)
+    assert all(st['range'] > 0 for st in traj), 'range<=0'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

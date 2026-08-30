@@ -22,7 +22,7 @@ from unicorn import (Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE,
                      UC_HOOK_MEM_UNMAPPED, UcError)
 from unicorn.arm_const import (UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC,
                                UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
-                               UC_ARM_REG_R3)
+                               UC_ARM_REG_R3, UC_ARM_REG_R4)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FW = os.path.join(os.path.dirname(HERE), "research", "images", "mcu_0007.bin")
@@ -556,11 +556,16 @@ class BatteryModel:
         """Разряд: SoC падает пропорционально нагрузке (throttle как прокси тока).
 
         rate — %/шаг при full throttle (параметризовано; подгонять под live-замер).
-        Возвращает новый SoC.
+        Float-накопление в self.soc (§74: set_soc тринкует до int и обнулял дробную
+        часть → разряд был ровно 1%/tick при любой нагрузке>0); в RAM пишется int.
+        Возвращает новый SoC (int).
         """
         load = max(0.0, min(1.0, throttle / full_throttle))
         self.soc = max(0.0, self.soc - rate * load * dt)
-        return self.set_soc(self.soc)
+        pct = max(0, min(100, int(self.soc)))
+        self.emu.uc.mem_write(RAM + BATT_SOC_OFF, struct.pack('<H', pct))
+        self.emu.uc.mem_write(RAM + BATT_RAW_OFF, struct.pack('<h', self._raw(pct)))
+        return pct
 
 
 # §73.x запас хода (0x1d898): читает i16@RAM+0x27A (батарея, ADC-регион §25),
@@ -628,6 +633,124 @@ class RangeModel:
         ns = asr & 0xFFFF
         new_scaled = ns if ns < 0x8000 else ns - 0x10000
         return new_acc, new_scaled
+
+
+# §74 Автономный моторный контур (time-driven warm-start control loop).
+PID_OFF = 0x1D078          # PID / speed-limit state machine
+FOC_OFF = 0x1A938          # FOC routine
+THROTTLE_OFF = 0x42C       # s16 PID-вывод (throttle)
+CURR_REF_OFF = 0x224       # u16 FOC current-ref (upstream command, §73.15)
+FOC_CTX_OFF = 0x040        # R4 контекст FOC
+FOC_CCR_OFFS = (0x382, 0x384, 0x386)   # PWM CCR A/B/C (RAM+off)
+
+
+class ControlLoop:
+    """§74 Автономный моторный контур — time-driven warm-start.
+
+    Виртуальные часы + реальный firmware PID/FOC на каждом tick + поведенческие модели
+    plant/speed/battery/range. НЕ boot от reset и НЕ полный scheduler (slot-table
+    устанавливается runtime, boot-blocked §73.15) — PID/FOC вызываются напрямую на их
+    реальной частоте (валидная абстракция контура: speed-controller → torque → FOC).
+
+    Цепочка на tick:
+      measured_speed → SpeedModel.set_speed (V)          [вход PID]
+      target → PID 0x1d078 → throttle s16[RAM+0x42c]     [реальный firmware]
+      throttle → current-ref u16[RAM+0x224] → FOC 0x1a938 → PWM CCR  [реальный firmware]
+      throttle → MotorModel.step → speed                 [plant, first-order lag]
+      throttle → BatteryModel.discharge → SoC            [разряд]
+      SoC → RangeModel.estimate → запас хода             [closed-form]
+    """
+    def __init__(self, emu=None, v_max=522.0, tau=15.0, throttle_ref=28624.0,
+                 batt_rate=0.05, run_foc=True):
+        # throttle_ref = full-scale PID-вывода (0x42c ~28624..32760), НЕ 4000 (§73.9 дефолт
+        # дал насыщение plant: speed не сходится к target, а уходит в v_max).
+        self.emu = emu or McuEmu(max_insn=400000)
+        self.sm = SpeedModel(self.emu)
+        self.mm = MotorModel(self.emu, v_max=v_max, tau=tau,
+                             throttle_ref=throttle_ref, dt=1.0)
+        self.bm = BatteryModel(self.emu)
+        self.rm = RangeModel(self.emu)
+        self.batt_rate = float(batt_rate)
+        self.run_foc = bool(run_foc)
+        self.now = 0
+
+    def setup(self, target, mode=3, soc=100.0):
+        """Засеять RAM: режим, target, power-enable, гейты, батарея (см. §73.9-73.15)."""
+        uc = self.emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        uc.mem_write(RAM + 0x229, bytes([mode]))                          # mode
+        uc.mem_write(RAM + 0x326, struct.pack('<H', target & 0xFFFF))     # target
+        uc.mem_write(RAM + 0x339, b'\x00')
+        uc.mem_write(RAM + 0x333, b'\x00')                                # skip mode-change
+        uc.mem_write(RAM + 0x263, b'\x00')                                # gate → ramp-core
+        uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))              # power enable
+        uc.mem_write(RAM + 0x3C8 + 0x28, struct.pack('<H', 1))            # counter → phase B
+        self.bm.set_soc(soc)
+        self.mm.reset(0.0)
+        self.now = 0
+
+    def _in_flash(self, aa):
+        L = self.emu.fw_len
+        return (FLASH0 <= aa < FLASH0 + L) or (FLASH1 <= aa < FLASH1 + L)
+
+    def _run_pid(self):
+        """Реальный PID 0x1d078 → throttle s16[RAM+0x42c]."""
+        uc = self.emu.uc
+        sh = uc.hook_add(UC_HOOK_CODE,
+                         lambda u, a, s, ud: u.emu_stop() if not self._in_flash(a & ~1) else None)
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r in (UC_ARM_REG_R0, UC_ARM_REG_R4):
+            uc.reg_write(r, 0)
+        try:
+            uc.emu_start(PID_OFF | 1, 0, count=400000)
+        except Exception:
+            pass
+        uc.hook_del(sh)
+        return struct.unpack('<h', uc.mem_read(RAM + THROTTLE_OFF, 2))[0]
+
+    def _run_foc(self, current_ref):
+        """Реальный FOC 0x1a938 (R4=RAM+0x040, ref=u16[RAM+0x224]) → PWM CCR."""
+        uc = self.emu.uc
+        r4 = RAM + FOC_CTX_OFF
+        uc.mem_write(r4, bytes(0x80))
+        uc.mem_write(r4 + 2, struct.pack('<h', 16384))
+        uc.mem_write(RAM + CURR_REF_OFF, struct.pack('<H', current_ref & 0xFFFF))
+        sh = uc.hook_add(UC_HOOK_CODE,
+                         lambda u, a, s, ud: u.emu_stop() if not self._in_flash(a & ~1) else None)
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R4, r4)
+        uc.reg_write(UC_ARM_REG_R0, 0)
+        try:
+            uc.emu_start(FOC_OFF | 1, 0, count=200000)
+        except Exception:
+            pass
+        uc.hook_del(sh)
+        return tuple(struct.unpack('<H', uc.mem_read(RAM + o, 2))[0] for o in FOC_CCR_OFFS)
+
+    def tick(self):
+        """Один шаг контура. Возвращает dict состояния."""
+        self.sm.set_speed(int(self.mm.speed))          # measured speed → PID input
+        thr = self._run_pid()                          # real firmware: PID → throttle
+        if self.run_foc:
+            ccr = self._run_foc(thr & 0xFFFF)          # real firmware: FOC → PWM
+            center = sum(ccr) / 3.0
+            amp = max(abs(c - center) for c in ccr)
+        else:
+            amp = 0.0
+        self.mm.step(thr)                              # plant: throttle → speed
+        self.bm.discharge(thr, dt=1.0, rate=self.batt_rate)   # battery
+        soc = self.bm.get_soc()
+        v_batt = BatteryModel._raw(int(soc))           # SoC → сырое [415..535]
+        X, R = self.rm.estimate(v_batt)                # запас хода (closed-form)
+        self.now += 1
+        return dict(t=self.now, speed=round(self.mm.speed, 1), throttle=thr,
+                    pwm_amp=round(amp, 1), soc=round(soc, 2), range=R)
+
+    def run(self, ticks):
+        """Прогнать ticks шагов. Возвращает список состояний."""
+        return [self.tick() for _ in range(ticks)]
 
 
 def find_func_starts():

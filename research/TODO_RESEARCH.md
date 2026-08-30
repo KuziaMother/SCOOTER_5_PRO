@@ -85,8 +85,10 @@ _(оригинальный список завершён — см. таблиц�
       (§55.2); **Unicorn 2.1.4: числовые индексы регистров ≠ архитектурным (R0–R9
       = 66–75) — только константы arm_const** (§55.2/§56.5). — **§50.7/§56.4**)
 
-- [ ] **🎯 Эмулятор: автономный прогон (boot → main-loop) — ПЛАН.** Поднять «автономный
-      прогон» с ~10% до работающего (сейчас эмулятор = function-level harness, не система).
+- [ ] **🎯 Эмулятор: автономный прогон (boot → main-loop).** Поднять «автономный
+      прогон» с ~10% до работающего. **Фаза ① (warm-start control loop) — ГОТОВА (§74):**
+      `ControlLoop` harness (time-driven PID+FOC+plant/battery/range, совпадает с `_foc_sim.py`
+      40/40), эмулятор «автономный прогон» ~10%→~45%. Остаток — Фазы ②–④ (ниже).
       **Эмпирика (разбор boot от reset 0x315c):** init-цепочка (0xcd0d→0xcc69/0xc9dd/0x5971/
       0xcb41) исполняется чисто с periph=`0xFF` (~3–6k insn, stage-2 завершается); **блокер =
       несколько `pop {pc}` startup-trampoline** в reset-handler (0x3166 и далее), читающих
@@ -107,10 +109,16 @@ _(оригинальный список завершён — см. таблиц�
       - **(D) периферия под задачи:** GPIO, UART I/O, SPI-flash, RTC — моделировать по мере
         надобности (сейчас `0xFF`-заглушки); инкрементально, дни на каждую.
       - **(E) поведенческие модели** Speed/Motor/Battery/Range — **уже есть** (§73.8–73.12).
-      **Фазы:** ① **warm-start control loop** (A-warm+B+C; ~2–4 дня → автономный моторный
-      контур time-driven, эмулятор «автономный прогон» **10%→~45%**); ② периферия под задачи
-      (**→~60–70%**); ③ полный cold-boot (**→~85–90%**, остаток снимает live-дамп RAM); ④ BLE
-      co-proc (отдельно, `emulator/ble_emu.py`, сейчас на статическом потолке §65).
+      **Фазы:**
+      - [x] ① **warm-start control loop — ГОТОВО (§74).** `ControlLoop` (emulator/mcu_emu.py):
+            time-driven, реальный firmware PID 0x1d078 + FOC 0x1a938 на каждом tick + plant/
+            battery/range; один McuEmu общий RAM; совпадает с `_foc_sim.py` 40/40. Сходится выше
+            target (калибровка plant/PID → live). Тест @t(0x1D078) ControlLoop, 165/165 PASS.
+      - [ ] ② **периферия под задачи** (GPIO/UART/SPI-flash/RTC, сейчас `0xFF`) + точная сходимость
+            контура (live-калибровка plant v_max/tau + FOC-gains). →~60–70%.
+      - [ ] ③ **полный cold-boot** (реконструкция initial-RAM/stack всех `pop {pc}` trampoline
+            ИЛИ live-дамп RAM при reset — класс C «SWD GD32»). →~85–90%.
+      - [ ] ④ **BLE co-proc** (отдельно, `emulator/ble_emu.py`, сейчас на статическом потолке §65).
       **Зависимости на live:** cold-boot (A) → класс C «SWD GD32» (дамп RAM при reset);
       точная сходимость контура → класс B (live-калибровка plant/FOC-gains). — **§73.15**
 

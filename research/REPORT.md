@@ -94,6 +94,7 @@
 - [71. Лимит скорости и target-значения: перевод в км/ч, замкнутый контур 0x1d078](#71-лимит-скорости-и-target-значения-перевод-в-кмч-замкнутый-контур-0x1d078)
 - [72. Полная PID-динамика 0x1d078: 2 фазы, PI-регулятор, anti-windup](#72-полная-pid-динамика-0x1d078-2-фазы-pi-регулятор-anti-windup)
 - [73. Обновление эмулятора: периферийная диагностика + TimModel, FOC → моторный таймер 0x40012c00](#73-обновление-эмулятора-периферийная-диагностика-timmodel-foc-моторный-таймер-0x40012c00)
+- [74. Автономный прогон: warm-start control loop и архитектура boot](#74-автономный-прогон-warm-start-control-loop-и-архитектура-boot)
 
 ---
 
@@ -6763,3 +6764,46 @@ live-данных → электро-контур на статическом п
 
 Тест @t(0x1A938) FOC current-ref→P: P=[0x224] (1:1) + feedback неактивен (вектор/гейт не меняют CCR).
 Тесты **164/164 PASS**.
+
+## 74. Автономный прогон: warm-start control loop и архитектура boot
+Фаза ① плана автономного прогона (TODO): time-driven harness, в котором реальный firmware PID+FOC
+гоняет моторный контур во времени. Плюс разбор архитектуры boot (что блокирует полный cold-boot).
+
+**Архитектура boot (эмпирика от reset 0x315c).**
+- Init-цепочка (0xcd0d→0xcc69/0xc9dd/0x5971/0xcb41) исполняется чисто с periph=`0xFF` (~3–6k insn):
+  config-записи ловятся, чтения «ready». Периферия для init НЕ нужна в деталях.
+- Reset-handler двухстадийный: stage-1 (0x315c `str 0,[sp]`→`bl 0xcd0d`→`pop {r1,r2,r3,pc}`) +
+  stage-2 (0x3168 реальный init). **Блокер cold-boot = несколько `pop {pc}` trampoline**, читающих
+  `[SP_init+N]` (SP_init=`0x20004e40`, из векторной таблицы) как точку перехода — в эмуляции там 0
+  → прыжок в 0. Это C-runtime начальное состояние стека (не в статическом образе).
+- **Main-loop = планировщик 0x1f600** (round-robin по 4 слотам): slot_index=byte@0x2c2 (wrap 0→3),
+  диспатчит когда `elapsed(now u64@0x1e0 − last) > 432` тика; дескриптор = slot_idx×0x96 (150B)
+  @0xa43. **Task-указатели устанавливаются runtime** (init), не в образе → PID/FOC вызываются через
+  function-pointer (нет прямых `bl` к 0x1d078/0x1a938). Т.е. полный диспатч = boot-blocked.
+
+**ControlLoop (warm-start harness, `emulator/mcu_emu.py`).** Обходит cold-boot: не boot от reset и не
+полный scheduler — PID/FOC вызываются напрямую на их реальной частоте (валидная абстракция контура:
+speed-controller → torque → FOC). На каждом tick:
+  measured_speed → SpeedModel.set_speed(V) [вход PID]
+  target → **PID 0x1d078** (реальный firmware) → throttle s16[RAM+0x42c]
+  throttle → current-ref u16[RAM+0x224] → **FOC 0x1a938** (реальный firmware) → PWM CCR
+  throttle → MotorModel.step → speed [plant, first-order lag, v_max=522/tau=15/tref=28624]
+  throttle → BatteryModel.discharge → SoC; SoC → RangeModel.estimate → запас хода
+Один McuEmu, общий RAM (как на реальном MCU). `ControlLoop.run(N)` → траектория.
+
+**Валидация.** Траектория ControlLoop **совпадает с `_foc_sim.py` 40/40** (target=208, speed до
+0.1). target=208: скорость 0→overshoot~382→feedback снижает throttle (32760→~15000)→сходится ~325.
+**Сходится ВЫШЕ target** — свойство калибровки plant/PID (steady-state offset), НЕ баг harness:
+reference `_foc_sim.py` для target=300 тоже сходится ~394. Точная сходимость к target = live-калибровка
+plant (v_max/tau) + семантика setpoint PID (mode-swap, §69/§71) → Фаза ②/live.
+
+**Фикс BatteryModel.discharge (§74).** `set_soc` тринковал `self.soc` до int каждый tick → float-
+накопление обнулялось → разряд был ровно 1%/tick при любой нагрузке>0 (не rate·load). Теперь: float-
+накопление в self.soc, int пишется только в RAM. Тест батареи (монотонность/bounded/no-load) не сломан.
+
+Тест @t(0x1D078) ControlLoop: speed растёт (max>150), throttle>0, FOC-amp>0 (FOC исполняется),
+SoC падает, range>0. Тесты **165/165 PASS**.
+
+**Дальше (Фазы ②–④, TODO):** ② периферия под задачи (GPIO/UART/SPI-flash/RTC) + точная сходимость
+(live-калибровка); ③ полный cold-boot (реконструкция initial-RAM / live-дамп RAM при reset — класс C);
+④ BLE co-proc.
