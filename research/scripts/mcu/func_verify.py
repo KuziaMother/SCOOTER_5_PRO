@@ -4352,6 +4352,46 @@ def _(run, rng):
     assert all(st['range'] > 0 for st in traj), 'range<=0'
 
 
+# --- A1: GpioModel (кастомный GPIO-блок «портов», §39.1) ---
+@t(0x1BF48, 'A1: GpioModel — кастомный GPIO-блок «портов» (§39.1): 4 порта × stride 0x400 (база 0x48000000), режимы в MODER_LO/HI (+0x2c/+0x28) по 2 бита/пин. MOTOR-INIT 0x1bf48 конфигурирует пины через драйвер 0x22000; модель ловит записи и декодит режимы. Детерминизм: фиксированный набор портов с ненулевыми режимами (MODER_LO записан).')
+def _(run, rng):
+    from emulator.mcu_emu import GpioModel
+    uc = run.uc
+    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
+    run.emu.hook_periph_ready()                 # status-биты ready (как в run_func)
+    gpio = GpioModel(run.emu)
+    def _st(uc_, addr, size, u):
+        aa = addr & ~1
+        if not (FLASH0 <= aa < FLASH0 + FW_LEN or
+                FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        run.emu.insn = 0
+        try:
+            uc.emu_start(0x1BF48 | 1, 0, count=200000)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+        uc.hook_del(gpio._hook)
+    # модель поймала записи в портовый блок
+    assert gpio.writes, 'GpioModel не поймал записей в портовый блок'
+    ports_written = sorted(set(p for _, p, _, _, _ in gpio.writes))
+    assert ports_written, 'порты не записаны'
+    # декод режимов: MODER_LO (+0x2c) записан с ненулевым пакетом хотя бы в один порт
+    cfg = gpio.config_report()
+    assert cfg, 'config_report пуст — ни одного ненулевого режима пина'
+    moder_ports = [p for p in range(4) if gpio.read(p, 0x2c)]
+    assert moder_ports, 'MODER_LO (+0x2c) не записан ни в одном порту'
+    # каждый декодированный режим — валиден (0..3 по 2 бита)
+    for p, pins in cfg.items():
+        for pin, mode in pins.items():
+            assert 0 <= mode <= 3, f'невалидный режим {mode} порт {p} пин {pin}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

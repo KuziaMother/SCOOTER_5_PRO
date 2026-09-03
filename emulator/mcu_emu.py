@@ -55,6 +55,17 @@ MOTOR_TIM_DATA1 = MOTOR_TIM_BASE + 0x48   # = TIMER_A+8;  ← u16[RAM+0x384]
 MOTOR_TIM_DATA2 = MOTOR_TIM_BASE + 0x4c   # = TIMER_A+0xc;← u16[RAM+0x382]
 MOTOR_TIM_STAT = MOTOR_TIM_BASE + 0x54    # = TIMER_A+0x14; read (бит15 low16 = гейт FOC)
 
+# A1: кастомный GPIO-блок «портов» (§39.1): 4 порта × stride, F4-подобный layout.
+# Эмпирика _gpio_layout_probe.py + дизасм драйвера 0x22000 (валидация port/pin/mode).
+GPIO_PORT_BASE = 0x48000000
+GPIO_PORT_STRIDE = 0x400        # порты: 0x48000000/0400/0800/0C00
+GPIO_NPORTS = 4
+GPIO_MODER = 0x2c               # режимы ВСЕХ 16 пинов, по 2 бита/пин: pin N → биты [2N+1:2N]
+                                # (наблюдено: порт0=0x666 [пины 0-5], порт1=0x66660000 [пины 12-15])
+GPIO_MODER_HI = 0x28            # вторичное поле (AF/напр.) — в motor-init = 0
+GPIO_OUTSEL = 0x10              # output/select (большие значения — mask в high-битах)
+GPIO_BIT_REGS = (0x14, 0x18, 0x1c, 0x20, 0x24)   # битовые регистры (сброс 0 в init)
+
 # дескрипторы планировщика USART3 (из REPORT §MCU)
 DESC_BASE = 0x20000A43
 STATE_BASE = 0x20000A40
@@ -642,6 +653,53 @@ THROTTLE_OFF = 0x42C       # s16 PID-вывод (throttle)
 CURR_REF_OFF = 0x224       # u16 FOC current-ref (upstream command, §73.15)
 FOC_CTX_OFF = 0x040        # R4 контекст FOC
 FOC_CCR_OFFS = (0x382, 0x384, 0x386)   # PWM CCR A/B/C (RAM+off)
+
+
+class GpioModel:
+    """A1: поведенческая модель кастомного GPIO-блока «портов» (§39.1) — scoped-вид на
+    регион 0x48000000..+4×0x400 + реестр записей + декод режима пинов (2 бита/пин в
+    MODER_LO/HI). Записи firmware уже попадают в память (источник истины); модель
+    зеркалирует их для инспекции pin-config и даёт точку расширения под input-state.
+    (input-регистр — чтение, в init не пишется; см. расширение.)"""
+    def __init__(self, emu, base=GPIO_PORT_BASE, nports=GPIO_NPORTS, stride=GPIO_PORT_STRIDE):
+        self.emu = emu
+        self.base = base
+        self.nports = nports
+        self.stride = stride
+        self.writes = []      # [(pc, port, offset, size, value)]
+        self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
+                                     None, base, base + nports * stride)
+
+    def _on_w(self, uc, access, address, size, value, user):
+        off = address - self.base
+        self.writes.append((uc.reg_read(UC_ARM_REG_PC) & 0xFFFFF,
+                            off // self.stride, off % self.stride, size, value))
+
+    def read(self, port, off):
+        return struct.unpack('<I',
+                             bytes(self.emu.uc.mem_read(self.base + port * self.stride + off, 4)))[0]
+
+    def set(self, port, off, val):
+        self.emu.uc.mem_write(self.base + port * self.stride + off,
+                              struct.pack('<I', val & 0xFFFFFFFF))
+
+    def pin_mode(self, port, pin):
+        """Режим пина (2 бита) из MODER (+0x2c): pin N → биты [2N+1:2N]."""
+        return (self.read(port, GPIO_MODER) >> (pin * 2)) & 0x3
+
+    def output(self, port):
+        """Значение output/select-регистра +0x10."""
+        return self.read(port, GPIO_OUTSEL)
+
+    def config_report(self):
+        """{port: {pin: mode}} — только пины с ненулевым режимом (итоговое состояние)."""
+        rep = {}
+        for p in range(self.nports):
+            pins = {pin: self.pin_mode(p, pin) for pin in range(16)
+                    if self.pin_mode(p, pin)}
+            if pins:
+                rep[p] = pins
+        return rep
 
 
 class ControlLoop:
