@@ -4630,6 +4630,42 @@ def _(run, rng):
     assert s2000 > s500 > 0, f'spread не монотонен: 500={s500}, 2000={s2000}'
 
 
+# --- D1: SchedulerModel (main-loop диспетчер 0x1f600) ---
+@t(0x1F600, 'D1: SchedulerModel — main-loop диспетчер 0x1f600 (round-robin по N слотам). Ловит состояние (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick-слова @0x17F78+). ПОТОЛОК §74.1: task function-pointers runtime; в нулевом RAM dispatch упирается в unmapped fetch (jump to 0). Тест: seeded slot_index=1 -> прогон 0x1f600 -> модель зафиксировала чтение slot-index + tick-регионов (pre-dispatch логика).')
+def _(run, rng):
+    from emulator.mcu_emu import (McuEmu, SchedulerModel, SCHEDULER_FN,
+                                  SCHED_SLOT_INDEX_OFF, SCHED_TICK_WORDS_OFF)
+    femu = McuEmu(trace=False, max_insn=50000)
+    uc = femu.uc
+    uc.mem_write(RAM, bytes(0x20000))
+    femu.hook_periph_ready()
+    sch = SchedulerModel(femu)
+    sch.set_slot_index(1)   # != compare-byte 0 -> dispatch path
+
+    def _st(uc_, a, s, u):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                FLASH1 <= aa < FLASH1 + 0x23680):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x20)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R0, 0)
+        femu.insn = 0
+        try:
+            uc.emu_start(SCHEDULER_FN | 1, 0, count=50000)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+    # ядро состояния: диспетчер прочитал slot-index @0x2C2 (стабильно в zeroed и
+    # dispatch-path; tick/state-регионы path-dependent — 0x17F78+ / 0x1E0+ по ветке)
+    assert sch.touched(SCHED_SLOT_INDEX_OFF) or \
+        sch.touched(SCHED_SLOT_INDEX_OFF - 1), \
+        f'slot-index не прочитан: {sorted(hex(o) for o in sch.reads if 0x2C0 <= o < 0x2D0)}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

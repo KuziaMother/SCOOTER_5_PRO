@@ -104,6 +104,7 @@
 - [81. Эмулятор E1: покрытие тестами — bsearch floor-index](#81-эмулятор-e1-покрытие-тестами-bsearch-floor-index)
 - [82. Эмулятор C1: LUT-блоки range-эстиматора — LutModel](#82-эмулятор-c1-lut-блоки-range-эстиматора-lutmodel)
 - [83. Эмулятор C2: FOC-рутина — value-gated pipeline, FocPipelineModel](#83-эмулятор-c2-foc-рутина-value-gated-pipeline-focpipelinemodel)
+- [84. Эмулятор D1: main-loop диспетчер — SchedulerModel + потолок §74.1](#84-эмулятор-d1-main-loop-диспетчер-schedulermodel-потолок-741)
 
 ---
 
@@ -7185,3 +7186,46 @@ Scoped-вид на FOC-выходы: ловит P@0x388 + PWM-фазы @0x382/4/
 **Статус:** C2 готово — FOC-структура формализована (value-gated pipeline, не FSM) + модель I/O.
 Каркас FOC-FSM = пайплайн из §60 + value-гейты; live-gains/электрика остаются за пределами
 статического замыкания (§73.15).
+
+## 84. Эмулятор D1: main-loop диспетчер — SchedulerModel + потолок §74.1
+
+**Задача (TODO D1):** идентификация task-набора под slot-table dispatch; приближение к Phase ③.
+**Потолок §74.1:** task function-pointers = runtime RAM (set при init).
+
+### 84.1. Структура диспетчера 0x1f600 (эмпирика + дизасм)
+
+- **slot_index** @RAM+**0x2C2** (byte, wrap 0..3) — текущий слот; читается стабильно.
+- **tick-гейт**: «now» u64 @RAM+0x1E0 − per-slot last > порог → dispatch; tick/state-слова
+  path-dependent (@0x17F78+ в zeroed, @0x17FC8+ в dispatch-path).
+- **slot-table** @RAM+0xA43, stride **0x96** (descriptor'ы; §74).
+- **Dispatch отделён от исполнения**: 0x1f600 читает byte из slot-descriptor и вызывает
+  `bl 0x1f1c0(byte)` — а 0x1f1c0 = крошечный хелпер (3 insn: `str r0,[base+4]`, сохраняет
+  byte в общее место). Реальное исполнение task читает этот byte + runtime-указатели.
+
+### 84.2. Потолок §74.1 (эмпирическое подтверждение)
+
+В нулевом RAM прогон 0x1f600 (seeded slot_index=1) доходит до dispatch и **упирается в
+unmapped fetch** (jump to 0): task function-pointer = 0 (не set при init в эмуляции). Т.е.
+полный dispatch-boot статикой не замыкается — нужны live-RAM-значения slot-descriptors
+(SWD GD32 dump при reset). Pre-dispatch логика (чтение slot_index + tick) работает.
+
+### 84.3. Task-кандидаты (по профилю: периодичные, self-contained, читают shared state)
+
+Кандидаты на слоты диспетчера (качественно, по описаниям каталога):
+- **0x1d078** — PID/timer-capture (speed-limit ramp, §69/§72) — control-task;
+- **0x1a938** — FOC-рутина (§59.9/§60) — control-task;
+- **0x1d898** — range-эстиматор (§73.11) — telemetry-task;
+- **0x211f8** — push-frame assembler (§77) — telemetry-task;
+- **0x21a08** — NVRAM-save (§78) — persistence-task;
+- **0x14f50** — периодический телеметрии-диспетчер (state byte@0x80);
+- **0x1337c** — сенсорный сэмплер + flag bit-pack.
+
+### 84.4. SchedulerModel (emulator/mcu_emu.py)
+
+Scoped-вид на состояние диспетчера: ловит ЧТЕНИЯ/ЗАПИСИ (slot_index @0x2C2, slot-table,
+tick-слова), seed для slot_index. Тест @t(0x1F600): seeded slot_index=1 → прогон → модель
+зафиксировала чтение slot-index @0x2C2 (pre-dispatch логика). **Тесты 175/175 PASS** (было 174).
+
+**Статус:** D1 завершён в рамках потолка §74.1 — структура диспетчера размapped + модель +
+task-кандидаты. Полный dispatch-boot (Phase ③) остаётся за live-RAM-dump (SWD): slot-
+descriptors / function-pointers — runtime state.

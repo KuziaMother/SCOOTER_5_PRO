@@ -955,6 +955,50 @@ class FocPipelineModel:
                      for o in FOC_PHASE_OFFS)
 
 
+# D1: main-loop диспетчер 0x1f600 — round-robin по N слотам (потолок §74.1).
+SCHEDULER_FN = 0x1F600
+SCHED_SLOT_INDEX_OFF = 0x2C2   # byte текущий слот (wrap 0..3)
+SCHED_SLOT_TABLE_OFF = 0xA43   # база slot-descriptor'ов, stride 0x96 (§74)
+SCHED_SLOT_STRIDE = 0x96
+SCHED_N_SLOTS = 4
+SCHED_TICK_WORDS_OFF = 0x17F78   # u32-слова tick/last (эмпирика D1)
+
+
+class SchedulerModel:
+    """D1: scoped-вид на main-loop диспетчер 0x1f600 (round-robin по N слотам). Ловит
+    ЧТЕНИЯ/ЗАПИСИ состояния (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick-слова
+    @0x17F78+); seed для slot_index. **ПОТОЛОК §74.1:** task function-pointers — runtime
+    RAM (set при init); в нулевом RAM dispatch упирается в unmapped fetch (jump to 0) ДО
+    завершения ротации, т.к. 0x1f600 читает byte из slot-descriptor и вызывает 0x1f1c0
+    (store-byte), а исполнение отделено и требует runtime-указателей."""
+    def __init__(self, emu):
+        self.emu = emu
+        self.reads = set()   # RAM-relative оффсеты, прочитанные
+        self.writes = {}     # RAM-off -> last value
+        self._hr = emu.uc.hook_add(UC_HOOK_MEM_READ, self._on_r,
+                                   None, RAM, RAM + 0x20000)
+        self._hw = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
+                                   None, RAM, RAM + 0x20000)
+
+    def _on_r(self, uc, access, address, size, value, user):
+        if RAM <= address < RAM + 0x20000:
+            self.reads.add(address - RAM)
+
+    def _on_w(self, uc, access, address, size, value, user):
+        if RAM <= address < RAM + 0x20000:
+            self.writes[address - RAM] = value
+
+    def set_slot_index(self, v):
+        self.emu.uc.mem_write(RAM + SCHED_SLOT_INDEX_OFF, bytes([v & 0xFF]))
+
+    def get_slot_index(self):
+        return bytes(self.emu.uc.mem_read(RAM + SCHED_SLOT_INDEX_OFF, 1))[0]
+
+    def touched(self, off):
+        """True если диспетчер прочитал или записал оффсет @off."""
+        return off in self.reads or off in self.writes
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 

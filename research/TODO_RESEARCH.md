@@ -186,10 +186,16 @@ _(оригинальный список завершён — см. таблиц�
             P@0x388=current-ref@0x224 (1:1), PWM-фазы @0x382/4/6 = 1125 ± ~0.0103·|ref|.
             `FocPipelineModel` в emulator/mcu_emu.py. Тест @t(0x1A938), **174/174 PASS**.
       **D. Планировщик / идентификация задач (мост ①→③):**
-      - [ ] D1 **Идентификация task-набора** — скан функций с «task-профилем» (no-arg,
-            long-running, читают shared state) под slot-table dispatch; N-task round-robin в
-            расширенный main-loop сим → приближение к Phase ③ без SWD (~1–2д, **неопределённая**
-            — потолок §74.1: function-pointers runtime).
+      - [x] D1 **Идентификация task-набора — ГОТОВО в рамках потолка §74.1 (§84).**
+            Структура диспетчера 0x1f600 размapped: slot_index @0x2C2 (wrap 0..3), tick-гейт
+            (now u64@0x1E0 − last > порог), slot-table @0xA43 stride 0x96. **Dispatch отделён
+            от исполнения:** 0x1f600 читает byte из descriptor и вызывает 0x1f1c0 (крошечный
+            store-byte хелпер); исполнение task = runtime-указатели. **Потолок подтверждён
+            эмпирически:** прогон в нулевом RAM упирается в unmapped fetch (task pointer=0).
+            Task-кандидаты: 0x1d078 (PID), 0x1a938 (FOC), 0x1d898 (range), 0x211f8 (push),
+            0x21a08 (NVRAM-save), 0x14f50, 0x1337c. `SchedulerModel` в emulator/mcu_emu.py.
+            Тест @t(0x1F600), **175/175 PASS**. Полный dispatch-boot (Phase ③) — за
+            live-RAM-dump (SWD).
       **E. Верификация / покрытие:**
       - [ ] E1 **Покрытие тестов → выше** (ongoing, высокая) — `@t` на ещё часть из 700.
             **§81 (этот блок):** +bsearch-семейство 0x16176 (i16)/0x1619e (u32) = clamped
