@@ -4666,6 +4666,59 @@ def _(run, rng):
         f'slot-index не прочитан: {sorted(hex(o) for o in sch.reads if 0x2C0 <= o < 0x2D0)}'
 
 
+# --- E1: CRC-7 примитив 0x3c7c (ядро §50 I2C stream-кодека) ---
+@t(0x3C7C, 'E1: 0x3c7c — CRC-7 примитив (ядро §50 I2C stream-кодека). 0x3c7c(byte=r0, prev=r1) -> r0: crc=(prev^byte)&0xFF; 8 бит MSB-first: if MSB -> ((crc<<1)&0xFF)^0x07 else (crc<<1)&0xFF. Poly=0x07, no reflect/xorout, init=prev. Вериф sweep byte×prev vs независимая реализация.')
+def _(run, rng):
+    def crc7(b, prev):
+        crc = (prev ^ b) & 0xFF
+        for _ in range(8):
+            crc = ((crc << 1) & 0xFF) ^ 0x07 if (crc & 0x80) else (crc << 1) & 0xFF
+        return crc
+    n = 0
+    for b in range(0, 256, 3):
+        for prev in (0, 0x11, 0x7F, 0xB2, 0xFF):
+            r0, _ = run.call(0x3C7C, args=(b, prev))
+            assert r0 == crc7(b, prev), \
+                f'b={b:#04x} prev={prev:#04x}: got {r0:#04x} want {crc7(b, prev):#04x}'
+            n += 1
+    assert n >= 40
+
+
+# --- E2: periph-write-trace facility ---
+@t(0x1BF48, 'E2: periph-write-trace facility — McuEmu.periph_write_map() / periph_writes_since(). Захват periph-writes на функцию для верификации «функция пишет в регистр Y». Тест: прогон мотор-инит 0x1bf48 (221 запись) -> periph_write_map() содержит motor-TIM @0x40012C00 + GPIO-блок @0x48000000; periph_writes_since(mark) = окно вызова.')
+def _(run, rng):
+    from emulator.mcu_emu import McuEmu, RAM, FLASH0, FLASH1, STACK_TOP
+    femu = McuEmu(trace=False, max_insn=500000)
+    uc = femu.uc
+    uc.mem_write(RAM, bytes(0x20000))
+    femu.hook_periph_ready()
+    mark = len(femu.periph_writes)
+
+    def _st(uc_, a, s, u):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                FLASH1 <= aa < FLASH1 + 0x23680):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x20)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        femu.insn = 0
+        try:
+            uc.emu_start(0x1BF48 | 1, 0, count=500000)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+    wm = femu.periph_write_map()
+    assert any(0x40012C00 <= a < 0x40012D00 for a in wm), \
+        f'motor-TIM @0x40012C00 не в map: {sorted(hex(a) for a in wm)[:8]}'
+    assert any(0x48000000 <= a < 0x48001000 for a in wm), 'GPIO-блок @0x48000000 не в map'
+    tail = femu.periph_writes_since(mark)
+    assert len(tail) == len(femu.periph_writes) - mark and len(tail) >= 100, \
+        f'periph_writes_since: {len(tail)} (ожидал >=100)'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

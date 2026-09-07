@@ -105,6 +105,7 @@
 - [82. Эмулятор C1: LUT-блоки range-эстиматора — LutModel](#82-эмулятор-c1-lut-блоки-range-эстиматора-lutmodel)
 - [83. Эмулятор C2: FOC-рутина — value-gated pipeline, FocPipelineModel](#83-эмулятор-c2-foc-рутина-value-gated-pipeline-focpipelinemodel)
 - [84. Эмулятор D1: main-loop диспетчер — SchedulerModel + потолок §74.1](#84-эмулятор-d1-main-loop-диспетчер-schedulermodel-потолок-741)
+- [85. Эмулятор E1+E2: CRC-7 примитив 0x3c7c + periph-write-trace facility](#85-эмулятор-e1e2-crc-7-примитив-0x3c7c-periph-write-trace-facility)
 
 ---
 
@@ -7229,3 +7230,25 @@ tick-слова), seed для slot_index. Тест @t(0x1F600): seeded slot_inde
 **Статус:** D1 завершён в рамках потолка §74.1 — структура диспетчера размapped + модель +
 task-кандидаты. Полный dispatch-boot (Phase ③) остаётся за live-RAM-dump (SWD): slot-
 descriptors / function-pointers — runtime state.
+
+## 85. Эмулятор E1+E2: CRC-7 примитив + periph-write-trace facility
+
+**Задача (TODO E1/E2):** покрытие утилит + facility для захвата periph-writes на функцию.
+
+### 85.1. E1: CRC-7 примитив 0x3c7c (ядро §50 I2C stream-кодека)
+
+`0x3c7c(byte=r0, prev=r1) -> r0`: `crc=(prev^byte)&0xFF`; **8 бит MSB-first**: if MSB →
+`((crc<<1)&0xFF)^0x07`, else `(crc<<1)&0xFF`. **Poly=0x07, no reflect, no xorout, init=prev.**
+Верифицировано sweep'ом byte×prev (1280/1280) vs независимая реализация. Это ядро I2C-
+кодека §50 (stream-кодер 0x15640 использует этот примитив). Тест @t(0x3C7C).
+
+### 85.2. E2: periph-write-trace facility
+
+`McuEmu.periph_write_map()` → {addr: [value,...]} (periph-writes сгруппированы по адресу) +
+`periph_writes_since(mark)` → окно одного вызова. Facility для верификации «функция X пишет
+в регистр Y значение Z» — **улучшает все модели A** (GPIO/USART/SPI/TIM). Тест @t(0x1BF48):
+прогон мотор-инит (221 запись) → map содержит motor-TIM @0x40012C00 + GPIO-блок @0x48000000.
+
+**Статус:** E1 (CRC-7) + E2 (facility) готово. **Тесты 177/177 PASS** (было 175). Остаток E1:
+RLE-кодек 0x15a60, checksum+divisibility 0x16410 (embedded-константы), полный encoder 0x15640
+(finicky stack-setup 5-го аргумента).

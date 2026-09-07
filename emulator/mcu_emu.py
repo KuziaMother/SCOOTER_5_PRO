@@ -204,6 +204,20 @@ class McuEmu:
             wstr = ('[' + ','.join(hex(v) for v in wvals[:6]) + ']') if ws else ''
             print(f"  0x{a:08x}: W×{len(ws)} {wstr} R×{len(rs)}")
 
+    # --- E2: periph-write-trace facility (захват periph-writes на функцию) ---
+    def periph_write_map(self):
+        """E2: periph-writes сгруппированы по адресу {addr: [value,...]} (порядок записей).
+        Facility для верификации «функция X пишет в регистр Y значение Z» — улучшает все
+        модели A (GPIO/USART/SPI/TIM). Источник: self.periph_writes [(pc,addr,size,value)]."""
+        m = {}
+        for _, addr, size, value in self.periph_writes:
+            m.setdefault(addr, []).append(value)
+        return m
+
+    def periph_writes_since(self, mark):
+        """E2: periph-writes после снимка mark=len(periph_writes) — окно одного вызова."""
+        return self.periph_writes[mark:]
+
     def seed_scheduler(self):
         """Предусловия планировщика 0x1f600 (из литерального пула):
         - [0x200002c2]=0 (слот 0), [0x200002c1]=1 (!= -> не beq);
