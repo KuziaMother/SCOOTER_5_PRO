@@ -4511,6 +4511,44 @@ def _(run, rng):
     assert usart_rx_cmd(0x58) is None          # 'X' — неизвестно
 
 
+# --- E1: покрытие — bsearch (floor index для интерполяции) ---
+@t(0x16176, 'E1: 0x16176 — i16 bsearch (floor index). 0x16176(key, arr, mid0, hi) с mid0=0 возвращает clamped lower_bound: последний i в [0,hi) с arr[i]<=key; 0 если key<arr[0]. Вериф на сортированном i16-массиве по диапазону ключей (эмулятор).')
+def _(run, rng):
+    arr = [10, 20, 30, 40, 50]
+    ARR_OFF = 0x4000
+    for i, v in enumerate(arr):
+        run.ram_write(ARR_OFF + i * 2, struct.pack('<h', v))
+    def clamped_lb(key):
+        r = -1
+        for i, v in enumerate(arr):
+            if v <= key:
+                r = i
+        return max(0, r)
+    n = 0
+    for key in list(range(0, 70, 3)) + [5, 10, 25, 49, 50, 60]:
+        r0, _ = run.call(0x16176, args=(key, RAM + ARR_OFF, 0, len(arr)))
+        assert r0 == clamped_lb(key), f'key={key}: got {r0}, want {clamped_lb(key)}'
+        n += 1
+    assert n >= 25
+
+
+@t(0x1619E, 'E1: 0x1619e — u32 bsearch (твин 0x16176, unsigned). Те же семантики clamped lower_bound для u32-массива (ldr [arr,mid<<2]).')
+def _(run, rng):
+    arr = [100, 200, 300, 400, 500]
+    ARR_OFF = 0x4100
+    for i, v in enumerate(arr):
+        run.ram_write(ARR_OFF + i * 4, struct.pack('<I', v))
+    def clamped_lb(key):
+        r = -1
+        for i, v in enumerate(arr):
+            if v <= key:
+                r = i
+        return max(0, r)
+    for key in [0, 50, 100, 250, 300, 499, 500, 600]:
+        r0, _ = run.call(0x1619E, args=(key, RAM + ARR_OFF, 0, len(arr)))
+        assert r0 == clamped_lb(key), f'key={key}: got {r0}, want {clamped_lb(key)}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
