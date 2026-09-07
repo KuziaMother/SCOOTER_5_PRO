@@ -106,6 +106,7 @@
 - [83. Эмулятор C2: FOC-рутина — value-gated pipeline, FocPipelineModel](#83-эмулятор-c2-foc-рутина-value-gated-pipeline-focpipelinemodel)
 - [84. Эмулятор D1: main-loop диспетчер — SchedulerModel + потолок §74.1](#84-эмулятор-d1-main-loop-диспетчер-schedulermodel-потолок-741)
 - [85. Эмулятор E1+E2: CRC-7 примитив 0x3c7c + periph-write-trace facility](#85-эмулятор-e1e2-crc-7-примитив-0x3c7c-periph-write-trace-facility)
+- [86. Эмулятор E1 continuation: checksum 0x16410 + CRC-7 encoder 0x15640](#86-эмулятор-e1-continuation-checksum-0x16410-crc-7-encoder-0x15640)
 
 ---
 
@@ -7252,3 +7253,37 @@ descriptors / function-pointers — runtime state.
 **Статус:** E1 (CRC-7) + E2 (facility) готово. **Тесты 177/177 PASS** (было 175). Остаток E1:
 RLE-кодек 0x15a60, checksum+divisibility 0x16410 (embedded-константы), полный encoder 0x15640
 (finicky stack-setup 5-го аргумента).
+
+## 86. Эмулятор E1 continuation: checksum 0x16410 + CRC-7 encoder 0x15640
+
+**Задача (TODO E1):** покрытие утилит — checksum+div, полный CRC-7 stream-кодер.
+
+### 86.1. Checksum + divisibility 0x16410
+
+`0x16410(arg0=r0, arg1=r1, arg2=r2) -> r0 = sum(block[:arg1]) + arg2 + flag`, где:
+- **block = `00 1f 1c 1f 1e 1f 1e 1f 1f 1e 1f 1e`** (embedded 12B из литерального пула,
+  восстанавливается эмпирически через prefix-sums).
+- **flag добавляется только если arg1 > 2** (иначе только sum+arg2):
+  `a0%4!=0 → 0; a0%100!=0 → 1; a0%400!=0 → 0; else → 1` (паттерн «каждые 4, кроме
+  кратных 100, кроме кратных 400»). Верифицировано sweep'ом (arg0,arg1,arg2) — **240/240**.
+Тест @t(0x16410).
+
+### 86.2. CRC-7 stream-кодер 0x15640 (§50 I2C)
+
+`0x15640(arg0=r0, arg1=r1, src=r2, dst=r3, len=[pre_sp+0])`:
+- **warmup**: r7 = crc7(a1, prev=crc7(a0, 0)).
+- **loop** для каждого src[i]: `dst[2i]=src[i]`; `dst[2i+1]=crc7(src[i], r7 if i==0 else 0)`.
+  → **первый CRC цепляется от warmup, остальные сбрасываются в init=0** (peculiar-дизайн).
+- Примитив crc7 = 0x3c7c (§85, poly=0x07 MSB-first). Stack-setup: len в [pre_sp+0]
+  (push = 8 рег = 0x20 → [post_sp+0x20] = [pre_sp+0]). Вериф manual-call — **4/4**.
+Тест @t(0x15640).
+
+### 86.3. RLE/валидатор 0x15a60 (отложено)
+
+Дизасм показал: НЕ простой RLE, а **валидатор блока данных** — path A (len≤0x32): loop
+по 8 записям embedded-таблицы через 0x11ec/0x11fa; path B (len>0x32): извлечение
+header-байтов + trailing-u16. Требует RE помощников 0x11ec/0x11fa/0x11d6 + таблиц —
+отложено как остаток E1.
+
+**Статус:** E1 continuation (checksum + encoder) готово. **Тесты 179/179 PASS** (было 177).
+Остаток E1: валидатор 0x15a60 (multi-function).

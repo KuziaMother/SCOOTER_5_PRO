@@ -4719,6 +4719,94 @@ def _(run, rng):
         f'periph_writes_since: {len(tail)} (ожидал >=100)'
 
 
+# --- E1 continuation: checksum + divisibility 0x16410 ---
+@t(0x16410, 'E1: 0x16410 — checksum + divisibility. 0x16410(arg0=r0, arg1=r1, arg2=r2) -> r0 = sum(block[:arg1]) + arg2 + flag; block=00 1f 1c 1f 1e 1f 1e 1f 1f 1e 1f 1e (embedded 12B из пула); flag добавляется только если arg1>2: a0%4!=0->0, a0%100!=0->1, a0%400!=0->0, else->1. Вериф sweep (arg0,arg1,arg2).')
+def _(run, rng):
+    BLOCK = bytes([0x00, 0x1f, 0x1c, 0x1f, 0x1e, 0x1f, 0x1e, 0x1f, 0x1f, 0x1e, 0x1f, 0x1e])
+
+    def flag(a0):
+        if a0 % 4 != 0:
+            return 0
+        if a0 % 100 != 0:
+            return 1
+        if a0 % 400 != 0:
+            return 0
+        return 1
+    n = 0
+    for a0 in (0, 2, 3, 4, 8, 96, 99, 100, 196, 200, 300, 396, 400, 500, 796, 800):
+        for a1 in (1, 2, 3, 5, 12):
+            for a2 in (0, 7, 123):
+                exp = (sum(BLOCK[:a1]) + a2 + (flag(a0) if a1 > 2 else 0)) & 0xFFFFFFFF
+                r0, _ = run.call(0x16410, args=(a0, a1, a2))
+                assert r0 == exp, f'a0={a0} a1={a1} a2={a2}: got {r0:#x} want {exp:#x}'
+                n += 1
+    assert n >= 100
+
+
+# --- E1 continuation: CRC-7 stream encoder 0x15640 ---
+@t(0x15640, 'E1: 0x15640 — CRC-7 stream-кодер §50 I2C. 0x15640(arg0=r0, arg1=r1, src=r2, dst=r3, len=[pre_sp+0]): warmup r7=crc7(a1,crc7(a0,0)); для каждого src[i]: dst[2i]=src[i], dst[2i+1]=crc7(src[i], r7 if i==0 else 0) — первый CRC цепляется от warmup, остальные сброс в init=0. Примитив crc7 = 0x3c7c (poly=0x07 MSB-first). Вериф manual-call (len в стек, push=8 рег=0x20).')
+def _(run, rng):
+    from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
+        FLASH1 as _F1, STACK_TOP as _ST
+
+    def crc7(b, prev):
+        crc = (prev ^ b) & 0xFF
+        for _ in range(8):
+            crc = ((crc << 1) & 0xFF) ^ 0x07 if (crc & 0x80) else (crc << 1) & 0xFF
+        return crc
+
+    def encode(a0, a1, src):
+        r7 = crc7(a1 & 0xFF, crc7(a0 & 0xFF, 0))
+        out = []
+        for i, b in enumerate(src):
+            out.append(b)
+            r7 = crc7(b, r7 if i == 0 else 0)
+            out.append(r7)
+        return bytes(out)
+
+    def run_enc(a0, a1, src):
+        emu = _M(max_insn=50000)
+        uc = emu.uc
+        uc.mem_write(_R, bytes(0x20000))
+        emu.hook_periph_ready()
+        SRC = _R + 0x4000
+        DST = _R + 0x4100
+        for i, b in enumerate(src):
+            uc.mem_write(SRC + i, bytes([b]))
+        pre_sp = _ST - 0x40
+        uc.mem_write(pre_sp, struct.pack('<I', len(src)))
+
+        def _st(uc_, a, s, u):
+            aa = a & ~1
+            if not (_F0 <= aa < _F0 + 0x23680 or _F1 <= aa < _F1 + 0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, pre_sp)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            uc.reg_write(UC_ARM_REG_R0, a0)
+            uc.reg_write(UC_ARM_REG_R1, a1)
+            uc.reg_write(UC_ARM_REG_R2, SRC)
+            uc.reg_write(UC_ARM_REG_R3, DST)
+            emu.insn = 0
+            try:
+                uc.emu_start(0x15640 | 1, 0, count=50000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+        return bytes(uc.mem_read(DST, 2 * len(src)))
+    n = 0
+    for (a0, a1, src) in [(0xAA, 0xBB, [1, 2, 3]), (0x11, 0x22, [0xDE, 0xAD]),
+                           (0x00, 0x00, [5, 6, 7, 8]), (0xFF, 0x01, [0x41]),
+                           (0x3C, 0x7D, [0x12, 0x34, 0x56])]:
+        exp = encode(a0, a1, src)
+        got = run_enc(a0, a1, src)
+        assert got == exp, f'a0={a0:#04x} a1={a1:#04x}: got {got.hex()} want {exp.hex()}'
+        n += 1
+    assert n >= 5
+
+
 # ---------------------------------------------------------------------------
 
 def main():
