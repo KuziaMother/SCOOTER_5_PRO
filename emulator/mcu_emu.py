@@ -920,6 +920,41 @@ class LutModel:
         return all((off + i * 4) in self.reads for i in range(words))
 
 
+# C2: FOC-рутина 0x1a938 — value-gated pipeline (не дискретный FSM).
+FOC_ROUTINE = 0x1A938
+FOC_REF_OFF = 0x224        # u16 current-reference (upstream input)
+FOC_P_OFF = 0x388          # u32 P = [ref] (1:1, §73.15)
+FOC_PHASE_OFFS = (0x382, 0x384, 0x386)   # u16 PWM-фазы (финальный вывод FOC)
+FOC_PHASE_CENTER = 1125    # center (idle): все фазы = 1125
+
+
+class FocPipelineModel:
+    """C2: scoped-вид на FOC-рутину 0x1a938 как value-gated pipeline (TIM capture ->
+    cross/dot -> inline -> fixed-point -> 2D rotate -> sector -> PWM). НЕ дискретный FSM:
+    ветвления по значениям (токи/пороги), не по state-регистру (§60.3; одиночные byte-
+    флаги путь не меняют). Ловит ВЫХОДЫ (P@0x388, PWM-фазы @0x382/4/6); seed для
+    current-ref @0x224. Transfer: фазы = 1125 ± ~0.0103·|ref| (2-фазный split, §73.14)."""
+    def __init__(self, emu):
+        self.emu = emu
+        self.writes = {}   # RAM-off -> last value
+        lo, hi = FOC_P_OFF - 0x10, max(FOC_PHASE_OFFS) + 8
+        self._h = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
+                                  None, RAM + lo, RAM + hi)
+
+    def _on_w(self, uc, access, address, size, value, user):
+        self.writes[address - RAM] = value
+
+    def set_ref(self, v):
+        self.emu.uc.mem_write(RAM + FOC_REF_OFF, struct.pack('<H', v & 0xFFFF))
+
+    def get_p(self):
+        return struct.unpack('<I', bytes(self.emu.uc.mem_read(RAM + FOC_P_OFF, 4)))[0]
+
+    def get_phases(self):
+        return tuple(struct.unpack('<H', bytes(self.emu.uc.mem_read(RAM + o, 2)))[0]
+                     for o in FOC_PHASE_OFFS)
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 

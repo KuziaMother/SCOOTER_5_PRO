@@ -103,6 +103,7 @@
 - [80. Эмулятор B2: USART3 RX-протокол — ASCII-command-ID, UsartRxCommandTable](#80-эмулятор-b2-usart3-rx-протокол-ascii-command-id-usartrxcommandtable)
 - [81. Эмулятор E1: покрытие тестами — bsearch floor-index](#81-эмулятор-e1-покрытие-тестами-bsearch-floor-index)
 - [82. Эмулятор C1: LUT-блоки range-эстиматора — LutModel](#82-эмулятор-c1-lut-блоки-range-эстиматора-lutmodel)
+- [83. Эмулятор C2: FOC-рутина — value-gated pipeline, FocPipelineModel](#83-эмулятор-c2-foc-рутина-value-gated-pipeline-focpipelinemodel)
 
 ---
 
@@ -7152,3 +7153,35 @@ Scoped-вид на два LUT-блока: ловит ЧТЕНИЯ firmware (`sca
 **Статус:** C1 готово — структура LUT-потребления размapped + модель (seedable). Остаток: точная
 формула LUT→выход (нужны live-NVM значения / активный mode; сейчас скан питает буфер @0x17F78,
 роль которого без live-значений неопределена).
+
+## 83. Эмулятор C2: FOC-рутина — value-gated pipeline, FocPipelineModel
+
+**Задача (TODO C2):** FOC state-machine structure → каркас FOC-FSM без live-gains.
+
+### 83.1. Вывод: FOC = value-gated pipeline, НЕ дискретный FSM
+
+FOC-рутина `0x1a938` (3296 Б) **полностью разобрана** (§59.9/§60–§60.8). Её «state-machine» —
+**value-gated pipeline**, а не дискретный FSM: все ветвления — `cmp` по значениям (токи, пороги,
+сектор), **не по state-регистру** (§60.3: одиночные byte-флаги путь не меняют, гейты
+многобайтные/по значениям). «3 внутренних возврата» (0x1adf0/0x1b224/0x1b616) = value-gated
+early-exits; код вокруг них — данные/pool (не чисто декодируется).
+
+**Пайплайн** (§60.3): TIM capture `0x1be1c` → cross/dot `0x1d7ac`→`0x1e410` → inline-блок
+`0x1aa08..0x1aae6` → условный `0x1ab68` (гейт по значению) → fixed-point `0x1b3f2..0x1b460`
+→ 2D rotate `0x1d818` → sector-classify `0x1bd88` → PWM-вывод.
+
+### 83.2. I/O (эмпирика, seeded current-ref)
+
+- **P@RAM+0x388 = current-ref @0x224** (1:1; ref 0/500/2000 → P 0/500/2000).
+- **PWM-фазы @RAM+0x382/0x384/0x386** = center **1125** (idle) ± отклонение, монотонно растущее
+  с |ref| (transfer ≈0.0103·|ref|, §73.14): ref=500→(1130,1120,1126), ref=2000→(1145,1105,1126).
+
+### 83.3. FocPipelineModel (emulator/mcu_emu.py)
+
+Scoped-вид на FOC-выходы: ловит P@0x388 + PWM-фазы @0x382/4/6, seed для current-ref @0x224.
+Тест @t(0x1A938): seeded ref → прогон → P==ref (1:1) + фазы от center 1125 монотонно с |ref|.
+**Тесты 174/174 PASS** (было 173).
+
+**Статус:** C2 готово — FOC-структура формализована (value-gated pipeline, не FSM) + модель I/O.
+Каркас FOC-FSM = пайплайн из §60 + value-гейты; live-gains/электрика остаются за пределами
+статического замыкания (§73.15).

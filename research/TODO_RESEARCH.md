@@ -179,8 +179,12 @@ _(оригинальный список завершён — см. таблиц�
             @RAM+0x17F78 (26 слов) — вероятно mode/SoC-коррекция под live-NVM. `LutModel`
             (scoped-вид, ловит чтения, seedable) в emulator/mcu_emu.py. Тест @t(0x1D898),
             **173/173 PASS**. Остаток: точная формула LUT→выход (live-NVM / активный mode).
-      - [ ] C2 **FOC state-machine structure** (§73.15: электрика статикой не замыкается, но
-            FSM-переходы разбираемы) → каркас FOC-FSM без live-gains (~1д, средняя).
+      - [x] C2 **FOC state-machine structure — ГОТОВО (§83).** Вывод: FOC 0x1a938 (полностью
+            разобрано §59.9/§60) = **value-gated pipeline, НЕ дискретный FSM** (ветвления по
+            токам/порогам/сектору, не по state-регистру; одиночные byte-флаги путь не меняют).
+            Пайплайн: TIM capture→cross/dot→inline→fixed-point→2D rotate→sector→PWM. I/O:
+            P@0x388=current-ref@0x224 (1:1), PWM-фазы @0x382/4/6 = 1125 ± ~0.0103·|ref|.
+            `FocPipelineModel` в emulator/mcu_emu.py. Тест @t(0x1A938), **174/174 PASS**.
       **D. Планировщик / идентификация задач (мост ①→③):**
       - [ ] D1 **Идентификация task-набора** — скан функций с «task-профилем» (no-arg,
             long-running, читают shared state) под slot-table dispatch; N-task round-robin в

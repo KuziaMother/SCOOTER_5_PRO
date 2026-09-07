@@ -4585,6 +4585,51 @@ def _(run, rng):
     assert lut.get_word(RANGE_LUT0_OFF + 8) == 0xDEADBEEF
 
 
+# --- C2: FocPipelineModel (FOC-рутина 0x1a938 как value-gated pipeline) ---
+@t(0x1A938, 'C2: FocPipelineModel — FOC-рутина 0x1a938 как value-gated pipeline (не дискретный FSM; ветвления по токам/порогам, §60.3). Выходы: P@0x388 = current-ref @0x224 (1:1), PWM-фазы @0x382/4/6 = 1125 ± ~0.0103·|ref|. Тест: seeded ref -> прогон 0x1a938 -> P==ref + фазы отклоняются от center 1125 монотонно с |ref|.')
+def _(run, rng):
+    from emulator.mcu_emu import (McuEmu, FocPipelineModel, FOC_ROUTINE, FOC_REF_OFF,
+                                  FOC_PHASE_CENTER)
+
+    def measure(ref):
+        femu = McuEmu(trace=False, max_insn=200000)
+        uc = femu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        femu.hook_periph_ready()
+        femu.uc.mem_write(RAM + FOC_REF_OFF, struct.pack('<H', ref & 0xFFFF))
+        foc = FocPipelineModel(femu)
+
+        def _st(uc_, a, s, u):
+            aa = a & ~1
+            if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                    FLASH1 <= aa < FLASH1 + 0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x20)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            uc.reg_write(UC_ARM_REG_R0, 0)
+            femu.insn = 0
+            try:
+                uc.emu_start(FOC_ROUTINE | 1, 0, count=200000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+        return foc.get_p(), foc.get_phases()
+    # P == ref (1:1)
+    for ref in (0, 500, 2000):
+        p, _ = measure(ref)
+        assert p == ref, f'ref={ref}: P@0x388={p} != ref'
+    # фазы: center при ref=0; spread монотонно растёт с |ref|
+    def spread(ref):
+        _, ph = measure(ref)
+        return max(abs(p - FOC_PHASE_CENTER) for p in ph)
+    s0, s500, s2000 = spread(0), spread(500), spread(2000)
+    assert s0 <= 2, f'ref=0 фазы не center: spread={s0}'
+    assert s2000 > s500 > 0, f'spread не монотонен: 500={s500}, 2000={s2000}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
