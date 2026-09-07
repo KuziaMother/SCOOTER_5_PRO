@@ -144,9 +144,13 @@ _(оригинальный список завершён — см. таблиц�
             + чистый `decode_push_frames` (a0/a1, chk=SUM&0xFF) в emulator/mcu_emu.py.
             Валидация: seed mode/pct → валидный a0-кадр. Тест @t(0x211F8), **167/167 PASS**.
             Остаток: интеграция в ControlLoop (emit-телеметрия/tick) + модель TX-отправителя.
-      - [ ] A3 **SPI-flash / NVM model** — flash-driver cluster + read-paths + layout
-            NVM-структуры → задачи с конфигом/калибровкой идут; раскрывается «что где хранится»
-            (~1д, высокая).
+      - [x] A3 **SPI-flash / NVM model — ГОТОВО (§78).** 2 flash-системы: внутренний (OTA)
+            @0x40022000 + внешний SPI-flash (NVM) SPI1 @0x40013000. Протокол: write-enable
+            0x221a4 (cmd 0x06) + page-program 0x221e6 (addr<0x1000, NVM ≤4KB); SPI-контекст =
+            struct в RAM ([+4]/[+0x14] гейт bit31/[+0x28]). NVM layout: 4Б-слоты; NVRAM-save
+            0x21A08 персистит 7+18Б конфига. `SpiFlashModel` (виртуальный NVM-буфер, 0xFF-дефолт,
+            set/get/seed) в emulator/mcu_emu.py. Тест @t(0x221E6), **168/168 PASS**. Остаток:
+            полное MISO-моделирование (реконструкция SPI-контекста под live-state) + read-path.
       - [ ] A4 **RTC/clock model** — `0x11bac` (verified) + SysTick `0x3600` (done) → полная
             модель времени (~0.5д, средняя).
       - [ ] A5 **I2C model** — I2C-driver (init-кандидаты §74.1) → если сенсорная задача ходит

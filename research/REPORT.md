@@ -98,6 +98,7 @@
 - [75. USB-TTL (USART3/UART4): полный инвентарь читаемых данных](#75-usb-ttl-usart3uart4-полный-инвентарь-читаемых-данных)
 - [76. Эмулятор A1: кастомный GPIO-блок «портов» — layout, pin-map, GpioModel](#76-эмулятор-a1-кастомный-gpio-блок-портов-layout-pin-map-gpiomodel)
 - [77. Эмулятор A2: USART TX pipeline (сборка push-кадров) — UsartTxModel + декодер](#77-эмулятор-a2-usart-tx-pipeline-сборка-push-кадров-usarttxmodel-декодер)
+- [78. Эмулятор A3: SPI-flash / NVM — layout, протокол, SpiFlashModel](#78-эмулятор-a3-spi-flash-nvm-layout-протокол-spiflashmodel)
 
 ---
 
@@ -6978,3 +6979,39 @@ input-регистра (чтение, в init не пишется) + live-зна
 **Статус:** A2 готово — сборка push-кадров смоделирована + декодер кадров. Следующее:
 интеграция в ControlLoop (показывать emit-телеметрию каждый tick) + модель TX-отправителя
 (кольцо → USART3_DR).
+
+## 78. Эмулятор A3: SPI-flash / NVM — layout, протокол, SpiFlashModel
+
+**Задача (TODO A3):** flash-driver cluster + read-paths + layout NVM-структуры → «что где хранится».
+
+### 78.1. Две flash-системы MCU
+
+- **Внутренний FLASH (OTA)** — контроллер @`0x40022000` (KEYR@+4, SR@+0xC, SCBR, CTLR):
+  unlock 0x6378 (magic 0x45670123/0xCDEF89AB), BSY-check 0x6284, erase/write-mode 0x6360 (§48/§49).
+- **Внешний SPI-flash (NVM)** — SPI1 @`0x40013000` (SPI2 @0x40013C00); init 0x10770/0x106B8,
+  one-time 0x8348. Хранит конфиг/калибровку/счётчики (runtime-данные устройства).
+
+### 78.2. SPI-flash драйвер + протокол
+
+- **write-enable** `0x221a4` — команда 0x06 в flash.
+- **page-program** `0x221e6(r0=addr, r1=data)` — валидация addr (`r4<<30≠0` → reject; NVM ≤4KB),
+  передаёт {addr, ~addr, data} через SPI-transfer хелперы `0x23688`(CS)/`0x2360c`/`0x235d4`/`0x235b0`.
+- **SPI-контекст** = struct в RAM: [+4]=control, [+0x14]=status/enable (гейт bit31), [+0x28]=data/CS;
+  МISO читается из data-регистра контекста.
+
+### 78.3. NVM layout (из NVRAM-save 0x21A08)
+
+NVRAM-save (гейт byte@0x170==1 + бит common+0x14): `bl 0x221a4` (write-enable) → цикл записи
+**7 байт** из RAM-буфера в flash-адреса `{base+0, base+4, …}` (шаг слота **4Б**) + **18 байт** в
+`{base+0x1c + i·4}`. NVM организован в 4-байтовые слоты; персистится конфиг/калибровка
+(25Б в этом save). Значения — runtime (без live-дампа неизвестны).
+
+### 78.4. SpiFlashModel (emulator/mcu_emu.py)
+
+Виртуальный буфер NVM (`size=0x1000`, дефолт `0xFF` = стёртая flash), set/get/seed — абстракция
+«что в NVM» для будущих симуляций. Тест @t(0x221E6): size, 0xFF-дефолт, round-trip, OOB→ValueError.
+**Тесты 168/168 PASS** (было 167).
+
+**Статус:** A3 готово (layout + протокол + буфер NVM). Остаток: полное моделирование SPI-транзакции
+(MISO-возврат) — нужно реконструировать SPI-контекст (база в RAM, гейт [ctx+0x14] bit31) под live-state;
++ read-path (boot-time load конфига/калибровки).

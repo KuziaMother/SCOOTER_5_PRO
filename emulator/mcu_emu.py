@@ -778,6 +778,42 @@ class UsartTxModel:
         return decode_push_frames(data)
 
 
+# A3: внешний SPI-flash (NVM). SPI1 @0x40013000; NVM ≤ 4KB (валидация addr в 0x221e6).
+SPI_FLASH_BASE = 0x40013000   # SPI1 (MOSI/MISO к внешнему flash с NVM)
+NVM_SIZE = 0x1000             # ≤4KB
+
+class SpiFlashModel:
+    """A3: виртуальный буфер внешнего SPI-flash (NVM) + set/get. Содержимое NVM —
+    runtime-данные устройства (конфиг/калибровка); без live-дампа значения неизвестны
+    → дефолт 0xFF (стёртая flash), буфер settable. SPI-протокол: write-enable 0x221a4
+    (cmd 0x06) + page-program 0x221e6 (addr<0x1000, шаг слота 4Б); NVRAM-save 0x21A08
+    персистит 7+18Б конфига. Полное моделирование SPI-транзакции (MISO-возврат) —
+    остаток: SPI-контекст = struct в RAM (гейт [ctx+0x14] bit31), базу/состояние
+    нужно реконструировать под live."""
+    def __init__(self, emu, size=NVM_SIZE):
+        self.emu = emu
+        self.size = size
+        self.flash = bytearray(b'\xff' * size)   # виртуальное содержимое NVM
+
+    def set(self, addr, data):
+        """Записать data в NVM по addr (эмуляция page-program)."""
+        if addr < 0 or addr + len(data) > self.size:
+            raise ValueError(f'NVM-адрес вне диапазона: {addr}+{len(data)} > {self.size}')
+        self.flash[addr:addr + len(data)] = data
+
+    def get(self, addr, n=1):
+        """Прочитать n байт из NVM по addr (эмуляция read)."""
+        return bytes(self.flash[addr:addr + n])
+
+    def seed(self, mapping):
+        """Засеять NVM словарём {addr: int_or_bytes} (для тестов/симуляции)."""
+        for addr, val in mapping.items():
+            if isinstance(val, (bytes, bytearray)):
+                self.set(addr, bytes(val))
+            else:
+                self.set(addr, val.to_bytes(max(1, (val.bit_length() + 7) // 8), 'little'))
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 

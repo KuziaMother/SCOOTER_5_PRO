@@ -4413,6 +4413,26 @@ def _(run, rng):
     assert fl['pct_0x236'] == 50, f"pct_0x236 != 50: {fl['pct_0x236']} (seed @0x236=50)"
 
 
+# --- A3: SpiFlashModel (внешний SPI-flash / NVM) ---
+@t(0x221E6, 'A3: SpiFlashModel — внешний SPI-flash (NVM). Виртуальный буфер size=0x1000 (≤4KB, из валидации addr в 0x221e6), дефолт 0xFF (стёртая flash); set/get round-trip; OOB -> ValueError. SPI-протокол: write-enable 0x221a4 (cmd 0x06) + page-program 0x221e6 (шаг слота 4Б); NVRAM-save 0x21A08 персистит конфиг/калибровку.')
+def _(run, rng):
+    from emulator.mcu_emu import McuEmu, SpiFlashModel, NVM_SIZE
+    assert NVM_SIZE == 0x1000, f'NVM_SIZE != 4KB: {NVM_SIZE:#x}'
+    femu = McuEmu(trace=False, max_insn=200000)
+    nvm = SpiFlashModel(femu)
+    assert all(b == 0xFF for b in nvm.flash), 'NVM-дефолт != 0xFF (стёртая flash)'
+    nvm.set(0x10, struct.pack('<H', 0x1234))
+    assert nvm.get(0x10, 2) == b'\x34\x12', 'set/get round-trip (little-endian u16)'
+    nvm.seed({0x20: 89, 0x30: bytes([1, 2, 3])})
+    assert nvm.get(0x20, 1) == b'\x59', 'seed byte'
+    assert nvm.get(0x30, 3) == b'\x01\x02\x03', 'seed bytes'
+    try:
+        nvm.set(NVM_SIZE - 1, b'\x00\x00')   # 2 байта за границей
+        assert False, 'OOB set не выбросил ValueError'
+    except ValueError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 
 def main():
