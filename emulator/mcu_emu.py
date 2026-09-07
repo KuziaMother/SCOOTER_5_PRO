@@ -876,6 +876,50 @@ def usart_rx_cmd(cmd_byte):
     return USART_RX_COMMANDS.get(cmd_byte)
 
 
+# C1: LUT-блоки range-эстиматора 0x1d898 (u32-слова, шаг 4; значения из NVM/live).
+RANGE_LUT0_OFF = 0x614    # блок0: 0x614..0x6c4
+RANGE_LUT0_WORDS = 45
+RANGE_LUT1_OFF = 0x738    # блок1: 0x738..0x808
+RANGE_LUT1_WORDS = 53
+RANGE_FLAG_OFFS = (0x286, 0x290, 0x294, 0x29e, 0x2a8, 0x2ac)   # status-гейты (§73.13)
+
+
+class LutModel:
+    """C1: scoped-вид на LUT-блоки range-эстиматора @RAM+0x614 / RAM+0x738 (u32-слова,
+    шаг 4). Ловит ЧТЕНИЯ firmware (какие оффсеты просканировал 0x1d898), seed/get для
+    synthetic/live значений. Реальные значения — из NVM (live-дамп); дефолт 0. 0x1d898
+    сканирует оба блока, читая каждое слово по разу (табличный проход)."""
+    def __init__(self, emu):
+        self.emu = emu
+        self.reads = set()   # RAM-relative оффсеты, прочитанные firmware
+        self._hooks = []
+        for off, words in ((RANGE_LUT0_OFF, RANGE_LUT0_WORDS),
+                           (RANGE_LUT1_OFF, RANGE_LUT1_WORDS)):
+            h = emu.uc.hook_add(UC_HOOK_MEM_READ, self._on_r,
+                                None, RAM + off, RAM + off + words * 4)
+            self._hooks.append(h)
+
+    def _on_r(self, uc, access, address, size, value, user):
+        self.reads.add(address - RAM)
+
+    def get_word(self, off):
+        return struct.unpack('<I', bytes(self.emu.uc.mem_read(RAM + off, 4)))[0]
+
+    def set_word(self, off, val):
+        self.emu.uc.mem_write(RAM + off, struct.pack('<I', val & 0xFFFFFFFF))
+
+    def seed_block(self, off, words):
+        """words: list[int] (или int = константа на всё слово-блока)."""
+        if isinstance(words, int):
+            words = [words]
+        for i, w in enumerate(words):
+            self.set_word(off + i * 4, w)
+
+    def scanned(self, off, words):
+        """True если firmware прочитал все words слов блока @off."""
+        return all((off + i * 4) in self.reads for i in range(words))
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 

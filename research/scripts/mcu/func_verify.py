@@ -4549,6 +4549,42 @@ def _(run, rng):
         assert r0 == clamped_lb(key), f'key={key}: got {r0}, want {clamped_lb(key)}'
 
 
+# --- C1: LutModel (LUT-блоки range-эстиматора 0x1d898) ---
+@t(0x1D898, 'C1: LutModel — LUT-блоки range-эстиматора 0x1d898 @RAM+0x614 (45 слов) / RAM+0x738 (53 слова), u32-слова шаг 4. Модель ловит ЧТЕНИЯ firmware: 0x1d898 сканирует оба блока (каждое слово по разу); status-гейты @0x286/0x29e (§73.13). Тест: свежий McuEmu + battery seed -> прогон 0x1d898 -> модель зафиксировала скан обоих блоков + seed/get round-trip.')
+def _(run, rng):
+    from emulator.mcu_emu import (McuEmu, LutModel, RANGE_LUT0_OFF, RANGE_LUT0_WORDS,
+                                  RANGE_LUT1_OFF, RANGE_LUT1_WORDS)
+    femu = McuEmu(trace=False, max_insn=200000)
+    uc = femu.uc
+    uc.mem_write(RAM, bytes(0x20000))
+    femu.hook_periph_ready()
+    femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 480))   # battery середина [415..535]
+    lut = LutModel(femu)
+
+    def _st(uc_, a, s, u):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                FLASH1 <= aa < FLASH1 + 0x23680):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x20)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R0, 0)
+        femu.insn = 0
+        try:
+            uc.emu_start(0x1D898 | 1, 0, count=200000)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+    assert lut.scanned(RANGE_LUT0_OFF, RANGE_LUT0_WORDS), \
+        f'блок0 не просканирован: прочитано {len(lut.reads)} оффс'
+    assert lut.scanned(RANGE_LUT1_OFF, RANGE_LUT1_WORDS), 'блок1 не просканирован'
+    lut.set_word(RANGE_LUT0_OFF + 8, 0xDEADBEEF)
+    assert lut.get_word(RANGE_LUT0_OFF + 8) == 0xDEADBEEF
+
+
 # ---------------------------------------------------------------------------
 
 def main():
