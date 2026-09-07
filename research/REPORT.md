@@ -107,6 +107,7 @@
 - [84. Эмулятор D1: main-loop диспетчер — SchedulerModel + потолок §74.1](#84-эмулятор-d1-main-loop-диспетчер-schedulermodel-потолок-741)
 - [85. Эмулятор E1+E2: CRC-7 примитив 0x3c7c + periph-write-trace facility](#85-эмулятор-e1e2-crc-7-примитив-0x3c7c-periph-write-trace-facility)
 - [86. Эмулятор E1 continuation: checksum 0x16410 + CRC-7 encoder 0x15640](#86-эмулятор-e1-continuation-checksum-0x16410-crc-7-encoder-0x15640)
+- [87. Эмулятор E1: закрытие 0x15a60 — command/data buffer processor + strlen/memcmp](#87-эмулятор-e1-закрытие-0x15a60-commanddata-buffer-processor-strlenmemcmp)
 
 ---
 
@@ -7287,3 +7288,36 @@ header-байтов + trailing-u16. Требует RE помощников 0x11e
 
 **Статус:** E1 continuation (checksum + encoder) готово. **Тесты 179/179 PASS** (было 177).
 Остаток E1: валидатор 0x15a60 (multi-function).
+
+## 87. Эмулятор E1: закрытие 0x15a60 — command/data buffer processor + strlen/memcmp
+
+**Задача (TODO E1):** закрыть отложенный валидатор 0x15a60 (RE помощников + таблицы).
+
+### 87.1. Что это
+
+`0x15a60(src, len)` — **процессор буфера команд/данных USART/DFU** (§75/§80), НЕ простой RLE.
+Разобран через эмпирический control-flow trace + дизасм помощников.
+
+### 87.2. Помощники (полностью верифицированы)
+
+- **`0x11ec(src)` = strlen** — число байтов до первого null. Вериф sweep.
+- **`0x11fa(A,B,n)` = bounded-memcmp** — `A[i]-B[i]` на первом несовпадении (i<n); 0 на полное
+  совпадение или когда **оба null на той же позиции** (ранний выход). Вериф sweep.
+- **`0x11d6` → `0x11c8(buf,len,val)` = memset** (thunk с val=0) — очистка рабочего буфера.
+
+### 87.3. Структура + таблицы
+
+- **Рабочий буфер** @RAM+**0x1f10** (~0x9c байт): memset'ится, затем заполняется данными src.
+- **TBL1** = flash @**0x1a93c**, 7 записей × 50B — binary-паттерны (не ASCII), null-terminated,
+  длины [4,13,5,15,4,6,48]; strlen через 0x11ec задаёт длину сравнения.
+- **Path A (len ≤ 0x32):** buf[0]=src[0], return 0 (сравнение с TBL1; в нулевом RAM совпадений нет).
+- **Path B (len > 0x32):** **гейт `src[0]==1`** — если проходит, копирует src в буфер; иначе
+  early-return 0 (только buf[0]=src[0]).
+
+### 87.4. Тесты
+
+Три теста (fresh-emu, без shared-state): @t(0x11EC) strlen, @t(0x11FA) memcmp, @t(0x15A60)
+детерминированное поведение path A/B. **Тесты 182/182 PASS** (было 179).
+
+**Статус:** E1 завершён полностью — все утилиты покрыты (bsearch §81, CRC-7 §85, checksum+
+encoder §86, strlen/memcmp/buffer-processor §87). Остатка E1 нет.

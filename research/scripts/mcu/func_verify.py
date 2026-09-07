@@ -4807,6 +4807,94 @@ def _(run, rng):
     assert n >= 5
 
 
+# --- E1: 0x15a60 close-out — helpers strlen/memcmp + buffer processor ---
+def _fresh_call(off, args=(), extra_ram=None, max_insn=50000):
+    """Свежий McuEmu + ручной call (чистый RAM, без shared-state). Возвращает (r0, emu)."""
+    from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
+        FLASH1 as _F1, STACK_TOP as _ST
+    emu = _M(max_insn=max_insn)
+    uc = emu.uc
+    uc.mem_write(_R, bytes(0x20000))
+    emu.hook_periph_ready()
+    if extra_ram:
+        for (addr, data) in extra_ram:
+            uc.mem_write(addr, data)
+
+    def _st(uc_, a, s, u):
+        aa = a & ~1
+        if not (_F0 <= aa < _F0 + 0x23680 or _F1 <= aa < _F1 + 0x23680):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _st)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, _ST - 0x40)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r, v in zip((UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
+                         UC_ARM_REG_R3), args):
+            uc.reg_write(r, v)
+        emu.insn = 0
+        try:
+            uc.emu_start(off | 1, 0, count=max_insn)
+        except UcError:
+            pass
+        r0 = uc.reg_read(UC_ARM_REG_R0)
+    finally:
+        uc.hook_del(sh)
+    return r0, emu
+
+
+@t(0x11EC, 'E1: 0x11ec — strlen (null-terminated). 0x11ec(src=r0) -> r0 = число байтов до первого null. Помощник 0x15a60 (§87). Вериф sweep.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    ok = 0
+    for s in (b'', b'a', b'abc', b'hello', b'ab\x00cd'):
+        p = _R + 0x3000
+        r0, _emu = _fresh_call(0x11EC, args=(p,), extra_ram=[(p, s + b'\x00')])
+        exp = s.find(b'\x00') if b'\x00' in s else len(s)
+        assert r0 == exp, f'{s!r}: got {r0} want {exp}'
+        ok += 1
+    assert ok >= 5
+
+
+@t(0x11FA, 'E1: 0x11fa — bounded-memcmp. 0x11fa(A=r0, B=r1, n=r2) -> r0 = A[i]-B[i] на первом несовпадении (i<n); 0 на полное совпадение или когда ОБА null на той же позиции (ранний выход). Помощник 0x15a60 (§87). Вериф sweep.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    cases = [(b'abc', b'abc', 3, 0), (b'abc', b'abd', 3, -1),
+             (b'ab', b'abc', 2, 0), (b'a\x00z', b'a\x00w', 3, 0),
+             (b'a\x00x', b'ayz', 3, -ord('y')), (b'abcd', b'abce', 4, -1),
+             (b'zyx', b'abc', 3, ord('z') - ord('a'))]
+    for A, B, n, exp in cases:
+        pa = _R + 0x3100
+        pb = _R + 0x3200
+        r0, _emu = _fresh_call(0x11FA, args=(pa, pb, n),
+                               extra_ram=[(pa, A + b'\x00\x00'), (pb, B + b'\x00\x00')])
+        got = r0 if r0 < 0x80000000 else r0 - 0x100000000
+        assert got == exp, f'A={A!r} B={B!r} n={n}: got {got} want {exp}'
+
+
+@t(0x15A60, 'E1: 0x15a60 — USART/DFU command/data buffer processor (§87). (src=r0, len=r1): рабочий буфер @RAM+0x1f10 (memset 0x11d6->0x11c8), TBL1=flash@0x1a93c (7×50B binary-паттерны; strlen через 0x11ec). Path A (len<=0x32): buf[0]=src[0], return 0. Path B (len>0x32): гейт src[0]==1 -> копирует src в буфер; иначе early-return 0 (только buf[0]=src[0]). Вериф детерминированного поведения.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    SRC = _R + 0x4000
+    src_a = bytes([0x11, 0x22, 0x33, 0x44])
+    r0, emu = _fresh_call(0x15A60, args=(SRC, len(src_a)),
+                          extra_ram=[(SRC, src_a)])
+    buf = bytes(emu.uc.mem_read(_R + 0x1F10, 8))
+    assert r0 == 0 and buf[0] == 0x11 and buf[1] == 0, \
+        f'pathA: return={r0:#x} buf={buf.hex()}'
+    src_b = bytes([0x05, 0x22, 0x33] + [0x55] * 60 + [0x77, 0x88])
+    r0, emu = _fresh_call(0x15A60, args=(SRC, len(src_b)),
+                          extra_ram=[(SRC, src_b)])
+    buf = bytes(emu.uc.mem_read(_R + 0x1F10, 8))
+    assert r0 == 0 and buf[0] == 0x05 and buf[1] == 0, \
+        f'pathB gate-fail: return={r0:#x} buf={buf.hex()}'
+    src_c = bytes([0x01, 0x22, 0x33] + [0x55] * 60 + [0x77, 0x88])
+    r0, emu = _fresh_call(0x15A60, args=(SRC, len(src_c)),
+                          extra_ram=[(SRC, src_c)])
+    buf = bytes(emu.uc.mem_read(_R + 0x1F10, 8))
+    assert r0 == 0 and buf[:4] == src_c[:4], \
+        f'pathB gate-pass: return={r0:#x} buf={buf.hex()} want {src_c[:4].hex()}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

@@ -197,12 +197,11 @@ _(оригинальный список завершён — см. таблиц�
             Тест @t(0x1F600), **175/175 PASS**. Полный dispatch-boot (Phase ③) — за
             live-RAM-dump (SWD).
       **E. Верификация / покрытие:**
-      - [ ] E1 **Покрытие тестов → выше** (ongoing, высокая) — `@t` на ещё часть из 700.
-            **§81:** +bsearch 0x16176/0x1619e. **§85:** +CRC-7 примитив 0x3c7c (poly=0x07
-            MSB-first; вериф 1280/1280). **§86:** +checksum 0x16410 (block+divisibility-flag,
-            240/240) + полный CRC-7 encoder 0x15640 (warmup + reset-after-first, 4/4).
-            Тесты **179/179**. Остаток: валидатор 0x15a60 (multi-function: 0x11ec/0x11fa/
-            0x11d6 + embedded-таблицы).
+      - [x] E1 **Покрытие тестов утилит — ГОТОВО (§81/§85/§86/§87).** bsearch 0x16176/0x1619e
+            (floor index); CRC-7 примитив 0x3c7c (poly=0x07 MSB-first; 1280/1280); checksum
+            0x16410 (block+divisibility-flag; 240/240) + CRC-7 encoder 0x15640 (warmup+
+            reset-after-first; 4/4); strlen 0x11ec / memcmp 0x11fa / buffer-processor 0x15a60
+            (§87). Тесты **182/182**. Остатка E1 нет.
       - [x] E2 **Периф-write-trace facility — ГОТОВО (§85).** `McuEmu.periph_write_map()`
             → {addr:[value,...]} + `periph_writes_since(mark)` (окно одного вызова). Facility
             «функция X пишет в регистр Y значение Z» — улучшает все модели A. Тест @t(0x1BF48):
