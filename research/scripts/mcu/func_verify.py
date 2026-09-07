@@ -4433,6 +4433,48 @@ def _(run, rng):
         pass
 
 
+# --- B1: CmdControlModel (командный слой -> блок управления @0x40021000) ---
+@t(0xC664, 'B1: CmdControlModel — командный слой (dispatcher 0x2e0c / handler 0x97f4) шевелит биты в кастомном блоке управления @0x40021000 (поля +0x10/+0x18/+0x1c). Примитив 0xc664(r0=бит, r1=set/clear): pre-set поля в 0 -> set(0x200000) пишет ровно бит21 в +0x1c; clear снимает. Модель ловит операции.')
+def _(run, rng):
+    from emulator.mcu_emu import McuEmu, CmdControlModel, CMD_CTRL_BASE
+    femu = McuEmu(trace=False, max_insn=50000)
+    uc = femu.uc
+    uc.mem_write(RAM, bytes(0x20000))
+    femu.hook_periph_ready()
+    for off in (0x10, 0x18, 0x1c):
+        femu.uc.mem_write(CMD_CTRL_BASE + off, struct.pack('<I', 0))   # pre-set в 0
+    cmd = CmdControlModel(femu)
+
+    def _call(fn, r0, r1):
+        from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1
+        def _st(uc_, a, s, u):
+            aa = a & ~1
+            if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                    FLASH1 <= aa < FLASH1 + 0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x20)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            uc.reg_write(UC_ARM_REG_R0, r0)
+            uc.reg_write(UC_ARM_REG_R1, r1)
+            femu.insn = 0
+            try:
+                uc.emu_start(fn | 1, 0, count=50000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+    cmd.ops.clear()
+    _call(0xC664, 0x200000, 1)   # set bit21 в +0x1c
+    assert any(o == 0x1c and v == 0x200000 for _, o, v in cmd.ops), \
+        f'0xc664(0x200000,set) не поставил бит21 в +0x1c: {cmd.ops}'
+    cmd.ops.clear()
+    _call(0xC664, 0x200000, 0)   # clear bit21 (поле сейчас 0x200000)
+    assert any(o == 0x1c and v == 0 for _, o, v in cmd.ops), \
+        f'0xc664(0x200000,clear) не снял бит21: {cmd.ops}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():

@@ -814,6 +814,34 @@ class SpiFlashModel:
                 self.set(addr, val.to_bytes(max(1, (val.bit_length() + 7) // 8), 'little'))
 
 
+# B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
+CMD_CTRL_BASE = 0x40021000
+CMD_CTRL_FIELDS = (0x10, 0x18, 0x1c)
+
+
+class CmdControlModel:
+    """B1: scoped-вид на кастомный блок управления @0x40021000 — ловит set/clear/pulse
+    битов в полях +0x10/+0x18/+0x1c (примитивы 0xc664/0xc684/0xc6a4; dispatcher 0x2e0c,
+    handler 0x97f4). Записи firmware уже в памяти; модель зеркалирует для инспекции
+    «какие управляющие биты пошевелила команда». Точная таблица ID→бит — через command-ID
+    из RX-парсера (B2) / live."""
+    def __init__(self, emu, base=CMD_CTRL_BASE):
+        self.emu = emu
+        self.base = base
+        self.ops = []      # [(pc, offset, value)] записи в поля блока
+        self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
+                                     None, base, base + 0x40)
+
+    def _on_w(self, uc, access, address, size, value, user):
+        self.ops.append((uc.reg_read(UC_ARM_REG_PC) & 0xFFFFF, address - self.base, value))
+
+    def read(self, off):
+        return struct.unpack('<I', bytes(self.emu.uc.mem_read(self.base + off, 4)))[0]
+
+    def set(self, off, val):
+        self.emu.uc.mem_write(self.base + off, struct.pack('<I', val & 0xFFFFFFFF))
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 
