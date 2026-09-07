@@ -702,6 +702,82 @@ class GpioModel:
         return rep
 
 
+# A2: push-кадры 'a'/'a1' (сборщик 0x211f8 → TX-кольцо @0x10b5, кадр с 0x10b6).
+PUSH_RING_OFF = 0x10B5          # база TX-кольца
+PUSH_FRAME_HDR = 0x61
+PUSH_FRAME_TRAILER = 0x9E
+
+
+def decode_push_frames(data):
+    """Разобрать поток байтов на валидные push-кадры `61 [sub] [len] data[len] chk 9E`
+    (chk=SUM(байты до chk)&0xFF). Возвращает [(raw, sub, fields)]. Чистая функция —
+    работает и для эмулятора, и для live-захвата (перенос из probes/mcu_push_decode.py)."""
+    out = []
+    i, n = 0, len(data)
+    while i < n:
+        if data[i] != PUSH_FRAME_HDR:
+            i += 1
+            continue
+        if n - i < 3:
+            break
+        ln = data[i + 2]
+        e = i + ln + 5
+        if ln > 200 or e > n:
+            i += 1
+            continue
+        if data[e - 1] != PUSH_FRAME_TRAILER or (sum(data[i:e - 2]) & 0xFF) != data[e - 2]:
+            i += 1
+            continue
+        f = bytes(data[i:e])
+        sub = f[1]
+        if sub == 0x30:      # 'a0' телеметрия (LEN=10)
+            fields = {'mode': f[3], 'mask': f[5], 'cur_biased': f[6],
+                      'abs_i290': f[7], 'status': f[8], 'pct_0x236': (f[9] << 8) | f[10],
+                      'flag': f[11], 'bit3_0x244': f[12]}
+        elif sub == 0x31:    # 'a1' батарея (LEN=9)
+            fields = {'v_0x2e6': f[3], 'batt_pct': f[4], 'u16_0x308': (f[5] << 8) | f[6],
+                      'u16_0x30a': (f[7] << 8) | f[8], 'temp_c': f[9],
+                      'range': (f[10] << 8) | f[11]}
+        else:
+            fields = {}
+        out.append((f, sub, fields))
+        i = e
+    return out
+
+
+class UsartTxModel:
+    """A2: модель push-TX pipeline (этап СБОРКИ). Прогоняет РЕАЛЬНЫЙ сборщик 0x211f8
+    (без аргументов — читает фикс. RAM-поля телеметрии), читает TX-кольцо @0x10b5 и
+    декодит кадры через decode_push_frames. Отправку в USART3_DR делает отдельный
+    TX-отправитель (usart_out) — эта модель моделирует именно сборку кадров."""
+    def __init__(self, emu):
+        self.emu = emu
+
+    def assemble(self, run_off=0x211F8, window=(0x10B0, 0x140)):
+        """Прогнать сборщик с текущим RAM-состоянием → список [(raw, sub, fields)]."""
+        uc = self.emu.uc
+
+        def _st(uc_, a, s, u):
+            aa = a & ~1
+            if not (FLASH0 <= aa < FLASH0 + 0x23680 or
+                    FLASH1 <= aa < FLASH1 + 0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _st)
+        try:
+            uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
+            uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+            self.emu.insn = 0
+            try:
+                uc.emu_start(run_off | 1, 0, count=300_000)
+            except UcError:
+                pass
+        finally:
+            uc.hook_del(sh)
+        lo, size = window
+        data = bytes(uc.mem_read(RAM + lo, size))
+        return decode_push_frames(data)
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 

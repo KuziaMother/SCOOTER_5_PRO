@@ -4392,6 +4392,27 @@ def _(run, rng):
             assert 0 <= mode <= 3, f'невалидный режим {mode} порт {p} пин {pin}'
 
 
+# --- A2: UsartTxModel (push-кадры, сборщик 0x211f8) ---
+@t(0x211F8, 'A2: UsartTxModel — push-TX pipeline (этап сборки). Прогон РЕАЛЬНОГО сборщика 0x211f8 (без арг., читает фикс. RAM-поля телеметрии) → TX-кольцо @0x10b5 → декод кадров 61..9E (chk=SUM&0xFF). Seed: mode@0x229=2, u16@0x236=50 → валидный a0-кадр с mode_lo=2 и pct_0x236=50.')
+def _(run, rng):
+    from emulator.mcu_emu import McuEmu, UsartTxModel
+    femu = McuEmu(trace=False, max_insn=400000)
+    uc = femu.uc
+    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
+    uc.mem_write(RAM + 0x229, bytes([2]))              # mode lo
+    uc.mem_write(RAM + 0x236, struct.pack('<H', 50))   # pct (u16@0x236)
+    uc.mem_write(RAM + 0x306, struct.pack('<H', 89))   # батарея %
+    femu.hook_periph_ready()
+    tx = UsartTxModel(femu)
+    frames = tx.assemble()
+    assert frames, 'сборщик не произвёл ни одного валидного push-кадра'
+    a0 = [f for f in frames if f[1] == 0x30]
+    assert a0, 'нет a0-кадра (телеметрия)'
+    raw, sub, fl = a0[0]
+    assert fl['mode'] & 0xF == 2, f"mode_lo != 2: {fl['mode']:02x} (seed @0x229=2)"
+    assert fl['pct_0x236'] == 50, f"pct_0x236 != 50: {fl['pct_0x236']} (seed @0x236=50)"
+
+
 # ---------------------------------------------------------------------------
 
 def main():
