@@ -100,6 +100,7 @@
 - [77. Эмулятор A2: USART TX pipeline (сборка push-кадров) — UsartTxModel + декодер](#77-эмулятор-a2-usart-tx-pipeline-сборка-push-кадров-usarttxmodel-декодер)
 - [78. Эмулятор A3: SPI-flash / NVM — layout, протокол, SpiFlashModel](#78-эмулятор-a3-spi-flash-nvm-layout-протокол-spiflashmodel)
 - [79. Эмулятор B1: командный слой — dispatcher 0x2e0c, блок управления @0x40021000, CmdControlModel](#79-эмулятор-b1-командный-слой-dispatcher-0x2e0c-блок-управления-0x40021000-cmdcontrolmodel)
+- [80. Эмулятор B2: USART3 RX-протокол — ASCII-command-ID, UsartRxCommandTable](#80-эмулятор-b2-usart3-rx-протокол-ascii-command-id-usartrxcommandtable)
 
 ---
 
@@ -7042,3 +7043,56 @@ Scoped-вид на @`0x40021000`: ловит set/clear/pulse операций в
 **Статус:** B1 готово — командный слой разобран (dispatcher + блок управления + примитивы)
 + модель инспекции. Остаток: точная таблица command-ID → бит (ID из RX-парсера `0x1e9e0`/
 «63 CMD» — B2, или live-захват); семантика битов блока @0x40021000 (какие подсистемы).
+
+## 80. Эмулятор B2: USART3 RX-протокол — ASCII-command-ID, UsartRxCommandTable
+
+**Задача (TODO B2):** RX-парсер `0x1e9e0` → полный набор CMD BLE→MCU.
+
+### 80.1. Ключевая находка: команды = ASCII-символы
+
+USART3 RX-протокол (BLE→MCU) использует **ASCII-символы как command-ID**. Парсер `0x1e9e0`
+(1914 Б) содержит **два switch'а** по command-байту ([+1] кадра), оба с одним набором **15 команд**:
+`@ A B C D E F G H I J K \` a c`. **Категории** (классификатор @0x1ea30): **cat=2** — `@ G K c`
+(response/status); **cat=0xa** — остальные 11 (SET-params, копируют [d+2] в [r0+3]).
+
+### 80.2. Таблица команд (main dispatch @0x1eb38)
+
+| Cmd | ASCII | Handler | Эффект (из дизасма) |
+|-----|-------|---------|---------------------|
+| `@` | 0x40 | 0x1EB92 | complement-param: val=0xFF-[d+?], store [r0+6] |
+| `G` | 0x47 | 0x1EBAA | response build: [f+1]=5, [f+2]=0x14, sub="K", chk5 |
+| `K` | 0x4b | 0x1EBDE | response build: [f+2]=0x1b, sub="K" |
+| `c` | 0x63 | 0x1EC14 | response build: [f+2]=0x53, sub="K" |
+| `A` | 0x41 | 0x1EC74 | multi-param SET (bit-extract lsrs#4/#7/#1f/#1a) + resp "d"/0x20 |
+| `B` | 0x42 | 0x1ED90 | SET: [d+3..d+8] → RAM bytes |
+| `C` | 0x43 | 0x1EDBA | SET: [d+3..d+8] → RAM bytes |
+| `F` | 0x46 | 0x1EE86 | variable-length copy (len=[d+2], ≤0x14) → buffer |
+| `D` | 0x44 | 0x1EEB4 | SET с clamps ([d+3]≤0xfe, [d+4]≤0x64) + u16 pairs |
+| `E` | 0x45 | 0x1EF08 | bulk u16 SET (6 пар из [d+3..d+0xf]) |
+| `H` | 0x48 | 0x1EF58 | SET 4B + resp "d"/0x2c len=4 |
+| `I` | 0x49 | 0x1EFC8 | variable-length copy + resp 0x2e |
+| `J` | 0x4a | 0x1F036 | variable-length copy + resp 0x2f |
+| `` ` `` | 0x60 | 0x1F0CA | variable-length copy + resp "d"/0x50 |
+| `a` | 0x61 | 0x1F112 | variable-length copy + resp "d"/0x51 |
+
+**RX-кадр**: `[+1]=cmd(ASCII)`, `[+2]=len/param`, `[+3..]=payload`. Ответные кадры — sub
+`'d'`(0x64)/`'K'`(0x4b) + sum-chk.
+
+### 80.3. UsartRxCommandTable (emulator/mcu_emu.py)
+
+Статический реестр `USART_RX_COMMANDS` {cmd: (handler, cat, desc)} + `usart_rx_cmd()`. Тест
+@t(0x1E9E0): **static-consistency** — capstone-извлечение cmp-иммедиатов из обоих dispatch-регионов
+== ключи таблицы (связывает док с бинарником). **Тесты 170/170 PASS** (было 169).
+
+### 80.4. Связь с B1 — два разных командных канала
+
+- **B1 `0x2e0c`** — внутренний диспетчер, **числовые ID** → pulse битов @0x40021000.
+- **B2 `0x1e9e0`** — USART3 (BLE) RX-парсер, **ASCII-команды** → SET RAM-параметров + response.
+
+`0x1e9e0` НЕ вызывает `0x2e0c` (нет bl в callees) — отдельные слои. B2 = фактический набор
+команд приложения; B1 = управляющий битовый слой.
+
+**Статус:** B2 готово — полный набор CMD BLE→MCU разобран (ASCII-протокол, 15 команд) +
+референс-таблица. Остаток: точная семантика полей каждого handler (RAM-адреса параметров),
+динамическая валидация (прогон 0x1e9e0 с crafted-кадрами — нужна реконструкция RX-контекста:
+гейт byte@0x170 + context-slot stride 0x96).

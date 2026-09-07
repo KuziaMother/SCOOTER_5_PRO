@@ -162,8 +162,13 @@ _(оригинальный список завершён — см. таблиц�
             `0x97f4(ID)` = маппинг ID → импульс (set-then-clear) в +0x10. `CmdControlModel`
             (scoped-вид, ловит операции) в emulator/mcu_emu.py. Тест @t(0xC664), **169/169 PASS**.
             Остаток: таблица command-ID→бит (ID из RX-парсера 0x1e9e0 / B2, или live) + семантика битов.
-      - [ ] B2 **`0x1E9E0` RX-парсер — полный набор CMD BLE→MCU** (ядро уже разобрано) →
-            таблица «что делает каждая команда» (~1д, высокая).
+      - [x] B2 **`0x1E9E0` RX-парсер — полный набор CMD — ГОТОВО (§80).** Ключевая находка:
+            USART3 RX-протокол (BLE→MCU) = **ASCII-command-ID**. 15 команд `@ A B C D E F G H I J K
+            \` a c`, 2 категории (@GKc=cat2 response/status; остальные=cat0xa SET-params). Таблица
+            cmd→handler→эффект (main dispatch 0x1eb38) + RX-кадр ([+1]=cmd, [+2]=len, [+3..]=data).
+            `UsartRxCommandTable`/`USART_RX_COMMANDS` в emulator/mcu_emu.py. Тест @t(0x1E9E0)
+            (static-consistency: таблица ↔ cmp-иммедиаты), **170/170 PASS**. Остаток: семантика
+            полей handler + динамическая валидация (реконструкция RX-контекста).
       - [ ] B3 **`0x1F1CC` сборщик «63 CMD» + `0x1F71C` 24-состоянная машина** → FSM-переходы
             агрегатора MCU→BLE (~1д, средняя).
       **C. Структуры state-machine / LUT (каркас без live-значений):**

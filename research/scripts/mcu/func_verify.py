@@ -4475,6 +4475,42 @@ def _(run, rng):
         f'0xc664(0x200000,clear) не снял бит21: {cmd.ops}'
 
 
+# --- B2: UsartRxCommandTable (USART3 RX-протокол = ASCII-command-ID) ---
+@t(0x1E9E0, 'B2: UsartRxCommandTable — USART3 RX-протокол (BLE→MCU) = ASCII-command-ID. Парсер 0x1e9e0 (1914 Б), 15 команд @ A B C D E F G H I J K ` a c, 2 категории (@GKc=cat2 response/status; остальные=cat0xa SET-params). Таблица сверена с cmp-иммедиатами в dispatch-регионах (static-consistency).')
+def _(run, rng):
+    import os as _os
+    import re
+    from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
+    from emulator.mcu_emu import USART_RX_COMMANDS, usart_rx_cmd
+    fw_path = _os.path.join(_os.path.dirname(__file__), '..', '..', 'images', 'mcu_0007.bin')
+    fw = open(fw_path, 'rb').read()
+    md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
+
+    def cmd_chars(off, end):
+        chars = set()
+        for i in md.disasm(fw[off:end], off):
+            if i.mnemonic == 'cmp':
+                m = re.search(r'#(0x[0-9a-f]+|\d+)', i.op_str)
+                if m:
+                    imm = int(m.group(1), 0)
+                    if 32 <= imm < 127:
+                        chars.add(chr(imm))
+        return chars
+    main_chars = cmd_chars(0x1EB38, 0x1EB94)
+    cat_chars = cmd_chars(0x1EA30, 0x1EA76)
+    table_keys = set(USART_RX_COMMANDS.keys())
+    assert main_chars == table_keys, \
+        f'main dispatch {sorted(main_chars)} != table {sorted(table_keys)}'
+    assert cat_chars == table_keys, \
+        f'classifier {sorted(cat_chars)} != table {sorted(table_keys)}'
+    for ch, (h, cat, desc) in USART_RX_COMMANDS.items():
+        expect = 2 if ch in '@GKc' else 0xA
+        assert cat == expect, f'{ch!r}: cat={cat:#x} != {expect:#x}'
+    assert usart_rx_cmd(0x41)[0] == 0x1EC74   # 'A'
+    assert usart_rx_cmd('a')[0] == 0x1F112
+    assert usart_rx_cmd(0x58) is None          # 'X' — неизвестно
+
+
 # ---------------------------------------------------------------------------
 
 def main():

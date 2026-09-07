@@ -842,6 +842,40 @@ class CmdControlModel:
         self.emu.uc.mem_write(self.base + off, struct.pack('<I', val & 0xFFFFFFFF))
 
 
+# B2: USART3 RX-протокол (BLE→MCU) — ASCII-command-ID. Парсер 0x1e9e0 (1914 Б).
+# 15 команд (ASCII-символы), 2 категории:
+#   cat=2 (@ G K c)      — response/status-команды;
+#   cat=0xa (остальные)  — SET-params (копируют [d+2] в [r0+3]).
+# RX-кадр: [+1]=cmd(ASCII), [+2]=len/param, [+3..]=payload. Ответные кадры строятся
+# с sub 'd'(0x64)/'K'(0x4b) + sum-chk. Точная семантика полей — по handler-адресам.
+USART_RX_PARSER = 0x1E9E0
+USART_RX_COMMANDS = {
+    '@': (0x1EB92, 2,   'complement-param: val=0xFF-[d+?], store [r0+6]'),
+    'G': (0x1EBAA, 2,   'response build: [f+1]=5, [f+2]=0x14, sub="K", chk5'),
+    'K': (0x1EBDE, 2,   'response build: [f+2]=0x1b, sub="K", chk5'),
+    'c': (0x1EC14, 2,   'response build: [f+2]=0x53, sub="K", chk5'),
+    'A': (0x1EC74, 0xA, 'multi-param SET (bit-extract lsrs#4/#7/#1f/#1a) + resp "d"/0x20'),
+    'B': (0x1ED90, 0xA, 'SET: [d+3..d+8] -> RAM bytes'),
+    'C': (0x1EDBA, 0xA, 'SET: [d+3..d+8] -> RAM bytes'),
+    'F': (0x1EE86, 0xA, 'variable-length data copy (len=[d+2], <=0x14) -> buffer'),
+    'D': (0x1EEB4, 0xA, 'SET with clamps ([d+3]<=0xfe,[d+4]<=0x64) + u16 pairs'),
+    'E': (0x1EF08, 0xA, 'bulk u16 SET (6 пар из [d+3..d+0xf])'),
+    'H': (0x1EF58, 0xA, 'SET 4B + resp "d"/0x2c len=4'),
+    'I': (0x1EFC8, 0xA, 'variable-length copy + resp 0x2e'),
+    'J': (0x1F036, 0xA, 'variable-length copy + resp 0x2f'),
+    '`': (0x1F0CA, 0xA, 'variable-length copy + resp "d"/0x50'),
+    'a': (0x1F112, 0xA, 'variable-length copy + resp "d"/0x51'),
+}
+
+
+def usart_rx_cmd(cmd_byte):
+    """B2: идентифицировать USART3-RX команду по байту (ASCII). Возвращает
+    (handler_off, cat, desc) или None для неизвестного cmd."""
+    if isinstance(cmd_byte, int):
+        cmd_byte = chr(cmd_byte)
+    return USART_RX_COMMANDS.get(cmd_byte)
+
+
 class ControlLoop:
     """§74 Автономный моторный контур — time-driven warm-start.
 
