@@ -1,7 +1,7 @@
 import sys, struct, random
 sys.path.insert(0,'..'); sys.path.insert(0,'../../..')
 from unicorn import UcError, UC_HOOK_CODE
-from unicorn.arm_const import *
+from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_SP
 from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
 FW_LEN=len(open(r'D:\SCOOTER_5_PRO\research\images\mcu_0007.bin','rb').read())
 def run(A,B,refA,refB):

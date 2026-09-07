@@ -3,7 +3,7 @@
 Подсвечиваем все обращения к 0x48000xxx (кастомный GPIO-блок) и ldr/str с pool-константами."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from capstone import *
+from capstone import CS_ARCH_ARM, CS_MODE_THUMB, Cs
 
 FW = os.path.join(os.path.dirname(__file__), "..", "..", "images", "mcu_0007.bin")
 fw = open(FW, "rb").read()

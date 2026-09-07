@@ -62,7 +62,7 @@ def main():
         region('ADC 0x40010xxx', 0x40010000, 0x40011000),
     ]
 
-    print(f'=== FOC 0x1a938: периферийный footprint (value=16384) ===')
+    print('=== FOC 0x1a938: периферийный footprint (value=16384) ===')
     print(f'distinct адресов чтений: {len(read_addrs)}, записей: {len(writes)}\n')
     for name, f in regions:
         rs = sorted(a for a in read_addrs if f(a))
@@ -75,11 +75,11 @@ def main():
                     print(f'  ЧТЕНИЕ {a:#x} (off {a - 0x40012000 if f(a) else 0:#x}) '
                           f'×{len(pcs)}: pc=' + ', '.join(f'{p:#x}' for p in pcs[:6]))
             if ws:
-                print(f'  ЗАПИСИ: ' + ', '.join(f'{a:#x}<-{v:#x}' for a, v in ws))
+                print('  ЗАПИСИ: ' + ', '.join(f'{a:#x}<-{v:#x}' for a, v in ws))
     # все периферийные адреса (любой регион) для полноты
     allr = sorted(a for a in read_addrs if 0x40000000 <= a < 0x50000000)
     allw = sorted(set(a for _, a, s, v in writes if 0x40000000 <= a < 0x50000000))
-    print(f'\n=== ВСЕ periph адреса (0x40000000-0x50000000) ===')
+    print('\n=== ВСЕ periph адреса (0x40000000-0x50000000) ===')
     print(f'ЧТЕНИЯ ({len(allr)}): {", ".join(hex(a) for a in allr) or "нет"}')
     print(f'ЗАПИСИ ({len(allw)}): {", ".join(hex(a) for a in allw) or "нет"}')
 
