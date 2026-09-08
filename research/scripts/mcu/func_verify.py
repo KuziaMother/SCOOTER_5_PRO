@@ -5699,6 +5699,23 @@ def _(run, rng):
         assert got == exp, f'code={code:#x} f0={f0:#x} fc={fc:#x} f10={f10:#x} f14={f14:#x}: got {got} want {exp}'
 
 
+# --- E2-batch32: XOR 16-байт блоков ---
+@t(0x1A5FA, 'E2-b32: 0x1a5fa — XOR-блок: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 байт). Вериф idx=0,1,2.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    dst = _R + 0x100; src = _R + 0x300
+    srcbuf = bytes((i * 5 + 1) & 0xFF for i in range(64))
+    for idx in (0, 1, 2):
+        dstpre = bytes([0xFF] * 20)
+        r0, emu = _fresh_call(0x1A5FA, args=(idx, dst, src), extra_ram=[(dst, dstpre), (src, srcbuf)])
+        got = bytes(emu.uc.mem_read(dst, 16))
+        exp = bytearray(16)
+        for r3 in range(4):
+            for i in range(4):
+                exp[r3 * 4 + i] = (0xFF ^ srcbuf[(4 * idx + r3) * 4 + i]) & 0xFF
+        assert got == bytes(exp), f'idx={idx}: got={got.hex()} want={bytes(exp).hex()}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
