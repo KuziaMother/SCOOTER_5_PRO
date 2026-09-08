@@ -5048,6 +5048,14 @@ def _(run, rng):
         assert buf == code.to_bytes(2, 'little'), f'code={code:#06x}: buf={buf.hex()}'
 
 
+@t(0x0218C, 'E2-b5: 0x0218c — I2C read reg 0x83. 0x0218c() -> bl 0x1c7b(op=8, reg=0x83, buf=&RAM, len=2); результат -> u16@0xB42 (если != 0xFFFF). Вериф bl-intercept.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    cap, emu = _intercept(0x0218C, 0x1C7B)
+    assert cap.get('r0') == 8 and cap.get('r1') == 0x83 and cap.get('r3') == 2, f'{cap}'
+    assert cap.get('r2', 0) >= _R, f'buf не в RAM: {cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
