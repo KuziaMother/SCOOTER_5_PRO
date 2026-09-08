@@ -5644,6 +5644,19 @@ def _(run, rng):
         assert d10 == 0xBEEF, f'dst[+0x10]={d10:#x}'
 
 
+# --- E2-batch29: memcpy (word-fast-path + byte-tail) ---
+@t(0x19A68, 'E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy если оба 4-aligned, else byte; tail по байтам. Вериф len=0..64 (aligned+unaligned).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for ln in (0, 1, 3, 4, 5, 7, 16, 17, 64):
+        src = _R + 0x100; dst = _R + 0x300
+        buf = bytes((i * 7 + 3) & 0xFF for i in range(ln))
+        dstpre = bytes([0xAA] * (ln + 4))
+        r0, emu = _fresh_call(0x19A68, args=(dst, src, ln), extra_ram=[(src, buf), (dst, dstpre)])
+        got = bytes(emu.uc.mem_read(dst, ln)) if ln else b''
+        assert got == buf, f'len={ln}: got={got.hex()} want={buf.hex()}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
