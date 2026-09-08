@@ -5903,6 +5903,41 @@ for _d, _h in sorted(_R3FIX.items()):
     t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}(r0, r3=1) [r3-fix]')(_mk_r3fix(_d, _h))
 
 
+# --- E2-batch40: толстые fixed-point обёртки -> 0x1a0f9 / 0x1a185 ---
+# 0x19fbe(a)  -> 0x1a0f9(a, 0, 0, 0x96)
+# 0x19fae(a,b)-> 0x1a0f9(a+b, 0, b<<31, 0x96)   (b<<31 = 0x80000000 если b<0)
+# 0x19fcc(x)  -> 0x1a185(abs(x), 0, 0, 0)       (abs: sign/pool на стек, регистры чистые)
+# (0x19ab0 отложен: 50-инст fixed-point normalize, нет ручной модели)
+
+
+def _t_19fbe(run, rng):
+    for a in (5, 123456, -7):
+        cap, _ = _intercept(0x19FBE, 0x1A0F9, args=(a & 0xFFFFFFFF, 0, 0, 0))
+        assert cap.get('r0') == (a & 0xFFFFFFFF) and cap.get('r1') == 0 \
+            and cap.get('r2') == 0 and cap.get('r3') == 0x96, f'a={a}: {cap}'
+
+
+def _t_19fae(run, rng):
+    for a, b in ((100, 200), (-50, 30), (100, -5), (0x40000000, 0x10000000)):
+        cap, _ = _intercept(0x19FAE, 0x1A0F9, args=(a & 0xFFFFFFFF, b & 0xFFFFFFFF, 0, 0))
+        exp_r0 = (a + b) & 0xFFFFFFFF
+        exp_r2 = (b << 31) & 0xFFFFFFFF
+        assert cap.get('r0') == exp_r0 and cap.get('r1') == 0 \
+            and cap.get('r2') == exp_r2 and cap.get('r3') == 0x96, f'a={a},b={b}: {cap}'
+
+
+def _t_19fcc(run, rng):
+    for x in (5, -5, 0, 123456, -123456):
+        cap, _ = _intercept(0x19FCC, 0x1A185, args=(x & 0xFFFFFFFF, 0, 0, 0))
+        assert cap.get('r0') == (abs(x) & 0xFFFFFFFF) and cap.get('r1') == 0 \
+            and cap.get('r2') == 0 and cap.get('r3') == 0, f'x={x}: {cap}'
+
+
+t(0x19FBE, 'E2-b40: 0x19fbe(a) -> 0x1a0f9(a,0,0,0x96) [fixed-point wrapper]')(_t_19fbe)
+t(0x19FAE, 'E2-b40: 0x19fae(a,b) -> 0x1a0f9(a+b,0,b<<31,0x96) [fixed-point wrapper]')(_t_19fae)
+t(0x19FCC, 'E2-b40: 0x19fcc(x) -> 0x1a185(abs(x),0,0,0) [abs wrapper]')(_t_19fcc)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
