@@ -5807,6 +5807,25 @@ for _addr, _ch in sorted(_OD39D_FAM.items()):
     t(_addr, f'E2-b36: 0x{_addr:05x} -> 0x0d39d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od39d(_addr, _ch))
 
 
+# --- E2-batch37: 0x0d46d delegate family (гated channel-service, брат 0x0d39d) ---
+_OD46D_FAM = {0x0D70C: 0x9, 0x0D7AC: 0xB, 0x0D7FC: 0xC, 0x0D824: 0xA}
+
+
+def _mk_od46d(addr, ch):
+    def _test(run, rng):
+        from emulator.mcu_emu import RAM as _R
+        import struct as _st
+        cap, _emu = _intercept(addr, 0x0D46D,
+                               extra_ram=[(_R + 0x8C, _st.pack('<I', 1 << ch))])
+        assert cap.get('r0') == ch, \
+            f'0x{addr:05x}: r0={cap.get("r0"):#x} want 0x{ch:x}'
+    return _test
+
+
+for _addr, _ch in sorted(_OD46D_FAM.items()):
+    t(_addr, f'E2-b37: 0x{_addr:05x} -> 0x0d46d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od46d(_addr, _ch))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
