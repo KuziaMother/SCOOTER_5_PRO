@@ -5557,6 +5557,23 @@ def _(run, rng):
     assert block == bytes(0x13), f'block not zeroed: {block.hex()}'
 
 
+# --- E2-batch25: event-очередь push (stateful) ---
+@t(0x04BC0, 'E2-b25: 0x04bc0 — event-очередь push: если idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (через critsec). Вериф idx=2 (write) и idx=7 (skip).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    r0, emu = _fresh_call(0x04BC0, args=(2, 0x1234, 0xABCD))
+    uc = emu.uc
+    base = _R + 0x164C + 2 * 16
+    ptr = _st.unpack_from('<I', bytes(uc.mem_read(base + 8, 4)))[0]
+    val = _st.unpack_from('<I', bytes(uc.mem_read(base + 0xC, 4)))[0]
+    assert ptr == 0x1234 and val == 0xABCD, f'idx=2: ptr={ptr:#x} val={val:#x}'
+    r0, emu2 = _fresh_call(0x04BC0, args=(7, 0x1234, 0xABCD))
+    base7 = _R + 0x164C + 7 * 16
+    p7 = _st.unpack_from('<I', bytes(emu2.uc.mem_read(base7 + 8, 4)))[0]
+    assert p7 == 0, f'idx=7: expected skip, ptr={p7:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
