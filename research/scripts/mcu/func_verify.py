@@ -6044,6 +6044,25 @@ t(0x09F64, 'E2-b44: 0x09f64 init-group (bl 0x9b45 -> 0x9f71)')(_mk_init_group(0x
 # Классифицированы как «не изолируются» (см. PROGRAM.md).
 
 
+# --- E2-batch45: init-group 0x09b44 + protocol-parser magic-gate 0x0df10 ---
+t(0x09B44, 'E2-b45: 0x09b44 init-group (5 bl: 0x9ddd->...->0x9db5)')(_mk_init_group(0x09B44, 0x9DB5))
+
+
+def _t_0df10(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    buf = _R + 0x5000
+    # 0x0df10 = protocol parser: magic-gate byte[struct+2]==0xaa.
+    # Ветка magic-mismatch (детерминированная, вериф): возвращает byte[struct+2].
+    for b2 in (0x55, 0x01, 0xFF):
+        data = _st.pack('<H', 10) + bytes([b2, 0, 0]) + bytes(20)
+        r0, emu = _fresh_call(0x0DF10, args=(buf,), extra_ram=[(buf, data)])
+        assert r0 == b2, f'b2={b2:#x}: r0={r0:#x} want {b2:#x}'
+
+
+t(0x0DF10, 'E2-b45: 0x0df10 protocol-parser magic-gate [s+2]==0xaa (mismatch->ret byte[2])')(_t_0df10)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
