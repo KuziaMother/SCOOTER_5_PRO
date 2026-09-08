@@ -5514,6 +5514,37 @@ def _(run, rng):
         assert stored == exp, f'stored={stored:#x} want {exp:#x}'
 
 
+# --- E2-batch23: set/clear-биты (прод.) + signed-prep варианты + memmove ---
+_setclr(0x09844, 0x100, 'E2-b23: 0x09844 — set/clear bit0x100 в *(u16@r0). Вериф set+clear.')
+_setclr(0x0985C, 0x200, 'E2-b23: 0x0985c — set/clear bit0x200 в *(u16@r0). Вериф set+clear.')
+
+
+@t(0x162CE, 'E2-b23: 0x162ce — signed-подготовка к делению (вариант). r1==0 -> 0x7FFFFFFF (r2>=0) / 0x80000000 (r2<0).')
+def _(run, rng):
+    for r2 in (5, -5):
+        r0, _e = _fresh_call(0x162CE, args=(r2 & 0xFFFFFFFF, 0))
+        exp = 0x7FFFFFFF if r2 >= 0 else 0x80000000
+        assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
+
+
+@t(0x16328, 'E2-b23: 0x16328 — signed-подготовка к делению (вариант 2). r1==0 -> 0x7FFFFFFF / 0x80000000.')
+def _(run, rng):
+    for r2 in (5, -5):
+        r0, _e = _fresh_call(0x16328, args=(r2 & 0xFFFFFFFF, 0))
+        exp = 0x7FFFFFFF if r2 >= 0 else 0x80000000
+        assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
+
+
+@t(0x07FB8, 'E2-b23: 0x07fb8 — memmove: копирует len байт из src(r0) в dst(r1), возвращает 1. Вериф 5-байтовый буфер.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    src = bytes([0x11, 0x22, 0x33, 0x44, 0x55])
+    r0, emu = _fresh_call(0x07FB8, args=(_R + 0x100, _R + 0x200, len(src)),
+                          extra_ram=[(_R + 0x100, src)])
+    dst = bytes(emu.uc.mem_read(_R + 0x200, len(src)))
+    assert r0 == 1 and dst == src, f'r0={r0} dst={dst.hex()}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
