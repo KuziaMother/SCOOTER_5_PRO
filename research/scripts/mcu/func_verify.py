@@ -4933,10 +4933,11 @@ def _(run, rng):
     assert runf(9, 0xe, 0)[5] == (9 & 0x1F) << 5
 
 
-def _intercept(off, target, max_insn=20000):
+def _intercept(off, target, max_insn=20000, arg=None):
     """Свежий McuEmu; стоп на входе bl-цели `target`, снимаем R0-R3. -> (dict, emu).
 
-    Для тонких делегаторов: верифицируем, что функция вызывает хелпер с нужными аргументами."""
+    Для тонких делегаторов: верифицируем, что функция вызывает хелпер с нужными аргументами.
+    `arg` — значение R0 на входе (по умолчанию 0)."""
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
     emu = _M(max_insn=max_insn)
@@ -4961,6 +4962,8 @@ def _intercept(off, target, max_insn=20000):
         uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
         for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3):
             uc.reg_write(r, 0)
+        if arg is not None:
+            uc.reg_write(UC_ARM_REG_R0, arg)
         emu.insn = 0
         try:
             uc.emu_start(off | 1, 0, count=max_insn)
@@ -4996,6 +4999,29 @@ def _mk_i2c2_wr(addr, reg, ln):
 
 for _addr, (_reg, _ln) in sorted(_I2C2_WR.items()):
     t(_addr, f'E2-b2: I2C2-wr 0x{_addr:05x} -> 0x1c61(op=8, reg=0x{_reg:x}, len={_ln}) [bl-intercept]')(_mk_i2c2_wr(_addr, _reg, _ln))
+
+
+# --- E2-batch3: median (выборка) + I2C2-read делегатор ---
+@t(0x0170C, 'E2-b3: 0x0170c — выборка ADC-сэмпла по индексу. 0x0170c(arg=r0) -> r0 = u16[RAM+0xB7E + arg*2] (arg<2). Копирует выбранный сэмпл в 7 слотов локального массива, sort+center (no-op на константе) -> возвращает его. Каталог «медиана из 7» неточен. Вериф 10/10.')
+def _(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    for arg in (0, 1):
+        for _ in range(3):
+            vals = [rng.getrandbits(16) for _ in range(7)]
+            r0, _emu = _fresh_call(0x0170C, args=(arg,),
+                                   extra_ram=[(_R + 0xB7E, _st.pack('<7H', *vals))])
+            assert r0 == vals[arg], f'arg={arg}: got {r0:#x} want {vals[arg]:#x}'
+
+
+@t(0x01BDC, 'E2-b3: 0x01bdc — I2C2 read (code16). 0x01bdc(code=r0) -> bl 0x1e73(op=8, dev=0x3e, r2=1, buf=[sp+4]); buf = [code&0xFF, code>>8] (LE). Вериф bl-intercept.')
+def _(run, rng):
+    for code in (0x1234, 0xABCD, 0x00FF):
+        cap, emu = _intercept(0x01BDC, 0x1E73, arg=code)
+        assert cap.get('r0') == 8 and cap.get('r1') == 0x3e and cap.get('r2') == 1, \
+            f'code={code:#06x}: {cap}'
+        buf = bytes(emu.uc.mem_read(cap['r3'], 2))
+        assert buf == code.to_bytes(2, 'little'), f'code={code:#06x}: buf={buf.hex()}'
 
 
 # ---------------------------------------------------------------------------
