@@ -5716,6 +5716,16 @@ def _(run, rng):
         assert got == bytes(exp), f'idx={idx}: got={got.hex()} want={bytes(exp).hex()}'
 
 
+# --- E2-batch33: exponent-ramp (2^(t-0x7F)) ---
+@t(0x1A010, 'E2-b33: 0x1a010 — exponent-ramp: для r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (линейный рост 2^0..2^23). Вериф sweep t=0x78..0x96.')
+def _(run, rng):
+    for t in range(0x78, 0x97):
+        r0 = t << 23
+        r, _e = _fresh_call(0x1A010, args=(r0,))
+        exp = 0 if t < 0x7F else (1 << (t - 0x7F))
+        assert r == exp, f't={t:#x}: got {r:#x} want {exp:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
