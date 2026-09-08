@@ -5678,6 +5678,27 @@ def _(run, rng):
         assert got == exp, f'r1={r1:#x} f14={f14:#x} f18={f18:#x}: got {got} want {exp}'
 
 
+# --- E2-batch31: two-part bit check ---
+@t(0x130F2, 'E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Вериф: 1 если оба бита set (6 кейсов).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    ptr = _R + 0x200
+    def chk(code, f0, fc, f10, f14):
+        pre = [(ptr + 0, _st.pack('<H', f0)), (ptr + 0xC, _st.pack('<H', fc)),
+               (ptr + 0x10, _st.pack('<H', f10)), (ptr + 0x14, _st.pack('<H', f14))]
+        r0, _e = _fresh_call(0x130F2, args=(ptr, code), extra_ram=pre)
+        return r0 & 1
+    cases = [
+        (0x124, 0x02, 0x10, 0, 0, 1), (0x124, 0x02, 0x00, 0, 0, 0),
+        (0x124, 0x00, 0x10, 0, 0, 0), (0x144, 0x02, 0, 0x10, 0, 1),
+        (0x144, 0x02, 0, 0x00, 0, 0), (0x104, 0x02, 0, 0, 0x10, 1),
+    ]
+    for code, f0, fc, f10, f14, exp in cases:
+        got = chk(code, f0, fc, f10, f14)
+        assert got == exp, f'code={code:#x} f0={f0:#x} fc={fc:#x} f10={f10:#x} f14={f14:#x}: got {got} want {exp}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
