@@ -5170,6 +5170,26 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == c, f'{b!r}: got {r0:#x} want {c:#x}'
 
 
+# --- E2-batch9: byte bit-permutation + NOT ---
+@t(0x0BF58, 'E2-b9: 0x0bf58 — byte bit-permutation + NOT. 0x0bf58(ptr=r0, sel=r1, mode=r2), mode=1: out=RAM+0x17F9C = ~((b1<<3)|(b0<<2)|(b3<<1)|b2)&0xFF, затем маска по sel (0->0xFE,1->0xFD,2->0xFB,3->0xF7; иначе 0xFF); bN=бит N байта [ptr]. Функция также инициализирует соседний struct. Вериф по формуле.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x3000
+
+    def bitperm(b, sel):
+        p = (~(((b >> 1) & 1) << 3 | (b & 1) << 2 | ((b >> 3) & 1) << 1
+               | ((b >> 2) & 1))) & 0xFF
+        m = {0: 0xFE, 1: 0xFD, 2: 0xFB, 3: 0xF7}
+        return p & m[sel] if sel in m else 0xFF
+    for b in (0x00, 0xFF, 0x5A, 0xA5, 0x12):
+        for sel in range(4):
+            _r0, emu = _fresh_call(0x0BF58, args=(P, sel, 1),
+                                   extra_ram=[(P, bytes([b]))])
+            out = emu.uc.mem_read(_R + 0x17F9C, 1)[0]
+            assert out == bitperm(b, sel), \
+                f'b={b:#04x} sel={sel}: got {out:#x} want {bitperm(b, sel):#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
