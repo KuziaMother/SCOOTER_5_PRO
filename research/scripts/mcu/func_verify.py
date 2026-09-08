@@ -5938,6 +5938,22 @@ t(0x19FAE, 'E2-b40: 0x19fae(a,b) -> 0x1a0f9(a+b,0,b<<31,0x96) [fixed-point wrapp
 t(0x19FCC, 'E2-b40: 0x19fcc(x) -> 0x1a185(abs(x),0,0,0) [abs wrapper]')(_t_19fcc)
 
 
+# --- E2-batch41: periph-config init 0x0cb10 ---
+# 0x0cb10 = init таймера/периферии (регистры 0x400028xx): последовательность записи
+#   [0x40002824] = 0xca -> 0x53 -> 0xff (финал 0xff); [0x40002808] = base|r0.
+# Детерминированное (не зависит от state): финальный константный [0x40002824]==0xff.
+
+
+def _t_0cb10(run, rng):
+    import struct as _st
+    r0, emu = _fresh_call(0x0CB10, args=(0,))
+    a = _st.unpack('<I', bytes(emu.uc.mem_read(0x40002824, 4)))[0]
+    assert a == 0xFF, f'[0x40002824]={a:#x} want 0xff'
+
+
+t(0x0CB10, 'E2-b41: 0x0cb10 periph-init -> [0x40002824]=0xff (seq ca->53->ff)')(_t_0cb10)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
