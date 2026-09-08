@@ -5278,6 +5278,43 @@ def _(run, rng):
     assert cap.get('r1') == 0x40010818, f'{cap}'
 
 
+# --- E2-batch14: bulk erase + u16-обмен + retry/toggle (bl-intercept) ---
+@t(0x07EE8, 'E2-b14: 0x07ee8 — bulk erase init. Инициирует stack-буфер + bl 0x11d6(ptr, r1=0x800 [сектор 0x800B]). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x07EE8, 0x11D7)
+    assert cap.get('r1') == 0x800, f'{cap}'
+
+
+@t(0x07FDC, 'E2-b14: 0x07fdc — bulk erase body. Тело цикла: bl 0x11d6(ptr, r1=0x800). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x07FDC, 0x11D7)
+    assert cap.get('r1') == 0x800, f'{cap}'
+
+
+@t(0x057F8, 'E2-b14: 0x057f8 — u16@0xCB3 -> байты @0xCB3/0xCB5 + bl 0x13bb8(r0=1). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x057F8, 0x13BB9)
+    assert cap.get('r0') == 1, f'{cap}'
+
+
+@t(0x05818, 'E2-b14: 0x05818 — байты @0xCB3/0xCB5 -> u16@0xCB3 + bl 0x13bb8(r0=0). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x05818, 0x13BB9)
+    assert 'r0' in cap, f'{cap}'
+
+
+@t(0x0236C, 'E2-b14: 0x0236c — retry-счётчик I2C. Успех -> bl 0x21dc; @0xA76=0, @0xA75++. bl-intercept (достигает хелпера).')
+def _(run, rng):
+    cap, _emu = _intercept(0x0236C, 0x21DD)
+    assert 'r0' in cap, f'{cap}'
+
+
+@t(0x09B08, 'E2-b14: 0x09b08 — toggle bit3 byte@0xA71 (до 3 попыток, гейт 0x2a5c). bl-intercept (достигает хелпера).')
+def _(run, rng):
+    cap, _emu = _intercept(0x09B08, 0x2A5D)
+    assert 'r0' in cap, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
