@@ -5388,6 +5388,37 @@ def _(run, rng):
     assert 'r0' not in cap_nofire, f'no-fire: достиг 0x173cc (ошибка): {cap_nofire}'
 
 
+# --- E2-batch19: счётчики с насыщением (stateful, inc + saturation) ---
+@t(0x12C24, 'E2-b19: 0x12c24 — счётчик с насыщением. GATE=bit0(byte@0xB76), COUNTER=u16@0xB7A. Если gate set: COUNTER++; если COUNTER>0xC8 -> clear gate + COUNTER=0. Вериф inc (cnt 5->6) и sat (cnt 0xC8->0, gate clr).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    _r0, emu = _fresh_call(0x12C24, extra_ram=[(_R + 0xB76, b'\x01'),
+                                                (_R + 0xB7A, _st.pack('<H', 5))])
+    cnt = _st.unpack_from('<H', bytes(emu.uc.mem_read(_R + 0xB7A, 2)))[0]
+    assert cnt == 6, f'inc: got {cnt} want 6'
+    _r0, emu2 = _fresh_call(0x12C24, extra_ram=[(_R + 0xB76, b'\x01'),
+                                                 (_R + 0xB7A, _st.pack('<H', 0xC8))])
+    gate = emu2.uc.mem_read(_R + 0xB76, 1)[0]
+    cnt2 = _st.unpack_from('<H', bytes(emu2.uc.mem_read(_R + 0xB7A, 2)))[0]
+    assert cnt2 == 0 and gate == 0, f'sat: cnt={cnt2} gate={gate}'
+
+
+@t(0x12E64, 'E2-b19: 0x12e64 — счётчик с насыщением #2. GATE=bit2(byte@0xB76), COUNTER=u16@0xB7C. Аналогично 0x12c24 (кап 0xC8). Вериф inc (cnt 5->6) и sat (cnt 0xC8->0, gate clr).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    _r0, emu = _fresh_call(0x12E64, extra_ram=[(_R + 0xB76, b'\x04'),
+                                                (_R + 0xB7C, _st.pack('<H', 5))])
+    cnt = _st.unpack_from('<H', bytes(emu.uc.mem_read(_R + 0xB7C, 2)))[0]
+    assert cnt == 6, f'inc: got {cnt} want 6'
+    _r0, emu2 = _fresh_call(0x12E64, extra_ram=[(_R + 0xB76, b'\x04'),
+                                                 (_R + 0xB7C, _st.pack('<H', 0xC8))])
+    gate = emu2.uc.mem_read(_R + 0xB76, 1)[0]
+    cnt2 = _st.unpack_from('<H', bytes(emu2.uc.mem_read(_R + 0xB7C, 2)))[0]
+    assert cnt2 == 0 and gate == 0, f'sat: cnt={cnt2} gate={gate}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
