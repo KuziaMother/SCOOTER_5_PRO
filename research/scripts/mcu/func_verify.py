@@ -5619,6 +5619,31 @@ def _(run, rng):
         assert d8 == 0x12345678, f'dst[+8]={d8:#x}'
 
 
+# --- E2-batch28: u16-merge struct-полей (чистые arg-указатели) ---
+@t(0x10734, 'E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Вериф (2 init).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    dst = _R + 0x100; src = _R + 0x200
+    srcbuf = bytearray(0x20)
+    for i in range(8):
+        _st.pack_into('<H', srcbuf, i * 2, 1 << i)
+    _st.pack_into('<H', srcbuf, 0x10, 0xBEEF)
+    exp_or = 0xFF
+    for init0, init1c in [(0x3040, 0xFFFF), (0xFFFF, 0x0200)]:
+        dstbuf = bytearray(0x20)
+        _st.pack_into('<H', dstbuf, 0, init0)
+        _st.pack_into('<H', dstbuf, 0x1C, init1c)
+        r0, emu = _fresh_call(0x10734, args=(dst, src), extra_ram=[(dst, bytes(dstbuf)), (src, bytes(srcbuf))])
+        uc = emu.uc
+        d0 = _st.unpack_from('<H', bytes(uc.mem_read(dst + 0, 2)))[0]
+        d1c = _st.unpack_from('<H', bytes(uc.mem_read(dst + 0x1C, 2)))[0]
+        d10 = _st.unpack_from('<H', bytes(uc.mem_read(dst + 0x10, 2)))[0]
+        assert d0 == (init0 & 0x3040) | exp_or, f'init0={init0:#x}: dst[0]={d0:#x}'
+        assert d1c == init1c & 0xF7FF, f'dst[+0x1C]={d1c:#x} want {init1c & 0xF7FF:#x}'
+        assert d10 == 0xBEEF, f'dst[+0x10]={d10:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
