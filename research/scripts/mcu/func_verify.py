@@ -5475,6 +5475,45 @@ def _(run, rng):
         assert r0 == exp, f'A={A:#x} B={B:#x}: got {r0:#x} want {exp:#x}'
 
 
+# --- E2-batch22: set/clear-биты + signed-div-prep + sign-extend ---
+def _setclr(off, bit, desc):
+    @t(off, desc)
+    def _(run, rng):
+        from emulator.mcu_emu import RAM as _R
+        import struct as _st
+        for mode, init in ((1, 0), (0, 0xFFFF)):
+            _r0, emu = _fresh_call(off, args=(_R + 0x300, mode),
+                                   extra_ram=[(_R + 0x300, _st.pack('<H', init))])
+            v = _st.unpack_from('<H', bytes(emu.uc.mem_read(_R + 0x300, 2)))[0]
+            exp = (init | bit) if mode else (init & ~bit) & 0xFFFF
+            assert v == exp, f'mode={mode} init={init:#x}: got {v:#x} want {exp:#x}'
+    return _
+
+
+_setclr(0x097CA, 0x400, 'E2-b22: 0x097ca — set/clear bit0x400 в *(u16@r0): mode!=0 -> |=, else &=~. Вериф set+clear.')
+_setclr(0x0982C, 0x1, 'E2-b22: 0x0982c — set/clear bit0 в *(u16@r0). Вериф set+clear.')
+_setclr(0x106A0, 0x40, 'E2-b22: 0x106a0 — set/clear bit0x40 в *(u16@r0). Вериф set+clear.')
+
+
+@t(0x16288, 'E2-b22: 0x16288 — signed-подготовка к делению. При r1==0: возвращает 0x7FFFFFFF (если r2>=0) или 0x80000000 (если r2<0). Вериф оба знака.')
+def _(run, rng):
+    for r2 in (5, -5):
+        r0, _e = _fresh_call(0x16288, args=(r2 & 0xFFFFFFFF, 0))
+        exp = 0x7FFFFFFF if r2 >= 0 else 0x80000000
+        assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
+
+
+@t(0x08F58, 'E2-b22: 0x08f58 — sign-extend: читает s8@0xFC8 -> i16 -> u16@0x135E, возвращает. Вериф -1/127/-128.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    for sb, exp in ((0xFF, 0xFFFF), (0x7F, 0x7F), (0x80, 0xFF80)):
+        r0, emu = _fresh_call(0x08F58, extra_ram=[(_R + 0xFC8, bytes([sb]))])
+        assert (r0 & 0xFFFF) == exp, f'sb={sb:#x}: got {r0&0xffff:#x} want {exp:#x}'
+        stored = _st.unpack_from('<H', bytes(emu.uc.mem_read(_R + 0x135E, 2)))[0]
+        assert stored == exp, f'stored={stored:#x} want {exp:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
