@@ -6085,6 +6085,43 @@ def _t_19f7c(run, rng):
 t(0x19F7C, 'E2-b46: 0x19f7c compute gate: r0_out = r0 if (signed)r2>0 else 0')(_t_19f7c)
 
 
+# --- E2-batch47: тонкие делегаторы + init-группы (цепочки 0xc625/0x8589/0x5971/0x59a5) ---
+def _t_05874(run, rng):
+    cap, _emu = _intercept(0x05874, 0x597D)
+    assert cap.get('r0') == 1, f'r0={cap.get("r0"):#x} want 1'
+
+def _t_058f6(run, rng):
+    cap, _emu = _intercept(0x058F6, 0x597D)
+    assert cap.get('r0') == 0x10, f'r0={cap.get("r0"):#x} want 0x10'
+
+def _t_030a6(run, rng):
+    import struct as _st
+    cap, emu = _intercept(0x030A6, 0x59A5, max_insn=30000)
+    assert cap, 'last bl 0x59a5 not reached'
+    raw = bytes(emu.uc.mem_read(cap['r0'], 8))
+    u32, b4, b5, b6 = _st.unpack('<I', raw[0:4])[0], raw[4], raw[5], raw[6]
+    assert (u32, b4, b5, b6) == (0x800, 0, 8, 0), f'struct={u32:#x},{b4},{b5},{b6}'
+
+def _t_032f4(run, rng):
+    import struct as _st
+    cap, emu = _intercept(0x032F4, 0x59A5, max_insn=30000)
+    assert cap, 'last bl 0x59a5 not reached'
+    raw = bytes(emu.uc.mem_read(cap['r0'], 8))
+    u32, b4, b5, b6 = _st.unpack('<I', raw[0:4])[0], raw[4], raw[5], raw[6]
+    assert (u32, b4, b5, b6) == (0x80, 0, 12, 0), f'struct={u32:#x},{b4},{b5},{b6}'
+
+def _t_03168(run, rng):
+    cap, _emu = _intercept(0x03168, 0x5971, max_insn=30000)
+    assert cap, 'bl 0x5971 not reached (gate 0xcc69 failed)'
+    assert cap.get('r0') == 0x100000, f'r0={cap.get("r0"):#x} want 0x100000'
+
+t(0x05874, 'E2-b47: 0x05874 delegate -> bl 0x597d(r0=1)')(_t_05874)
+t(0x058F6, 'E2-b47: 0x058f6 delegate -> bl 0x597d(r0=0x10)')(_t_058f6)
+t(0x030A6, 'E2-b47: 0x030a6 init-group -> bl 0x59a5(sp) [sp]={0x800,0,8,0}')(_t_030a6)
+t(0x032F4, 'E2-b47: 0x032f4 init-group -> bl 0x59a5(sp) [sp]={0x80,0,12,0}')(_t_032f4)
+t(0x03168, 'E2-b47: 0x03168 init-group (gate 0xcc69) -> bl 0x5971(r0=0x100000)')(_t_03168)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
