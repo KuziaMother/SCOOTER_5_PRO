@@ -5981,6 +5981,22 @@ t(0x123C0, 'E2-b42: 0x123c0 -> 0xb855(0x20000dd8) [fixed struct-ptr]')(_t_123c0)
 t(0x139AC, 'E2-b42: 0x139ac -> 0x13c79(sp) [writes 3 to stack, passes ptr]')(_t_139ac)
 
 
+# --- E2-batch43: последние тонкие делегаторы (класс исчерпан) ---
+def _t_02a5c(run, rng):
+    cap, _ = _intercept(0x02A5C, 0x01BDD, arg=0)
+    assert cap.get('r0') == 0x9A, f'{cap}'
+
+
+def _t_08afc(run, rng):
+    for arg in (0x1234, 7):
+        cap, _ = _intercept(0x08AFC, 0x0218D, args=(arg, 0, 0, 0))
+        assert cap.get('r0') == arg, f'arg={arg}: {cap}'
+
+
+t(0x02A5C, 'E2-b43: 0x02a5c -> 0x1bdd(0x9a) [query bit, returns res&1]')(_t_02a5c)
+t(0x08AFC, 'E2-b43: 0x08afc -> 0x218d(r0) [passthrough, stores result]')(_t_08afc)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
