@@ -5574,6 +5574,26 @@ def _(run, rng):
     assert p7 == 0, f'idx=7: expected skip, ptr={p7:#x}'
 
 
+# --- E2-batch26: инициализация event-кольца ---
+@t(0x04BE8, 'E2-b26: 0x04be8 — init event-кольца. u32@0xB4C=0; для i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Вериф: pre-set -> все очищены.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    pre = [(_R + 0xB4C, b'\x11\x22\x33\x44'),
+           (_R + 0x164C + 2 * 16, b'\xAA\xBB\xCC\xDD\xEE\xFF\x00\x00')]
+    r0, emu = _fresh_call(0x04BE8, extra_ram=pre)
+    uc = emu.uc
+    idx = _st.unpack_from('<I', bytes(uc.mem_read(_R + 0xB4C, 4)))[0]
+    assert idx == 0, f'index: got {idx:#x} want 0'
+    for i in range(6):
+        base = _R + 0x164C + i * 16
+        f0 = uc.mem_read(base + 0, 1)[0]
+        f1 = uc.mem_read(base + 1, 1)[0]
+        sent = _st.unpack_from('<I', bytes(uc.mem_read(base + 4, 4)))[0]
+        assert f0 == 0 and f1 == 0 and sent == 0xFFFFFFFF, \
+            f'slot {i}: f0={f0:#x} f1={f1:#x} sent={sent:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
