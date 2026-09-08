@@ -5215,6 +5215,25 @@ def _(run, rng):
     assert cap.get('r0') == 0, f'{cap}'
 
 
+# --- E2-batch11: flash region validator + I2C2 wr ---
+@t(0x080AC, 'E2-b11: 0x080ac — flash region validator. 0x080ac(base=r0, buf=r1, len=r2): return 0 если base не по align 0x800, buf==0, len==0, len>0x800, len%4!=0, или base вне [lo,hi). Вериф гейтов (5 невалидных -> 0).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x4000
+    for base, ln in ((0x8003000, 0), (0x8003000, 0x1000), (0x8003000, 6),
+                     (0x8003001, 4)):
+        r0, _emu = _fresh_call(0x080AC, args=(base, P, ln))
+        assert r0 == 0, f'base={base:#x} len={ln:#x}: got {r0:#x} want 0'
+    r0, _emu = _fresh_call(0x080AC, args=(0x8003000, 0, 4))
+    assert r0 == 0, 'buf=0: got non-zero'
+
+
+@t(0x02770, 'E2-b11: 0x02770 — I2C2 wr (code16,val16,len=4). 0x02770() -> bl 0x90a1(r0=0x40005800 [I2C2 base], dev=0x3e, buf). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x02770, 0x90A1)
+    assert cap.get('r0') == 0x40005800 and cap.get('r2') == 0x3E, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
