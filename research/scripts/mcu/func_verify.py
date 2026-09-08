@@ -6122,6 +6122,35 @@ t(0x032F4, 'E2-b47: 0x032f4 init-group -> bl 0x59a5(sp) [sp]={0x80,0,12,0}')(_t_
 t(0x03168, 'E2-b47: 0x03168 init-group (gate 0xcc69) -> bl 0x5971(r0=0x100000)')(_t_03168)
 
 
+# --- E2-batch48: одиночные тонкие делегаторы (скан по частоте bl-целей) ---
+def _t_5dbc(run, rng):
+    cap, _emu = _intercept(0x5DBC, 0x2D5D, max_insn=30000)
+    assert cap.get('r0') == 0xAAAA, f'r0={cap.get("r0"):#x} want 0xaaaa'
+
+def _t_10770(run, rng):
+    cap, _emu = _intercept(0x10770, 0xC625, max_insn=30000)
+    assert cap.get('r0') == 1, f'r0={cap.get("r0"):#x} want 1'
+
+def _t_128c8(run, rng):
+    cap, _emu = _intercept(0x128C8, 0x50B1, max_insn=30000)
+    assert cap.get('r0') == 0x20000044 and cap.get('r1') == 2, \
+        f'r0={cap.get("r0"):#x} r1={cap.get("r1")} want (0x20000044, 2)'
+
+def _t_12a64(run, rng):
+    cap, _emu = _intercept(0x12A64, 0x4C85, max_insn=30000)
+    assert cap.get('r0') == 0 and cap.get('r1') == 1, f'r0={cap.get("r0")} r1={cap.get("r1")}'
+
+def _t_13c5c(run, rng):
+    cap, _emu = _intercept(0x13C5C, 0x11D7, max_insn=30000)
+    assert cap.get('r1') == 0x4B, f'r1={cap.get("r1"):#x} want 0x4b'
+
+t(0x5DBC, 'E2-b48: 0x5dbc delegate -> bl 0x2d5d(r0=0xaaaa) [IR TX cfg]')(_t_5dbc)
+t(0x10770, 'E2-b48: 0x10770 delegate -> bl 0xc625(r0=1)')(_t_10770)
+t(0x128C8, 'E2-b48: 0x128c8 delegate -> bl 0x50b1(r0=RAM+0x44, r1=2)')(_t_128c8)
+t(0x12A64, 'E2-b48: 0x12a64 delegate -> bl 0x4c85(r0=0, r1=1)')(_t_12a64)
+t(0x13C5C, 'E2-b48: 0x13c5c delegate -> bl 0x11d7(r1=0x4b)')(_t_13c5c)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
