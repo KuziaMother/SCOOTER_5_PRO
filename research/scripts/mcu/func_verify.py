@@ -5138,6 +5138,38 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == _crc16_a001(b), f'{b!r}: got {r0:#x} want {_crc16_a001(b):#x}'
 
 
+# --- E2-batch8: табличные CRC-16 (референс из flash-памяти emu) ---
+@t(0x03C4C, 'E2-b8: 0x03c4c — CRC-16 табличный. 0x03c4c(buf=r0,len=r1)->u16; tbl@flash 0x19784 (256 u16); idx=byte^(crc>>8); crc=(tbl[idx]^(crc<<8))&0xFFFF. Вериф по flash-таблице 5/5.')
+def _(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R, FLASH0 as _F0
+    P = _R + 0x3000
+    tbl = _st.unpack('<256H', bytes(run.emu.uc.mem_read(_F0 + 0x19784, 512)))
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x03C4C, args=(P, len(b)), extra_ram=[(P, b)])
+        c = 0
+        for x in b:
+            c = (tbl[x ^ (c >> 8)] ^ (c << 8)) & 0xFFFF
+        assert (r0 & 0xFFFF) == c, f'{b!r}: got {r0:#x} want {c:#x}'
+
+
+@t(0x08A50, 'E2-b8: 0x08a50 — dual-table CRC-16. 0x08a50(buf=r0,len=r1)->u16; t1@flash 0x19584 (high), t2@0x19684 (low); hi=lo=0xFF; idx=byte^hi; hi=t1[idx]^lo; lo=t2[idx]; crc=(hi<<8)|lo. Вериф по flash-таблицам 5/5.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R, FLASH0 as _F0
+    P = _R + 0x3000
+    t1 = bytes(run.emu.uc.mem_read(_F0 + 0x19584, 256))
+    t2 = bytes(run.emu.uc.mem_read(_F0 + 0x19684, 256))
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x08A50, args=(P, len(b)), extra_ram=[(P, b)])
+        hi = lo = 0xFF
+        for x in b:
+            i = x ^ hi
+            hi = t1[i] ^ lo
+            lo = t2[i]
+        c = ((hi << 8) & 0xFF00) | lo
+        assert (r0 & 0xFFFF) == c, f'{b!r}: got {r0:#x} want {c:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
