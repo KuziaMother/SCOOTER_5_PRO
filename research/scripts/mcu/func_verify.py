@@ -5594,6 +5594,31 @@ def _(run, rng):
             f'slot {i}: f0={f0:#x} f1={f1:#x} sent={sent:#x}'
 
 
+# --- E2-batch27: merge struct-полей (чистые arg-указатели) ---
+@t(0x04F70, 'E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Вериф OR-агрегация + copy (2 init).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    dst = _R + 0x100; src = _R + 0x200
+    vals = {0x8: 1, 0x10: 2, 0x14: 4, 0x18: 8, 0x1c: 0x10, 0x20: 0x20, 0x24: 0x40, 0x28: 0x80}
+    srcbuf = bytearray(0x30)
+    for o, v in vals.items():
+        _st.pack_into('<I', srcbuf, o, v)
+    _st.pack_into('<I', srcbuf, 0x0C, 0xDEADBEEF)
+    _st.pack_into('<I', srcbuf, 0x0, 0x12345678)
+    for init in (0x7FF0, 0x88FF):
+        dstbuf = bytearray(0x10); _st.pack_into('<I', dstbuf, 0, init)
+        r0, emu = _fresh_call(0x04F70, args=(dst, src), extra_ram=[(dst, bytes(dstbuf)), (src, bytes(srcbuf))])
+        uc = emu.uc
+        d0 = _st.unpack_from('<I', bytes(uc.mem_read(dst + 0, 4)))[0]
+        d4 = _st.unpack_from('<I', bytes(uc.mem_read(dst + 4, 4)))[0]
+        d8 = _st.unpack_from('<I', bytes(uc.mem_read(dst + 8, 4)))[0]
+        exp_or = sum(vals.values())
+        assert d0 == (init & ~0x7FF0) | exp_or, f'init={init:#x}: dst[0]={d0:#x}'
+        assert d4 == 0xDEADBEEF, f'dst[+4]={d4:#x}'
+        assert d8 == 0x12345678, f'dst[+8]={d8:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
