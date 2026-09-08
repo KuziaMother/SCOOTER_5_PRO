@@ -5190,6 +5190,31 @@ def _(run, rng):
                 f'b={b:#04x} sel={sel}: got {out:#x} want {bitperm(b, sel):#x}'
 
 
+# --- E2-batch10: RCC/DMA init-делегаторы (bl-intercept первого хелпера) ---
+@t(0x01580, 'E2-b10: 0x01580 — RCC ext init. Первый вызов -> 0xc491(r0=0x100). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x01580, 0xC491)
+    assert cap.get('r0') == 0x100, f'{cap}'
+
+
+@t(0x01940, 'E2-b10: 0x01940 — RCC ext init #2. Первый вызов -> 0xc625(r0=1, r1=1). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x01940, 0xC625)
+    assert cap.get('r0') == 1 and cap.get('r1') == 1, f'{cap}'
+
+
+@t(0x016D4, 'E2-b10: 0x016d4 — DMA1 reset. Первый вызов -> 0x1941(r0=0) [RCC clock-enable пролог]. bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x016D4, 0x1941)
+    assert cap.get('r0') == 0, f'{cap}'
+
+
+@t(0x0175C, 'E2-b10: 0x0175c — DMA1 enable. Первый вызов -> 0x1941(r0=0) [пролог]; затем цикл i<2: 0x1859/0x1671/0x18fd. bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x0175C, 0x1941)
+    assert cap.get('r0') == 0, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
