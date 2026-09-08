@@ -4933,17 +4933,21 @@ def _(run, rng):
     assert runf(9, 0xe, 0)[5] == (9 & 0x1F) << 5
 
 
-def _intercept(off, target, max_insn=20000, arg=None, args=None):
+def _intercept(off, target, max_insn=20000, arg=None, args=None, extra_ram=None):
     """Свежий McuEmu; стоп на входе bl-цели `target`, снимаем R0-R3. -> (dict, emu).
 
     Для тонких делегаторов: верифицируем, что функция вызывает хелпер с нужными аргументами.
-    `args` — кортеж для R0-R3; иначе `arg` — только R0 (по умолчанию 0)."""
+    `args` — кортеж для R0-R3; иначе `arg` — только R0 (по умолчанию 0).
+    `extra_ram` — [(addr, bytes)], досев RAM перед запуском (для stateful-гейтов)."""
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
     emu = _M(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(_R, bytes(0x20000))
     emu.hook_periph_ready()
+    if extra_ram:
+        for (addr, data) in extra_ram:
+            uc.mem_write(addr, data)
     cap = {}
 
     def _code(uc_, a, s, u):
@@ -5357,6 +5361,18 @@ def _(run, rng):
 def _(run, rng):
     cap, _emu = _intercept(0x0851C, 0x833D)
     assert 'r0' in cap, f'{cap}'
+
+
+# --- E2-batch17: one-shot флаг 0x03a6c (stateful, вериф fire/no-fire) ---
+@t(0x03A6C, 'E2-b17: 0x03a6c — one-shot флаг byte@0x142. Если ==1 -> обнуляет его + bl 0xdd81; иначе return. Вериф: flag=1 достигает 0xdd81, flag=0 нет.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    cap_fired, _emu = _intercept(0x03A6C, 0xDD81,
+                                 extra_ram=[(_R + 0x142, b'\x01')])
+    assert 'r0' in cap_fired, f'flag=1: не достиг 0xdd81: {cap_fired}'
+    cap_idle, _emu2 = _intercept(0x03A6C, 0xDD81,
+                                 extra_ram=[(_R + 0x142, b'\x00')])
+    assert 'r0' not in cap_idle, f'flag=0: достиг 0xdd81 (ошибка): {cap_idle}'
 
 
 # ---------------------------------------------------------------------------
