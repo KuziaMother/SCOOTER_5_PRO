@@ -5726,6 +5726,34 @@ def _(run, rng):
         assert r == exp, f't={t:#x}: got {r:#x} want {exp:#x}'
 
 
+# --- E2-batch34: u16 bit-check + 24-bit field all-set check ---
+@t(0x10718, 'E2-b34: 0x10718 — u16 bit-check: 1 если (u16@(ptr+8) & mask)!=0. Вериф 3 кейса.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    ptr = _R + 0x200
+    def a(mask, val):
+        r0, _e = _fresh_call(0x10718, args=(ptr, mask), extra_ram=[(ptr + 8, _st.pack('<H', val))])
+        return r0 & 1
+    for mask, val, exp in [(0x0001, 0x0001, 1), (0x0001, 0x0000, 0), (0x0100, 0xFF00, 1)]:
+        got = a(mask, val)
+        assert got == exp, f'mask={mask:#x} val={val:#x}: got {got} want {exp}'
+
+@t(0x09794, 'E2-b34: 0x09794 — 24-битное поле (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 если (field&mask)==mask. Вериф 4 кейса.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    ptr = _R + 0x200
+    def b(mask, f14, f18):
+        r0, _e = _fresh_call(0x09794, args=(ptr, mask),
+                             extra_ram=[(ptr + 0x14, _st.pack('<H', f14)), (ptr + 0x18, _st.pack('<H', f18))])
+        return r0 & 1
+    for mask, f14, f18, exp in [(0x00FF, 0x00FF, 0, 1), (0x0100, 0x00FF, 0, 0),
+                                 (0x00FF0000, 0xFFFF, 0xFF, 1), (0x00FF00FF, 0xFFFF, 0xFF, 1)]:
+        got = b(mask, f14, f18)
+        assert got == exp, f'mask={mask:#x} f14={f14:#x} f18={f18:#x}: got {got} want {exp}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
