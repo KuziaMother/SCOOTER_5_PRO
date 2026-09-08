@@ -6151,6 +6151,26 @@ t(0x12A64, 'E2-b48: 0x12a64 delegate -> bl 0x4c85(r0=0, r1=1)')(_t_12a64)
 t(0x13C5C, 'E2-b48: 0x13c5c delegate -> bl 0x11d7(r1=0x4b)')(_t_13c5c)
 
 
+# --- E2-batch49: stateful single-base gate + оставшиеся делегаторы ---
+def _t_2d5c(run, rng):
+    cap, _emu = _intercept(0x2D5C, 0x332C, max_insn=30000)
+    assert cap.get('r1') == 0x1A, f'r1={cap.get("r1"):#x} want 0x1a'
+
+def _t_02a6c(run, rng):
+    cap, _emu = _intercept(0x02A6C, 0x4E50, max_insn=30000)
+    assert cap, 'bl 0x4e50 not reached (init-group incomplete)'
+
+def _t_0178c(run, rng):
+    cap, _emu = _intercept(0x178C, 0x182B, max_insn=30000)
+    assert cap, 'bl 0x182b not reached'
+    cap2, _ = _intercept(0x178C, 0x1815, max_insn=30000)
+    assert cap2, 'bl 0x1815 not reached'
+
+t(0x2D5C, 'E2-b49: 0x2d5c delegate -> bl 0x332c(r1=0x1a)')(_t_2d5c)
+t(0x02A6C, 'E2-b49: 0x02a6c init-group -> bl 0x4e50 (complete)')(_t_02a6c)
+t(0x178C, 'E2-b49: 0x0178c init-group -> bl 0x182b + bl 0x1815 (r1=0x1)')(_t_0178c)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
