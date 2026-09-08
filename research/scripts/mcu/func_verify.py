@@ -5997,6 +5997,53 @@ t(0x02A5C, 'E2-b43: 0x02a5c -> 0x1bdd(0x9a) [query bit, returns res&1]')(_t_02a5
 t(0x08AFC, 'E2-b43: 0x08afc -> 0x218d(r0) [passthrough, stores result]')(_t_08afc)
 
 
+# --- E2-batch44: setters (RAM/periph) + init-группы (2-3 bl) ---
+def _t_087de(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    scratch = _R + 0x1000
+    for val in (0x12345678, 0xDEADBEEF, 0):
+        r0, emu = _fresh_call(0x087DE, args=(scratch, val))
+        got = _st.unpack('<I', bytes(emu.uc.mem_read(scratch + 0x18, 4)))[0]
+        assert got == val, f'val={val:#x}: {got:#x}'
+
+
+def _t_1f1c0(run, rng):
+    import struct as _st
+    sent = 0xC0FFEE11
+    r0, emu = _fresh_call(0x1F1C0, args=(sent,))
+    got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40004804, 4)))[0]
+    assert got == sent, f'{got:#x}'
+
+
+def _t_211ec(run, rng):
+    import struct as _st
+    sent = 0xC0FFEE11
+    r0, emu = _fresh_call(0x211EC, args=(sent,))
+    got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40004C04, 4)))[0]
+    assert got == sent, f'{got:#x}'
+
+
+def _mk_init_group(fn, last):
+    def _t(run, rng, _fn=fn, _last=last):
+        cap, _ = _intercept(_fn, _last, arg=0)
+        assert cap, f'0x{_fn:x} did not reach last bl 0x{_last:x}'
+    return _t
+
+
+t(0x087DE, 'E2-b44: 0x087de [r0+0x18]=r1 [RAM field setter]')(_t_087de)
+t(0x1F1C0, 'E2-b44: 0x1f1c0 [USART3 0x40004804]=r0 [periph setter]')(_t_1f1c0)
+t(0x211EC, 'E2-b44: 0x211ec [0x40004c04]=r0 [periph setter]')(_t_211ec)
+t(0x01ABC, 'E2-b44: 0x01abc init-group (bl 0x1a69 -> 0x19f5)')(_mk_init_group(0x01ABC, 0x19F5))
+t(0x01CEA, 'E2-b44: 0x01cea init-group (bl 0x1fe1 -> 0x20d9)')(_mk_init_group(0x01CEA, 0x20D9))
+t(0x036F4, 'E2-b44: 0x036f4 init-group (bl 0x10901 -> 0x3b01)')(_mk_init_group(0x036F4, 0x3B01))
+t(0x09482, 'E2-b44: 0x09482 init-group (bl 0x9135 -> 0x9481)')(_mk_init_group(0x09482, 0x9481))
+t(0x09F64, 'E2-b44: 0x09f64 init-group (bl 0x9b45 -> 0x9f71)')(_mk_init_group(0x09F64, 0x9F71))
+# NOTE: 0x0bf4c (bl 0xd879->0xddc5) и 0x0ced0 (bl 0x310d->0x3151->0x31dd) НЕ доходят
+# до последнего bl в изоляции: первый sub-init не возвращается чисто при нулевом RAM.
+# Классифицированы как «не изолируются» (см. PROGRAM.md).
+
+
 # ---------------------------------------------------------------------------
 
 def main():
