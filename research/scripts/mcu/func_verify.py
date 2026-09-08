@@ -5234,6 +5234,25 @@ def _(run, rng):
     assert cap.get('r0') == 0x40005800 and cap.get('r2') == 0x3E, f'{cap}'
 
 
+# --- E2-batch12: CRC-32-обёртка + I2C-like + event varargs ---
+@t(0x03940, 'E2-b12: 0x03940 — CRC-32 обёртка. 0x03940() -> bl 0x3c04(r0=0x8000000 [flash addr], r1=0x3000 [len], r2=0) -> u32@0xCC. bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x03940, 0x3C05)
+    assert cap.get('r0') == 0x8000000 and cap.get('r1') == 0x3000, f'{cap}'
+
+
+@t(0x02E84, 'E2-b12: 0x02e84 — I2C-подобный запрос. 0x02e84() -> bl 0x9874(r1=0x20000). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x02E84, 0x9875)
+    assert cap.get('r1') == 0x20000, f'{cap}'
+
+
+@t(0x0307C, 'E2-b12: 0x0307c — event varargs {b,b,b,1}. 0x0307c() -> bl 0xc0b4 (event dispatch, r0=указатель на stack-буфер). bl-intercept (достигает хелпера).')
+def _(run, rng):
+    cap, _emu = _intercept(0x0307C, 0xC0B5)
+    assert 'r0' in cap, f'не достиг 0xc0b4: {cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
