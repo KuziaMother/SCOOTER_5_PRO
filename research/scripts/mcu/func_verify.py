@@ -5056,6 +5056,25 @@ def _(run, rng):
     assert cap.get('r2', 0) >= _R, f'buf не в RAM: {cap}'
 
 
+# --- E2-batch6: I2C2-read цепочки (тонкие делегаторы) ---
+@t(0x01C60, 'E2-b6: 0x01c60 — I2C2-цепочка #1. 0x01c60() -> bl 0x1e53(r0=0, r1=0, r2=1, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x01C60, 0x1E53)
+    assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 1, 0), f'{cap}'
+
+
+@t(0x01E52, 'E2-b6: 0x01e52 — I2C2-цепочка #2. 0x01e52() -> bl 0x214d(r0=0, r1=0, r2=0, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x01E52, 0x214D)
+    assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 0, 0), f'{cap}'
+
+
+@t(0x01E72, 'E2-b6: 0x01e72 — I2C2-цепочка #3. 0x01e72() -> bl 0x2731(r0=0, r1=0, r2=0, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x01E72, 0x2731)
+    assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 0, 0), f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
