@@ -5375,6 +5375,19 @@ def _(run, rng):
     assert 'r0' not in cap_idle, f'flag=0: достиг 0xdd81 (ошибка): {cap_idle}'
 
 
+# --- E2-batch18: flag-хендлер 0x09678 (stateful, полный разбор pool) ---
+@t(0x09678, 'E2-b18: 0x09678 — flag-хендлер. BIT1=byte@0xB65 (bit1), COUNTER=byte@0xB73, A0=byte@0xB64. Если bit1 set и (COUNTER++)>=3 -> COUNTER=0, clear BIT1 bit1, A0=(A0&0x0f)|0xa0; затем если (A0>>4)==0xa -> bl (capstone: 0x173cd, эмулятор попадает в 0x173cc). Вериф: fire (BIT1=2,CNT=2) достигает; no-fire (BIT1=2,CNT=0) нет.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    cap_fire, _emu = _intercept(0x09678, 0x173CC,
+                                extra_ram=[(_R + 0xB65, b'\x02'),
+                                           (_R + 0xB73, b'\x02')])
+    assert 'r0' in cap_fire, f'fire: не достиг 0x173cc: {cap_fire}'
+    cap_nofire, _emu2 = _intercept(0x09678, 0x173CC,
+                                   extra_ram=[(_R + 0xB65, b'\x02')])
+    assert 'r0' not in cap_nofire, f'no-fire: достиг 0x173cc (ошибка): {cap_nofire}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
