@@ -5442,6 +5442,39 @@ def _(run, rng):
     assert cnt3 == 0x32 and (flag3 & 8), f'sat: cnt={cnt3:#x} flag={flag3:#x}'
 
 
+# --- E2-batch21: pure-logic (checksum / критсекция / u32 из двух u16) ---
+@t(0x048D8, 'E2-b21: 0x048d8 — контрольная сумма: r0 = (~sum(buf[0..len])) & 0xFF. Вериф 3 буфера.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for buf in (b'\x01\x02\x03', b'\xff\xff\xff', bytes(4)):
+        r0, _e = _fresh_call(0x048D8, args=(_R + 0x100, len(buf)),
+                             extra_ram=[(_R + 0x100, buf)])
+        exp = (~sum(buf)) & 0xFF
+        assert (r0 & 0xFF) == exp, f'buf={buf!r}: got {r0&0xff} want {exp}'
+
+
+@t(0x02D1C, 'E2-b21: 0x02d1c — вход в критсекцию: COUNTER=u16@0xB5C; если ==0 -> cpsid i; затем COUNTER++. Вериф 0->1 и 5->6.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    for init in (0, 5):
+        _r0, emu = _fresh_call(0x02D1C, extra_ram=[(_R + 0xB5C, _st.pack('<H', init))])
+        cnt = _st.unpack_from('<H', bytes(emu.uc.mem_read(_R + 0xB5C, 2)))[0]
+        assert cnt == init + 1, f'init={init}: got {cnt} want {init+1}'
+
+
+@t(0x098AE, 'E2-b21: 0x098ae — u32 из двух u16: r0 = u16[ptr+0x14] | ((u16[ptr+0x18]&0xFF)<<16) (старший байт B сброшен). Вериф 3 пары.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    for A, B in ((0x1234, 0xABCD), (0x5678, 0x00FF), (0xFFFF, 0x1234)):
+        r0, _e = _fresh_call(0x098AE, args=(_R + 0x200,),
+                             extra_ram=[(_R + 0x214, _st.pack('<H', A)),
+                                        (_R + 0x218, _st.pack('<H', B))])
+        exp = (A | ((B & 0xFF) << 16)) & 0xFFFFFFFF
+        assert r0 == exp, f'A={A:#x} B={B:#x}: got {r0:#x} want {exp:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
