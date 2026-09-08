@@ -5315,6 +5315,31 @@ def _(run, rng):
     assert 'r0' in cap, f'{cap}'
 
 
+# --- E2-batch15: I2C2 wr/read + event + struct access (bl-intercept) ---
+@t(0x0214C, 'E2-b15: 0x0214c — I2C2 write op=8. 0x0214c() -> bl 0x8f7c(r0=0x40005800 [I2C2 base], reg, buf). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x0214C, 0x8F7D)
+    assert cap.get('r0') == 0x40005800, f'{cap}'
+
+
+@t(0x02730, 'E2-b15: 0x02730 — I2C2 read-путь. 0x02730() -> bl 0x9048(r0=0x40005800 [I2C2 base]). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x02730, 0x9049)
+    assert cap.get('r0') == 0x40005800, f'{cap}'
+
+
+@t(0x03150, 'E2-b15: 0x03150 — event {u32=0,u16=0x7F,u32=0x136}. 0x03150() -> bl 0xcd0c (event dispatch, r0=stack-буфер). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x03150, 0xCD0D)
+    assert 'r0' in cap, f'{cap}'
+
+
+@t(0x03970, 'E2-b15: 0x03970 — доступ к структуре @0x98. 0x03970() -> bl 0x8a90 (r0=ptr). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x03970, 0x8A91)
+    assert 'r0' in cap, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
