@@ -4895,6 +4895,44 @@ def _(run, rng):
         f'pathB gate-pass: return={r0:#x} buf={buf.hex()} want {src_c[:4].hex()}'
 
 
+# --- E2-batch1: пофункционная кампания — чистые/простые функции ---
+@t(0x01E34, 'E2-b1: 0x01e34 — сумма байтов mod 256. 0x01e34(ptr=r0, n=r1) -> r0 = (Σ buf[i], i=0..n-1) & 0xFF. Чистая функция. Вериф 4/4.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    ok = 0
+    for buf, n in [([1, 2, 3, 4, 5], 5), ([250, 250], 2),
+                   ([0] * 3, 3), ([7, 8, 9, 10], 4)]:
+        p = _R + 0x3000
+        r0, _emu = _fresh_call(0x01E34, args=(p, n), extra_ram=[(p, bytes(buf))])
+        assert r0 == (sum(buf) & 0xFF), f'buf={buf}: got {r0} want {sum(buf) & 0xFF}'
+        ok += 1
+    assert ok >= 4
+
+
+@t(0x015AA, 'E2-b1: 0x015aa — packed-field setter. 0x015aa(struct=r0, field_id=r1, selector=r2, value=r3): 3-бит поле (из value): id==0x12->[+0x5c]b[2:0]; id>9->[+0xc]b[(id-0xa)*3..3]; id<=9->[+0x10]b[id*3..3]. 5-бит поле (из field_id), по selector: <7->[+0x34]b[(sel-1)*5..5]; <0xd->[+0x30]b[(sel-7)*5..5]; else->[+0x2c]b[(sel-0xd)*5..5]. Чистая (struct в r0). Вериф 6/6.')
+def _(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    S = _R + 0x3000
+
+    def runf(r1, r5, r3):
+        emu = _fresh_call(0x015AA, args=(S, r1, r5, r3))[1]
+        u32 = lambda off: _st.unpack('<I', bytes(emu.uc.mem_read(S + off, 4)))[0]
+        return u32(0x5c), u32(0xc), u32(0x10), u32(0x34), u32(0x30), u32(0x2c)
+    # 3-бит: id==0x12 -> [0x5c] low3 = value
+    assert runf(0x12, 1, 5)[0] == 5
+    # 3-бит: id<=9 -> [0x10] bit(id*3) w3 = value
+    assert runf(2, 1, 7)[2] == (7 & 7) << 6
+    # 3-бит: id>9 -> [0xc] bit((id-0xa)*3) w3 = value
+    assert runf(0xb, 1, 4)[1] == (4 & 7) << 3
+    # 5-бит: selector<7 -> [0x34] bit((sel-1)*5) w5 = field_id
+    assert runf(20, 1, 0)[3] == (20 & 0x1F)
+    # 5-бит: selector in [7,0xd) -> [0x30] bit((sel-7)*5) w5 = field_id
+    assert runf(30, 8, 0)[4] == (30 & 0x1F) << 5
+    # 5-бит: selector>=0xd -> [0x2c] bit((sel-0xd)*5) w5 = field_id
+    assert runf(9, 0xe, 0)[5] == (9 & 0x1F) << 5
+
+
 # ---------------------------------------------------------------------------
 
 def main():
