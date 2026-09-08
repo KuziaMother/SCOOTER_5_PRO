@@ -4933,6 +4933,71 @@ def _(run, rng):
     assert runf(9, 0xe, 0)[5] == (9 & 0x1F) << 5
 
 
+def _intercept(off, target, max_insn=20000):
+    """Свежий McuEmu; стоп на входе bl-цели `target`, снимаем R0-R3. -> (dict, emu).
+
+    Для тонких делегаторов: верифицируем, что функция вызывает хелпер с нужными аргументами."""
+    from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
+        FLASH1 as _F1, STACK_TOP as _ST
+    emu = _M(max_insn=max_insn)
+    uc = emu.uc
+    uc.mem_write(_R, bytes(0x20000))
+    emu.hook_periph_ready()
+    cap = {}
+
+    def _code(uc_, a, s, u):
+        if a == target or a == (target & ~1):
+            for nm, r in (('r0', UC_ARM_REG_R0), ('r1', UC_ARM_REG_R1),
+                          ('r2', UC_ARM_REG_R2), ('r3', UC_ARM_REG_R3)):
+                cap[nm] = uc_.reg_read(r)
+            uc_.emu_stop()
+            return
+        aa = a & ~1
+        if not (_F0 <= aa < _F0 + 0x23680 or _F1 <= aa < _F1 + 0x23680):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _code)
+    try:
+        uc.reg_write(UC_ARM_REG_SP, _ST - 0x40)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3):
+            uc.reg_write(r, 0)
+        emu.insn = 0
+        try:
+            uc.emu_start(off | 1, 0, count=max_insn)
+        except UcError:
+            pass
+    finally:
+        uc.hook_del(sh)
+    return cap, emu
+
+
+# --- E2-batch2: I2C2-wr семья (22 тонких делегатора -> 0x1c61) ---
+# Контракт (вериф bl-intercept): 0x1c61(op=8, reg=r1, buf=&u32@0x16XX=r2, len=r3).
+_I2C2_WR = {
+    0x020c4: (0x38, 2), 0x02138: (0x36, 2), 0x021dc: (0x12, 2), 0x021f0: (0x14, 2),
+    0x02204: (0x16, 2), 0x02218: (0x18, 2), 0x0222c: (0x1a, 2), 0x02240: (0x1c, 2),
+    0x02254: (0x1e, 2), 0x02268: (0x20, 2), 0x0227c: (0x22, 2), 0x02290: (0x24, 2),
+    0x022a4: (0x26, 2), 0x022b8: (0x28, 2), 0x022cc: (0x2a, 2), 0x022e0: (0x32, 2),
+    0x022f4: (0x3a, 2), 0x02308: (0x7f, 1), 0x0231c: (0x3, 1), 0x02330: (0x5, 1),
+    0x02344: (0x7, 1), 0x02358: (0x70, 2),
+}
+
+
+def _mk_i2c2_wr(addr, reg, ln):
+    def _test(run, rng):
+        from emulator.mcu_emu import RAM as _R
+        cap, _emu = _intercept(addr, 0x1C61)
+        assert cap.get('r0') == 8, f'0x{addr:05x}: r0={cap.get("r0"):#x} want 0x8'
+        assert cap.get('r1') == reg, f'0x{addr:05x}: reg={cap.get("r1"):#x} want 0x{reg:x}'
+        assert cap.get('r3') == ln, f'0x{addr:05x}: len={cap.get("r3")} want {ln}'
+        assert cap.get('r2', 0) >= _R, f'0x{addr:05x}: buf не в RAM'
+    return _test
+
+
+for _addr, (_reg, _ln) in sorted(_I2C2_WR.items()):
+    t(_addr, f'E2-b2: I2C2-wr 0x{_addr:05x} -> 0x1c61(op=8, reg=0x{_reg:x}, len={_ln}) [bl-intercept]')(_mk_i2c2_wr(_addr, _reg, _ln))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
