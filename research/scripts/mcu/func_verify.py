@@ -5826,6 +5826,37 @@ for _addr, _ch in sorted(_OD46D_FAM.items()):
     t(_addr, f'E2-b37: 0x{_addr:05x} -> 0x0d46d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od46d(_addr, _ch))
 
 
+# --- E2-batch38: тонкие single-bl делегаторы (passthrough + fixed-arg) ---
+# Контракт: функция = чистая обёртка `bl helper` (passthrough r0/r1/r2/r3) либо
+# задаёт фикс. аргумент и вызывает helper. Вериф через bl-intercept (стоп на входе helper).
+_PT_DELEG = {0x01DEC: 0x029E9, 0x02D14: 0x09679, 0x04E28: 0x05001, 0x04E30: 0x04FC1,
+             0x09A18: 0x099F1, 0x0CE68: 0x03169, 0x10780: 0x10789, 0x10A20: 0x112BD,
+             0x11CAC: 0x04C15, 0x12FD0: 0x12B51, 0x12FD8: 0x12D91, 0x1A5F2: 0x1BFA1}
+_FX_DELEG = {0x0395C: (0x0D299, 0), 0x03966: (0x0D299, 1), 0x03B20: (0x01BDD, 0x9A)}
+
+
+def _mk_pt(daddr, haddr):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0x5678, 0xABCD, 0))
+        assert cap.get('r0') == 0x1234 and cap.get('r1') == 0x5678, \
+            f'0x{daddr:05x}: {cap}'
+    return _test
+
+
+def _mk_fx(daddr, haddr, val):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, arg=0)
+        assert cap.get('r0') == val, \
+            f'0x{daddr:05x}: r0={cap.get("r0"):#x} want {val:#x}'
+    return _test
+
+
+for _d, _h in sorted(_PT_DELEG.items()):
+    t(_d, f'E2-b38: 0x{_d:05x} passthrough -> 0x{_h:05x} [bl-intercept r0/r1]')(_mk_pt(_d, _h))
+for _d, (_h, _v) in sorted(_FX_DELEG.items()):
+    t(_d, f'E2-b38: 0x{_d:05x} -> 0x{_h:05x}({hex(_v)}) [fixed-arg bl-intercept]')(_mk_fx(_d, _h, _v))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
