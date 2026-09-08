@@ -6063,6 +6063,28 @@ def _t_0df10(run, rng):
 t(0x0DF10, 'E2-b45: 0x0df10 protocol-parser magic-gate [s+2]==0xaa (mismatch->ret byte[2])')(_t_0df10)
 
 
+# --- E2-batch46: чистый compute 0x19f7c (gate-контракт первого возврата) ---
+# 0x19f7c(r0,r1,r2) -> (r0_out, r1_out). Первый возврат (вериф 206/206 sweep):
+#   r0_out = r0, если (signed)r2 > 0; иначе 0.
+# Второй возврат r1_out = сложная multi-word операция от (r1,r2) — не моделируется чисто
+# (см. PROGRAM.md); тестируем только детерминированный gate по первому возврату.
+
+def _t_19f7c(run, rng):
+    cases = [
+        (1, 0, 5), (5, 0, 3), (3, 0x1234, 0x1000),   # r2>0 -> r0_out=r0
+        (1, 0, 0), (1, 0, -5), (5, 7, 0x80000000),   # r2<=0 -> r0_out=0
+        (0, 0, 5), (0, 0x80000000, 0),               # r0==0 -> r0_out=0
+    ]
+    for r0, r1, r2 in cases:
+        rr, _emu = _fresh_call(0x19F7C, args=(r0, r1, r2 & 0xFFFFFFFF))
+        s2 = r2 if r2 < 0x80000000 else r2 - 0x100000000
+        exp = r0 if s2 > 0 else 0
+        assert rr == exp, f'r0={r0} r1={r1:#x} r2={r2:#x}: got {rr:#x} want {exp:#x}'
+
+
+t(0x19F7C, 'E2-b46: 0x19f7c compute gate: r0_out = r0 if (signed)r2>0 else 0')(_t_19f7c)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
