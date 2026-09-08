@@ -5419,6 +5419,29 @@ def _(run, rng):
     assert cnt2 == 0 and gate == 0, f'sat: cnt={cnt2} gate={gate}'
 
 
+# --- E2-batch20: mismatch-счётчик 0x0c02c (stateful) ---
+@t(0x0C02C, 'E2-b20: 0x0c02c — mismatch-счётчик. Читает bit0/bit1(0xF71) vs byte(0xA65)/byte(0xA66). Mismatch -> COUNTER(u16@0xA68)++; если >=0x32 -> toggle bit3(0xF73) + COUNTER=0x32. Match (оба равны) -> COUNTER=0 + clear bit3(0xF73). Вериф mismatch-inc / match-reset / saturation.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    def rd(emu, off, n):
+        return bytes(emu.uc.mem_read(_R + off, n))
+    _r0, emu = _fresh_call(0x0C02C, extra_ram=[(_R + 0xF71, b'\x01'),
+                                                (_R + 0xA65, b'\x00')])
+    cnt = _st.unpack_from('<H', rd(emu, 0xA68, 2))[0]
+    assert cnt == 1, f'mismatch-inc: got {cnt} want 1'
+    _r0, emu2 = _fresh_call(0x0C02C, extra_ram=[(_R + 0xA68, _st.pack('<H', 5))])
+    cnt2 = _st.unpack_from('<H', rd(emu2, 0xA68, 2))[0]
+    assert cnt2 == 0, f'match-reset: got {cnt2} want 0'
+    _r0, emu3 = _fresh_call(0x0C02C, extra_ram=[(_R + 0xF71, b'\x01'),
+                                                 (_R + 0xA65, b'\x00'),
+                                                 (_R + 0xA68, _st.pack('<H', 0x31)),
+                                                 (_R + 0xF73, b'\x00')])
+    cnt3 = _st.unpack_from('<H', rd(emu3, 0xA68, 2))[0]
+    flag3 = emu3.uc.mem_read(_R + 0xF73, 1)[0]
+    assert cnt3 == 0x32 and (flag3 & 8), f'sat: cnt={cnt3:#x} flag={flag3:#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
