@@ -5545,6 +5545,18 @@ def _(run, rng):
     assert r0 == 1 and dst == src, f'r0={r0} dst={dst.hex()}'
 
 
+# --- E2-batch24: обнуление блока ---
+@t(0x04A04, 'E2-b24: 0x04a04 — обнуление блока: byte@0x129 + u32@0x12C/0x130/0x134/0x138 (блок 0x129..0x13B). Вериф: pre-set -> все 0.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    pre = [(_R + 0x129, b'\xAA'), (_R + 0x12C, b'\x11\x22\x33\x44'),
+           (_R + 0x130, b'\x55\x66\x77\x88'), (_R + 0x134, b'\x99\xAA\xBB\xCC'),
+           (_R + 0x138, b'\xDD\xEE\xFF\x00')]
+    _r0, emu = _fresh_call(0x04A04, extra_ram=pre)
+    block = bytes(emu.uc.mem_read(_R + 0x129, 0x13))
+    assert block == bytes(0x13), f'block not zeroed: {block.hex()}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
