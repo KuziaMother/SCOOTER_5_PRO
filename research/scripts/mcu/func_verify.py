@@ -5784,6 +5784,29 @@ def _(run, rng):
         assert got == exp, f'pre={pre:#x}: got {got:#x} want {exp:#x}'
 
 
+# --- E2-batch36: 0x0d39d delegate family (gated channel-service) ---
+# Контракт (вериф bl-intercept): u32@(RAM+0x8C) — status-слово; если bit `channel` set,
+# функция вызывает 0x0d39d(channel); если 0x0d39d вернёт 1 -> сбросить bit `channel`
+# в другом status-u32 (по pool). gate-бит == channel. Вериф: bl достигнут с r0==channel.
+_OD39D_FAM = {0x0D6E4: 0xE, 0x0D734: 0xD, 0x0D75C: 0x10,
+              0x0D784: 0x11, 0x0D7D4: 0xF, 0x0D850: 0x12}
+
+
+def _mk_od39d(addr, ch):
+    def _test(run, rng):
+        from emulator.mcu_emu import RAM as _R
+        import struct as _st
+        cap, _emu = _intercept(addr, 0x0D39D,
+                               extra_ram=[(_R + 0x8C, _st.pack('<I', 1 << ch))])
+        assert cap.get('r0') == ch, \
+            f'0x{addr:05x}: r0={cap.get("r0"):#x} want 0x{ch:x}'
+    return _test
+
+
+for _addr, _ch in sorted(_OD39D_FAM.items()):
+    t(_addr, f'E2-b36: 0x{_addr:05x} -> 0x0d39d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od39d(_addr, _ch))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
