@@ -5075,6 +5075,69 @@ def _(run, rng):
     assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 0, 0), f'{cap}'
 
 
+# --- E2-batch7: CRC-семья (чистые чексаумы, вериф по Python-референсу) ---
+def _crc32z(b):
+    import zlib
+    return zlib.crc32(b) & 0xFFFFFFFF
+
+
+def _crc16_1021(b, init=0):
+    c = init
+    for x in b:
+        c ^= x << 8
+        for _ in range(8):
+            c = ((c << 1) ^ 0x1021) & 0xFFFF if c & 0x8000 else (c << 1) & 0xFFFF
+    return c
+
+
+def _crc16_a001(b):
+    c = 0xFFFF
+    for x in b:
+        c ^= x
+        for _ in range(8):
+            c = (c >> 1) ^ 0xA001 if c & 1 else c >> 1
+    return (~c) & 0xFFFF
+
+
+_CRC_BUFS = [b'', b'123456789', b'\x00\x01\x02', b'hello world', bytes(range(20))]
+
+
+@t(0x03C04, 'E2-b7: 0x03c04 — CRC-32/zlib. 0x03c04(buf=r0, len=r1, init=r2) -> r0 = crc32 (init=0 -> 0xFFFFFFFF). Вериф по zlib 5/5.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x3000
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x03C04, args=(P, len(b), 0), extra_ram=[(P, b)])
+        assert (r0 & 0xFFFFFFFF) == _crc32z(b), f'{b!r}: got {r0:#x} want {_crc32z(b):#x}'
+
+
+@t(0x03B82, 'E2-b7: 0x03b82 — CRC-16 0x1021 MSB-first (init=0). 0x03b82(buf=r0, len=r1) -> r0 = u16 crc. Вериф 5/5.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x3000
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x03B82, args=(P, len(b)), extra_ram=[(P, b)])
+        assert (r0 & 0xFFFF) == _crc16_1021(b), f'{b!r}: got {r0:#x} want {_crc16_1021(b):#x}'
+
+
+@t(0x03BC4, 'E2-b7: 0x03bc4 — CRC-16 0x1021 MSB-first (init в r0). 0x03bc4(init=r0, buf=r1, len=r2) -> r0 = u16 crc. Вериф 5/5.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x3000
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x03BC4, args=(0, P, len(b)), extra_ram=[(P, b)])
+        assert (r0 & 0xFFFF) == _crc16_1021(b), f'{b!r}: got {r0:#x} want {_crc16_1021(b):#x}'
+
+
+@t(0x03B42, 'E2-b7: 0x03b42 — CRC-16 отражённый (poly 0xA001, init 0xFFFF, xorout ~). 0x03b42(buf=r0, len=r1) -> r0 = u16 crc. Вериф 5/5.')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    P = _R + 0x3000
+    for b in _CRC_BUFS:
+        r0, _emu = _fresh_call(0x03B42, args=(P, len(b)), extra_ram=[(P, b)])
+        assert (r0 & 0xFFFF) == _crc16_a001(b), f'{b!r}: got {r0:#x} want {_crc16_a001(b):#x}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
