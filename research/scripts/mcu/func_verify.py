@@ -5954,6 +5954,33 @@ def _t_0cb10(run, rng):
 t(0x0CB10, 'E2-b41: 0x0cb10 periph-init -> [0x40002824]=0xff (seq ca->53->ff)')(_t_0cb10)
 
 
+# --- E2-batch42: stateful делегаторы (gate / fixed-ptr / stack-arg) ---
+def _t_0e6ec(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    cap, _ = _intercept(0x0E6EC, 0x0F14D, extra_ram=[(_R + 0x13C9, b'\x01')])
+    assert cap.get('r0') == 1, f'gate=1: {cap}'
+    cap2, _ = _intercept(0x0E6EC, 0x0F14D, extra_ram=[(_R + 0x13C9, b'\x00')])
+    assert not cap2, f'gate=0 should not reach bl: {cap2}'
+
+
+def _t_123c0(run, rng):
+    cap, _ = _intercept(0x123C0, 0x0B855, arg=0)
+    assert cap.get('r0') == 0x20000DD8, f'{cap}'
+
+
+def _t_139ac(run, rng):
+    import struct as _st
+    cap, emu = _intercept(0x139AC, 0x13C79, arg=0)
+    r0v = cap.get('r0')
+    val = _st.unpack('<I', bytes(emu.uc.mem_read(r0v, 4)))[0]
+    assert val == 3, f'[r0]={val:#x} want 3'
+
+
+t(0x0E6EC, 'E2-b42: 0x0e6ec gated -> 0xf14d(gate) [gate=byte@0x13c9==1]')(_t_0e6ec)
+t(0x123C0, 'E2-b42: 0x123c0 -> 0xb855(0x20000dd8) [fixed struct-ptr]')(_t_123c0)
+t(0x139AC, 'E2-b42: 0x139ac -> 0x13c79(sp) [writes 3 to stack, passes ptr]')(_t_139ac)
+
+
 # ---------------------------------------------------------------------------
 
 def main():
