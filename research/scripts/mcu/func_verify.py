@@ -5857,6 +5857,52 @@ for _d, (_h, _v) in sorted(_FX_DELEG.items()):
     t(_d, f'E2-b38: 0x{_d:05x} -> 0x{_h:05x}({hex(_v)}) [fixed-arg bl-intercept]')(_mk_fx(_d, _h, _v))
 
 
+# --- E2-batch39: тонкие делегаторы 2 (passthrough / fixed-arg / shuffle / r3-fix) ---
+_PT2 = {0x05B8C: 0x04DE1, 0x11668: 0x10E5D, 0x11888: 0x10F19, 0x07ED4: 0x061E5,
+        0x082F0: 0x0833D, 0x08348: 0x0833D, 0x08468: 0x0833D}
+_FX2 = {0x110F0: (0x05B8D, 0)}
+_SHUF = {0x1A5E6: 0x1A7AD, 0x1A628: 0x1A5F3, 0x21C64: 0x1A5E5}  # helper r1 = orig r0
+_R3FIX = {0x0C200: 0x09F65}  # helper r3=1, r0 passthrough
+
+
+def _mk_pt2(daddr, haddr):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0, 0, 0))
+        assert cap.get('r0') == 0x1234, f'0x{daddr:05x}: {cap}'
+    return _test
+
+
+def _mk_fx2(daddr, haddr, val):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, arg=0)
+        assert cap.get('r0') == val, f'0x{daddr:05x}: r0={cap.get("r0"):#x} want {val:#x}'
+    return _test
+
+
+def _mk_shuf(daddr, haddr):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, args=(0x1111, 0, 0, 0))
+        assert cap.get('r1') == 0x1111, f'0x{daddr:05x}: r1={cap.get("r1"):#x} want 0x1111'
+    return _test
+
+
+def _mk_r3fix(daddr, haddr):
+    def _test(run, rng):
+        cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0, 0, 0))
+        assert cap.get('r0') == 0x1234 and cap.get('r3') == 1, f'0x{daddr:05x}: {cap}'
+    return _test
+
+
+for _d, _h in sorted(_PT2.items()):
+    t(_d, f'E2-b39: 0x{_d:05x} passthrough -> 0x{_h:05x} [bl-intercept r0]')(_mk_pt2(_d, _h))
+for _d, (_h, _v) in sorted(_FX2.items()):
+    t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}({hex(_v)}) [fixed-arg]')(_mk_fx2(_d, _h, _v))
+for _d, _h in sorted(_SHUF.items()):
+    t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}(pool_ptr, orig_r0) [r1=orig_r0]')(_mk_shuf(_d, _h))
+for _d, _h in sorted(_R3FIX.items()):
+    t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}(r0, r3=1) [r3-fix]')(_mk_r3fix(_d, _h))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
