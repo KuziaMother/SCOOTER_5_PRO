@@ -5340,6 +5340,25 @@ def _(run, rng):
     assert 'r0' in cap, f'{cap}'
 
 
+# --- E2-batch16: transaction-return (условный выход по результату транзакции) ---
+@t(0x08380, 'E2-b16: 0x08380 — transaction 0x833c: если r0 -> return 0 (условный выход). bl-intercept (достигает 0x833c).')
+def _(run, rng):
+    cap, _emu = _intercept(0x08380, 0x833D)
+    assert 'r0' in cap, f'{cap}'
+
+
+@t(0x084A0, 'E2-b16: 0x084a0 — transaction 0x833c: если r0==0 -> return. bl-intercept (достигает 0x833c).')
+def _(run, rng):
+    cap, _emu = _intercept(0x084A0, 0x833D)
+    assert 'r0' in cap, f'{cap}'
+
+
+@t(0x0851C, 'E2-b16: 0x0851c — transaction 0x833c: если r0!=0 -> return pc. bl-intercept (достигает 0x833c).')
+def _(run, rng):
+    cap, _emu = _intercept(0x0851C, 0x833D)
+    assert 'r0' in cap, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
