@@ -5657,6 +5657,27 @@ def _(run, rng):
         assert got == buf, f'len={ln}: got={got.hex()} want={buf.hex()}'
 
 
+# --- E2-batch30: bit-field containment check ---
+@t(0x09874, 'E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> поле u32@(ptr+0x18), mask=r1>>16; else поле u32@(ptr+0x14), mask=r1&0xFFFFFF. Вериф: 1 если (*field & mask)!=0 (7 кейсов).')
+def _(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    ptr = _R + 0x200
+    def chk(r1, f14, f18):
+        pre = [(ptr + 0x14, _st.pack('<I', f14)), (ptr + 0x18, _st.pack('<I', f18))]
+        r0, _e = _fresh_call(0x09874, args=(ptr, r1), extra_ram=pre)
+        return r0 & 1
+    cases = [
+        (0x00010000, 0, 0x01, 1), (0x00010000, 0, 0x00, 0),
+        (0x00FF0000, 0, 0x80, 1), (0xF00000FF, 0x01, 0, 1),
+        (0xF00000FF, 0x00, 0, 0), (0x100000F0, 0xF0, 0, 1),
+        (0x100000F0, 0x0F, 0, 0),
+    ]
+    for r1, f14, f18, exp in cases:
+        got = chk(r1, f14, f18)
+        assert got == exp, f'r1={r1:#x} f14={f14:#x} f18={f18:#x}: got {got} want {exp}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
