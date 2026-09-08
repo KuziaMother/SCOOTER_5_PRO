@@ -4808,8 +4808,10 @@ def _(run, rng):
 
 
 # --- E1: 0x15a60 close-out — helpers strlen/memcmp + buffer processor ---
-def _fresh_call(off, args=(), extra_ram=None, max_insn=50000):
-    """Свежий McuEmu + ручной call (чистый RAM, без shared-state). Возвращает (r0, emu)."""
+def _fresh_call(off, args=(), extra_ram=None, max_insn=50000, extra_mem=None):
+    """Свежий McuEmu + ручной call (чистый RAM, без shared-state). Возвращает (r0, emu).
+    extra_ram: [(RAM_abs_addr, bytes)] — pre-set в RAM.
+    extra_mem: [(any_abs_addr, bytes)] — pre-set в ЛЮБОЙ адрес (periph и т.п.)."""
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
     emu = _M(max_insn=max_insn)
@@ -4818,6 +4820,9 @@ def _fresh_call(off, args=(), extra_ram=None, max_insn=50000):
     emu.hook_periph_ready()
     if extra_ram:
         for (addr, data) in extra_ram:
+            uc.mem_write(addr, data)
+    if extra_mem:
+        for (addr, data) in extra_mem:
             uc.mem_write(addr, data)
 
     def _st(uc_, a, s, u):
@@ -5752,6 +5757,31 @@ def _(run, rng):
                                  (0x00FF0000, 0xFFFF, 0xFF, 1), (0x00FF00FF, 0xFFFF, 0xFF, 1)]:
         got = b(mask, f14, f18)
         assert got == exp, f'mask={mask:#x} f14={f14:#x} f18={f18:#x}: got {got} want {exp}'
+
+
+# --- E2-batch35: periph const-write / bit-set via pool pointers ---
+@t(0x05CC0, 'E2-b35: 0x05cc0 — пишет константу 0xAAAA в periph[0x40003000] (pool-указатель). Вериф значение после вызова.')
+def _(run, rng):
+    import struct as _st
+    r0, emu = _fresh_call(0x05CC0)
+    got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40003000, 4)))[0]
+    assert got == 0xAAAA, f'periph[0x40003000]={got:#x} want 0xaaaa'
+
+@t(0x1A5C4, 'E2-b35: 0x1a5c4 — ставит бит3 (0x8) в u32@periph[0x40012418] (pool-base 0x40012400). Вериф pre=0/0xFF.')
+def _(run, rng):
+    import struct as _st
+    for pre, exp in [(0, 0x8), (0xFF, 0xFF)]:
+        r0, emu = _fresh_call(0x1A5C4, extra_mem=[(0x40012418, _st.pack('<I', pre))])
+        got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40012418, 4)))[0]
+        assert got == exp, f'pre={pre:#x}: got {got:#x} want {exp:#x}'
+
+@t(0x1A5D4, 'E2-b35: 0x1a5d4 — ставит бит5 (0x20) в u32@periph[0x40012418]. Вериф pre=0/0x0F.')
+def _(run, rng):
+    import struct as _st
+    for pre, exp in [(0, 0x20), (0x0F, 0x2F)]:
+        r0, emu = _fresh_call(0x1A5D4, extra_mem=[(0x40012418, _st.pack('<I', pre))])
+        got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40012418, 4)))[0]
+        assert got == exp, f'pre={pre:#x}: got {got:#x} want {exp:#x}'
 
 
 # ---------------------------------------------------------------------------
