@@ -5253,6 +5253,31 @@ def _(run, rng):
     assert 'r0' in cap, f'не достиг 0xc0b4: {cap}'
 
 
+# --- E2-batch13: poll / I2C init / telemetry reset / GPIO init (bl-intercept) ---
+@t(0x04E08, 'E2-b13: 0x04e08 — poll. 0x04e08() -> bl 0x1bdc(r0=0x94) + задержка. bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x04E08, 0x1BDD)
+    assert cap.get('r0') == 0x94, f'{cap}'
+
+
+@t(0x05FB4, 'E2-b13: 0x05fb4 — I2C init. 0x05fb4() -> 0x5a38() + задержка + bl 0x1c1c(r0=0x92). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x05FB4, 0x1C1D)
+    assert cap.get('r0') == 0x92, f'{cap}'
+
+
+@t(0x09AA4, 'E2-b13: 0x09aa4 — телеметрия reset. zero @0x1344 + bl 0x11d6(r0=RAM+0x1384, r1=0x4a). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x09AA4, 0x11D7)
+    assert cap.get('r0') == 0x20001384 and cap.get('r1') == 0x4A, f'{cap}'
+
+
+@t(0x05B98, 'E2-b13: 0x05b98 — GPIO init. @0x40003000=0xAAAA; bl 0xc20c(r0=3, r1=0x40010818 [GPIO reg]). bl-intercept.')
+def _(run, rng):
+    cap, _emu = _intercept(0x05B98, 0xC20D)
+    assert cap.get('r1') == 0x40010818, f'{cap}'
+
+
 # ---------------------------------------------------------------------------
 
 def main():
