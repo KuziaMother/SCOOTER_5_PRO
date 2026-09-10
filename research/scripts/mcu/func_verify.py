@@ -6411,6 +6411,112 @@ def _t_2360c(run, rng):
     assert cap
 t(0x2360C, 'E2-b51: delegate -> bl 0x23620')(_t_2360c)
 
+# --- E2-batch52: multi-2-bl init-groups (21) ---
+def _t_01858(run, rng):
+    cap, _ = _intercept(0x01858, 0x187A, max_insn=50000)
+    assert cap
+t(0x01858, 'E2-b52: init-group -> bl 0x185e + bl 0x187a')(_t_01858)
+
+def _t_018fc(run, rng):
+    cap, _ = _intercept(0x018FC, 0x1932, max_insn=50000)
+    assert cap
+t(0x018FC, 'E2-b52: init-group -> bl 0x191e + bl 0x1932')(_t_018fc)
+
+def _t_029e8(run, rng):
+    cap, _ = _intercept(0x029E8, 0x2A00, max_insn=50000)
+    assert cap
+t(0x029E8, 'E2-b52: init-group -> bl 0x29fc + bl 0x2a00')(_t_029e8)
+
+def _t_03600(run, rng):
+    cap, _ = _intercept(0x03600, 0x360C, max_insn=50000)
+    assert cap
+t(0x03600, 'E2-b52: init-group -> bl 0x3606 + bl 0x360c')(_t_03600)
+
+def _t_04c84(run, rng):
+    cap, _ = _intercept(0x04C84, 0x4CAE, max_insn=50000)
+    assert cap
+t(0x04C84, 'E2-b52: init-group -> bl 0x4c94 + bl 0x4cae')(_t_04c84)
+
+def _t_04fc0(run, rng):
+    cap, _ = _intercept(0x04FC0, 0x4FD0, max_insn=50000)
+    assert cap
+t(0x04FC0, 'E2-b52: init-group -> bl 0x4fc6 + bl 0x4fd0')(_t_04fc0)
+
+def _t_05000(run, rng):
+    cap, _ = _intercept(0x05000, 0x5014, max_insn=50000)
+    assert cap
+t(0x05000, 'E2-b52: init-group -> bl 0x5008 + bl 0x5014')(_t_05000)
+
+def _t_05888(run, rng):
+    cap, _ = _intercept(0x05888, 0x58A4, max_insn=50000)
+    assert cap
+t(0x05888, 'E2-b52: init-group -> bl 0x588e + bl 0x58a4')(_t_05888)
+
+def _t_081b4(run, rng):
+    cap, _ = _intercept(0x081B4, 0x826A, max_insn=50000)
+    assert cap
+t(0x081B4, 'E2-b52: init-group -> bl 0x81bc + bl 0x826a')(_t_081b4)
+
+def _t_082b8(run, rng):
+    cap, _ = _intercept(0x082B8, 0x82C4, max_insn=50000)
+    assert cap
+t(0x082B8, 'E2-b52: init-group -> bl 0x82c0 + bl 0x82c4')(_t_082b8)
+
+def _t_08a90(run, rng):
+    cap, _ = _intercept(0x08A90, 0x8AA0, max_insn=50000)
+    assert cap
+t(0x08A90, 'E2-b52: init-group -> bl 0x8a98 + bl 0x8aa0')(_t_08a90)
+
+def _t_08b10(run, rng):
+    cap, _ = _intercept(0x08B10, 0x8B30, max_insn=50000)
+    assert cap
+t(0x08B10, 'E2-b52: init-group -> bl 0x8b14 + bl 0x8b30')(_t_08b10)
+
+def _t_08b58(run, rng):
+    cap, _ = _intercept(0x08B58, 0x8B78, max_insn=50000)
+    assert cap
+t(0x08B58, 'E2-b52: init-group -> bl 0x8b5c + bl 0x8b78')(_t_08b58)
+
+def _t_096dc(run, rng):
+    cap, _ = _intercept(0x096DC, 0x9708, max_insn=50000)
+    assert cap
+t(0x096DC, 'E2-b52: init-group -> bl 0x96fa + bl 0x9708')(_t_096dc)
+
+def _t_09714(run, rng):
+    cap, _ = _intercept(0x09714, 0x9740, max_insn=50000)
+    assert cap
+t(0x09714, 'E2-b52: init-group -> bl 0x9732 + bl 0x9740')(_t_09714)
+
+def _t_0a7ec(run, rng):
+    cap, _ = _intercept(0x0A7EC, 0xA88E, max_insn=50000)
+    assert cap
+t(0x0A7EC, 'E2-b52: init-group -> bl 0xa80a + bl 0xa88e')(_t_0a7ec)
+
+def _t_0cd0c(run, rng):
+    cap, _ = _intercept(0x0CD0C, 0xCD5C, max_insn=50000)
+    assert cap
+t(0x0CD0C, 'E2-b52: init-group -> bl 0xcd1e + bl 0xcd5c')(_t_0cd0c)
+
+def _t_0d298(run, rng):
+    cap, _ = _intercept(0x0D298, 0xD2B8, max_insn=50000)
+    assert cap
+t(0x0D298, 'E2-b52: init-group -> bl 0xd2a0 + bl 0xd2b8')(_t_0d298)
+
+def _t_0de0a(run, rng):
+    cap, _ = _intercept(0x0DE0A, 0xDE52, max_insn=50000)
+    assert cap
+t(0x0DE0A, 'E2-b52: init-group -> bl 0xde24 + bl 0xde52')(_t_0de0a)
+
+def _t_139fc(run, rng):
+    cap, _ = _intercept(0x139FC, 0x13ABC, max_insn=50000)
+    assert cap
+t(0x139FC, 'E2-b52: init-group -> bl 0x13a0a + bl 0x13abc')(_t_139fc)
+
+def _t_13bb8(run, rng):
+    cap, _ = _intercept(0x13BB8, 0x13BDC, max_insn=50000)
+    assert cap
+t(0x13BB8, 'E2-b52: init-group -> bl 0x13bc4 + bl 0x13bdc')(_t_13bb8)
+
 
 if __name__ == '__main__':
     sys.exit(main())
