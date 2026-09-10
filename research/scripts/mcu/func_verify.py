@@ -6219,6 +6219,198 @@ def main():
     print(f'\nитого: PASS {len(passed)} / FAIL {len(failed)} из {len(sel)}')
     return 1 if failed else 0
 
+# --- E2-batch50: single-bl reachable delegates (34) ---
+def _t_01218(run, rng):
+    cap, _ = _intercept(0x01218, 0x1232, max_insn=50000)
+    assert cap
+t(0x01218, 'E2-b50: delegate -> bl 0x1232')(_t_01218)
+def _t_01ac8(run, rng):
+    cap, _ = _intercept(0x01AC8, 0x1AE2, max_insn=50000)
+    assert cap
+t(0x01AC8, 'E2-b50: delegate -> bl 0x1ae2')(_t_01ac8)
+def _t_03700(run, rng):
+    cap, _ = _intercept(0x03700, 0x370A, max_insn=50000)
+    assert cap and cap.get('r0') == 0x40
+t(0x03700, 'E2-b50: delegate -> bl 0x370a (r0==0x40)')(_t_03700)
+def _t_04994(run, rng):
+    cap, _ = _intercept(0x04994, 0x4996, max_insn=50000)
+    assert cap
+t(0x04994, 'E2-b50: delegate -> bl 0x4996')(_t_04994)
+def _t_04b20(run, rng):
+    cap, _ = _intercept(0x04B20, 0x4B44, max_insn=50000)
+    assert cap
+t(0x04B20, 'E2-b50: delegate -> bl 0x4b44')(_t_04b20)
+def _t_053fc(run, rng):
+    cap, _ = _intercept(0x053FC, 0x540A, max_insn=50000)
+    assert cap and cap.get('r0') == 0x40
+t(0x053FC, 'E2-b50: delegate -> bl 0x540a (r0==0x40)')(_t_053fc)
+def _t_08bec(run, rng):
+    cap, _ = _intercept(0x08BEC, 0x8C1E, max_insn=50000)
+    assert cap
+t(0x08BEC, 'E2-b50: delegate -> bl 0x8c1e')(_t_08bec)
+def _t_098c8(run, rng):
+    cap, _ = _intercept(0x098C8, 0x98E6, max_insn=50000)
+    assert cap
+t(0x098C8, 'E2-b50: delegate -> bl 0x98e6')(_t_098c8)
+def _t_0a8c4(run, rng):
+    cap, _ = _intercept(0x0A8C4, 0xA8E8, max_insn=50000)
+    assert cap
+t(0x0A8C4, 'E2-b50: delegate -> bl 0xa8e8')(_t_0a8c4)
+def _t_0a910(run, rng):
+    cap, _ = _intercept(0x0A910, 0xA938, max_insn=50000)
+    assert cap
+t(0x0A910, 'E2-b50: delegate -> bl 0xa938')(_t_0a910)
+def _t_0bc5c(run, rng):
+    cap, _ = _intercept(0x0BC5C, 0xBC7E, max_insn=50000)
+    assert cap
+t(0x0BC5C, 'E2-b50: delegate -> bl 0xbc7e')(_t_0bc5c)
+def _t_0c138(run, rng):
+    cap, _ = _intercept(0x0C138, 0xC13A, max_insn=50000)
+    assert cap
+t(0x0C138, 'E2-b50: delegate -> bl 0xc13a')(_t_0c138)
+def _t_0c984(run, rng):
+    cap, _ = _intercept(0x0C984, 0xC98A, max_insn=50000)
+    assert cap
+t(0x0C984, 'E2-b50: delegate -> bl 0xc98a')(_t_0c984)
+def _t_0e160(run, rng):
+    cap, _ = _intercept(0x0E160, 0xE170, max_insn=50000)
+    assert cap
+t(0x0E160, 'E2-b50: delegate -> bl 0xe170')(_t_0e160)
+def _t_0e2cc(run, rng):
+    cap, _ = _intercept(0x0E2CC, 0xE2F0, max_insn=50000)
+    assert cap
+t(0x0E2CC, 'E2-b50: delegate -> bl 0xe2f0')(_t_0e2cc)
+def _t_0e3ec(run, rng):
+    cap, _ = _intercept(0x0E3EC, 0xE3FC, max_insn=50000)
+    assert cap
+t(0x0E3EC, 'E2-b50: delegate -> bl 0xe3fc')(_t_0e3ec)
+def _t_10a5c(run, rng):
+    cap, _ = _intercept(0x10A5C, 0x10A84, max_insn=50000)
+    assert cap
+t(0x10A5C, 'E2-b50: delegate -> bl 0x10a84')(_t_10a5c)
+def _t_11c3c(run, rng):
+    cap, _ = _intercept(0x11C3C, 0x11C42, max_insn=50000)
+    assert cap and cap.get('r0') == 0x29bc
+t(0x11C3C, 'E2-b50: delegate -> bl 0x11c42 (r0==0x29bc)')(_t_11c3c)
+def _t_11d98(run, rng):
+    cap, _ = _intercept(0x11D98, 0x11DB6, max_insn=50000)
+    assert cap
+t(0x11D98, 'E2-b50: delegate -> bl 0x11db6')(_t_11d98)
+def _t_13cc8(run, rng):
+    cap, _ = _intercept(0x13CC8, 0x13CE4, max_insn=50000)
+    assert cap
+t(0x13CC8, 'E2-b50: delegate -> bl 0x13ce4')(_t_13cc8)
+def _t_145e8(run, rng):
+    cap, _ = _intercept(0x145E8, 0x145FA, max_insn=50000)
+    assert cap
+t(0x145E8, 'E2-b50: delegate -> bl 0x145fa')(_t_145e8)
+def _t_14a50(run, rng):
+    cap, _ = _intercept(0x14A50, 0x14A5E, max_insn=50000)
+    assert cap
+t(0x14A50, 'E2-b50: delegate -> bl 0x14a5e')(_t_14a50)
+def _t_158f8(run, rng):
+    cap, _ = _intercept(0x158F8, 0x1590A, max_insn=50000)
+    assert cap
+t(0x158F8, 'E2-b50: delegate -> bl 0x1590a')(_t_158f8)
+def _t_16b70(run, rng):
+    cap, _ = _intercept(0x16B70, 0x16B8E, max_insn=50000)
+    assert cap and cap.get('r0') == 0xffff and cap.get('r2') == 0x10
+t(0x16B70, 'E2-b50: delegate -> bl 0x16b8e (r0==0xffff, r2==0x10)')(_t_16b70)
+def _t_17198(run, rng):
+    cap, _ = _intercept(0x17198, 0x171BA, max_insn=50000)
+    assert cap
+t(0x17198, 'E2-b50: delegate -> bl 0x171ba')(_t_17198)
+def _t_172d8(run, rng):
+    cap, _ = _intercept(0x172D8, 0x172EA, max_insn=50000)
+    assert cap
+t(0x172D8, 'E2-b50: delegate -> bl 0x172ea')(_t_172d8)
+def _t_17c6c(run, rng):
+    cap, _ = _intercept(0x17C6C, 0x17C8A, max_insn=50000)
+    assert cap
+t(0x17C6C, 'E2-b50: delegate -> bl 0x17c8a')(_t_17c6c)
+def _t_17d38(run, rng):
+    cap, _ = _intercept(0x17D38, 0x17D5E, max_insn=50000)
+    assert cap
+t(0x17D38, 'E2-b50: delegate -> bl 0x17d5e')(_t_17d38)
+def _t_17df4(run, rng):
+    cap, _ = _intercept(0x17DF4, 0x17E0E, max_insn=50000)
+    assert cap
+t(0x17DF4, 'E2-b50: delegate -> bl 0x17e0e')(_t_17df4)
+def _t_18420(run, rng):
+    cap, _ = _intercept(0x18420, 0x1843E, max_insn=50000)
+    assert cap
+t(0x18420, 'E2-b50: delegate -> bl 0x1843e')(_t_18420)
+def _t_18a48(run, rng):
+    cap, _ = _intercept(0x18A48, 0x18A66, max_insn=50000)
+    assert cap
+t(0x18A48, 'E2-b50: delegate -> bl 0x18a66')(_t_18a48)
+def _t_19cd0(run, rng):
+    cap, _ = _intercept(0x19CD0, 0x19CEF, max_insn=50000)
+    assert cap
+t(0x19CD0, 'E2-b50: delegate -> bl 0x19cef')(_t_19cd0)
+def _t_1a300(run, rng):
+    cap, _ = _intercept(0x1A300, 0x1A318, max_insn=50000)
+    assert cap
+t(0x1A300, 'E2-b50: delegate -> bl 0x1a318')(_t_1a300)
+def _t_1a928(run, rng):
+    cap, _ = _intercept(0x1A928, 0x1A946, max_insn=50000)
+    assert cap
+t(0x1A928, 'E2-b50: delegate -> bl 0x1a946')(_t_1a928)
+
+# --- E2-batch51: новые reachable single-bl (13) ---
+def _t_14924(run, rng):
+    cap, _ = _intercept(0x14924, 0x14938, max_insn=50000)
+    assert cap
+t(0x14924, 'E2-b51: delegate -> bl 0x14938')(_t_14924)
+def _t_155ac(run, rng):
+    cap, _ = _intercept(0x155AC, 0x155E2, max_insn=50000)
+    assert cap
+t(0x155AC, 'E2-b51: delegate -> bl 0x155e2')(_t_155ac)
+def _t_15918(run, rng):
+    cap, _ = _intercept(0x15918, 0x15934, max_insn=50000)
+    assert cap
+t(0x15918, 'E2-b51: delegate -> bl 0x15934')(_t_15918)
+def _t_15a1c(run, rng):
+    cap, _ = _intercept(0x15A1C, 0x15A50, max_insn=50000)
+    assert cap
+t(0x15A1C, 'E2-b51: delegate -> bl 0x15a50')(_t_15a1c)
+def _t_15c94(run, rng):
+    cap, _ = _intercept(0x15C94, 0x15CCA, max_insn=50000)
+    assert cap
+t(0x15C94, 'E2-b51: delegate -> bl 0x15cca')(_t_15c94)
+def _t_17094(run, rng):
+    cap, _ = _intercept(0x17094, 0x170A2, max_insn=50000)
+    assert cap
+t(0x17094, 'E2-b51: delegate -> bl 0x170a2')(_t_17094)
+def _t_170e0(run, rng):
+    cap, _ = _intercept(0x170E0, 0x170EE, max_insn=50000)
+    assert cap
+t(0x170E0, 'E2-b51: delegate -> bl 0x170ee')(_t_170e0)
+def _t_19ff4(run, rng):
+    cap, _ = _intercept(0x19FF4, 0x1A004, max_insn=50000)
+    assert cap
+t(0x19FF4, 'E2-b51: delegate -> bl 0x1a004')(_t_19ff4)
+def _t_1a894(run, rng):
+    cap, _ = _intercept(0x1A894, 0x1A896, max_insn=50000)
+    assert cap
+t(0x1A894, 'E2-b51: delegate -> bl 0x1a896')(_t_1a894)
+def _t_1c234(run, rng):
+    cap, _ = _intercept(0x1C234, 0x1C24E, max_insn=50000)
+    assert cap
+t(0x1C234, 'E2-b51: delegate -> bl 0x1c24e')(_t_1c234)
+def _t_1dea4(run, rng):
+    cap, _ = _intercept(0x1DEA4, 0x1DEAE, max_insn=50000)
+    assert cap
+t(0x1DEA4, 'E2-b51: delegate -> bl 0x1deae')(_t_1dea4)
+def _t_1e1a0(run, rng):
+    cap, _ = _intercept(0x1E1A0, 0x1E1D0, max_insn=50000)
+    assert cap
+t(0x1E1A0, 'E2-b51: delegate -> bl 0x1e1d0')(_t_1e1a0)
+def _t_2360c(run, rng):
+    cap, _ = _intercept(0x2360C, 0x23620, max_insn=50000)
+    assert cap
+t(0x2360C, 'E2-b51: delegate -> bl 0x23620')(_t_2360c)
+
 
 if __name__ == '__main__':
     sys.exit(main())
