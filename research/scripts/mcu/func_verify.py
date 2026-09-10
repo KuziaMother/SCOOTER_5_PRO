@@ -6296,66 +6296,26 @@ def _t_11d98(run, rng):
     cap, _ = _intercept(0x11D98, 0x11DB6, max_insn=50000)
     assert cap
 t(0x11D98, 'E2-b50: delegate -> bl 0x11db6')(_t_11d98)
-def _t_13cc8(run, rng):
-    cap, _ = _intercept(0x13CC8, 0x13CE4, max_insn=50000)
-    assert cap
-t(0x13CC8, 'E2-b50: delegate -> bl 0x13ce4')(_t_13cc8)
-def _t_145e8(run, rng):
-    cap, _ = _intercept(0x145E8, 0x145FA, max_insn=50000)
-    assert cap
-t(0x145E8, 'E2-b50: delegate -> bl 0x145fa')(_t_145e8)
-def _t_14a50(run, rng):
-    cap, _ = _intercept(0x14A50, 0x14A5E, max_insn=50000)
-    assert cap
-t(0x14A50, 'E2-b50: delegate -> bl 0x14a5e')(_t_14a50)
+# (Остальные b50-записи из 5c27a3b — 0x13cc8/0x145e8/0x14a50/0x16b70/0x17198/0x172d8/
+# 0x17c6c/0x17d38/0x17df4/0x18420/0x18a48/0x19cd0/0x1a300/0x1a928 — удалены: это были
+# не входы функций (mid-code), а «цели» — fallthrough-адреса, не bl; тесты тривиально
+# проходили и ничего не верифицировали.)
 def _t_158f8(run, rng):
-    cap, _ = _intercept(0x158F8, 0x1590A, max_insn=50000)
-    assert cap
-t(0x158F8, 'E2-b50: delegate -> bl 0x1590a')(_t_158f8)
-def _t_16b70(run, rng):
-    cap, _ = _intercept(0x16B70, 0x16B8E, max_insn=50000)
-    assert cap and cap.get('r0') == 0xffff and cap.get('r2') == 0x10
-t(0x16B70, 'E2-b50: delegate -> bl 0x16b8e (r0==0xffff, r2==0x10)')(_t_16b70)
-def _t_17198(run, rng):
-    cap, _ = _intercept(0x17198, 0x171BA, max_insn=50000)
-    assert cap
-t(0x17198, 'E2-b50: delegate -> bl 0x171ba')(_t_17198)
-def _t_172d8(run, rng):
-    cap, _ = _intercept(0x172D8, 0x172EA, max_insn=50000)
-    assert cap
-t(0x172D8, 'E2-b50: delegate -> bl 0x172ea')(_t_172d8)
-def _t_17c6c(run, rng):
-    cap, _ = _intercept(0x17C6C, 0x17C8A, max_insn=50000)
-    assert cap
-t(0x17C6C, 'E2-b50: delegate -> bl 0x17c8a')(_t_17c6c)
-def _t_17d38(run, rng):
-    cap, _ = _intercept(0x17D38, 0x17D5E, max_insn=50000)
-    assert cap
-t(0x17D38, 'E2-b50: delegate -> bl 0x17d5e')(_t_17d38)
-def _t_17df4(run, rng):
-    cap, _ = _intercept(0x17DF4, 0x17E0E, max_insn=50000)
-    assert cap
-t(0x17DF4, 'E2-b50: delegate -> bl 0x17e0e')(_t_17df4)
-def _t_18420(run, rng):
-    cap, _ = _intercept(0x18420, 0x1843E, max_insn=50000)
-    assert cap
-t(0x18420, 'E2-b50: delegate -> bl 0x1843e')(_t_18420)
-def _t_18a48(run, rng):
-    cap, _ = _intercept(0x18A48, 0x18A66, max_insn=50000)
-    assert cap
-t(0x18A48, 'E2-b50: delegate -> bl 0x18a66')(_t_18a48)
-def _t_19cd0(run, rng):
-    cap, _ = _intercept(0x19CD0, 0x19CEF, max_insn=50000)
-    assert cap
-t(0x19CD0, 'E2-b50: delegate -> bl 0x19cef')(_t_19cd0)
-def _t_1a300(run, rng):
-    cap, _ = _intercept(0x1A300, 0x1A318, max_insn=50000)
-    assert cap
-t(0x1A300, 'E2-b50: delegate -> bl 0x1a318')(_t_1a300)
-def _t_1a928(run, rng):
-    cap, _ = _intercept(0x1A928, 0x1A946, max_insn=50000)
-    assert cap
-t(0x1A928, 'E2-b50: delegate -> bl 0x1a946')(_t_1a928)
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    # I2C-старт: byte@RAM+0xB8C=1 (гейт 0x15ffc) -> bl 0x15ffc(r0=0xA) -> byte@RAM+0x1FAF=1
+    cap, _ = _intercept(0x158F8, 0x15FFC, max_insn=50000)
+    assert cap and cap.get('r0') == 0xA, f'r0={cap.get("r0"):#x} want 0xa'
+    # полный прогон (target = pop после финального strb): верифицируем побочные эффекты
+    cap, emu = _intercept(0x158F8, 0x1590C, max_insn=50000)
+    assert cap, 'не дошёл до pop'
+    b8c = emu.uc.mem_read(_R + 0xB8C, 1)[0]
+    c80 = _st.unpack_from('<I', bytes(emu.uc.mem_read(_R + 0xC80, 4)), 0)[0]
+    faf = emu.uc.mem_read(_R + 0x1FAF, 1)[0]
+    assert b8c == 1, f'byte@RAM+0xb8c={b8c:#x} want 0x1'
+    assert c80 == 9, f'u32@RAM+0xc80={c80:#x} want 0x9 (0xa-1, decrement-path 0x15ffc)'
+    assert faf == 1, f'byte@RAM+0x1faf={faf:#x} want 0x1'
+t(0x158F8, 'E2-b50: 0x158f8 I2C-старт: byte@RAM+0xb8c=1 -> bl 0x15ffc(r0=0xa) -> byte@RAM+0x1faf=1')(_t_158f8)
 
 # --- E2-batch51: новые reachable single-bl (13) ---
 def _t_14924(run, rng):
@@ -6516,6 +6476,92 @@ def _t_13bb8(run, rng):
     cap, _ = _intercept(0x13BB8, 0x13BDC, max_insn=50000)
     assert cap
 t(0x13BB8, 'E2-b52: init-group -> bl 0x13bc4 + bl 0x13bdc')(_t_13bb8)
+
+# --- E2-batch53: stateful single-bl делегаторы с RAM-гейтами (extra_ram; открытая+закрытая ветка) ---
+def _t_8834(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # гейт: byte@RAM+0x107==1 && byte@RAM+0x35==1 -> bl 0xa6a4
+    cap, _ = _intercept(0x8834, 0xA6A4, max_insn=30000,
+                        extra_ram=[(_R + 0x107, b'\x01'), (_R + 0x35, b'\x01')])
+    assert cap, 'bl 0xa6a4 not reached (gate open)'
+    cap, _ = _intercept(0x8834, 0xA6A4, max_insn=30000)
+    assert not cap, 'bl 0xa6a4 reached with gate closed'
+t(0x8834, 'E2-b53: 0x8834 gated delegate -> bl 0xa6a4 (RAM+0x107==1 && RAM+0x35==1)')(_t_8834)
+
+def _t_1238c(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # b=byte@RAM+0x35: b==0/1 -> bl 0xa7ec (+ bl 0xc098 после возврата); b==2 -> только 0xa7ec; b>=3 -> нет.
+    # bl 0xc098 верифицируем только в отрицательной ветке: возврат из 0xa7ec на нулевом RAM
+    # невозможен (внутренний blx [RAM-func-ptr] = runtime-потолок §74.1).
+    cap, _ = _intercept(0x1238C, 0xA7EC, max_insn=30000)
+    assert cap, 'bl 0xa7ec not reached (b=0)'
+    cap, _ = _intercept(0x1238C, 0xA7EC, max_insn=30000, extra_ram=[(_R + 0x35, b'\x02')])
+    assert cap, 'bl 0xa7ec not reached (b=2)'
+    cap, _ = _intercept(0x1238C, 0xA7EC, max_insn=30000, extra_ram=[(_R + 0x35, b'\x03')])
+    assert not cap, 'bl 0xa7ec reached with b=3'
+    cap, _ = _intercept(0x1238C, 0xC098, max_insn=30000, extra_ram=[(_R + 0x35, b'\x03')])
+    assert not cap, 'bl 0xc098 reached with b=3'
+t(0x1238C, 'E2-b53: 0x1238c mode-gate (byte@RAM+0x35<3) -> bl 0xa7ec; b>=3 -> нет bl')(_t_1238c)
+
+def _t_14ed0(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # гейт: byte@RAM+0x31==1 -> bl 0x8e14
+    cap, _ = _intercept(0x14ED0, 0x8E14, max_insn=30000, extra_ram=[(_R + 0x31, b'\x01')])
+    assert cap, 'bl 0x8e14 not reached (gate open)'
+    cap, _ = _intercept(0x14ED0, 0x8E14, max_insn=30000)
+    assert not cap, 'bl 0x8e14 reached with gate closed'
+t(0x14ED0, 'E2-b53: 0x14ed0 gated delegate -> bl 0x8e14 (RAM+0x31==1)')(_t_14ed0)
+
+def _t_15f00(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # гейт: byte@RAM+0x1F11==1 && u16@RAM+0x1FB8==0 -> bl 0x15a1c
+    cap, _ = _intercept(0x15F00, 0x15A1C, max_insn=30000, extra_ram=[(_R + 0x1F11, b'\x01')])
+    assert cap, 'bl 0x15a1c not reached (gate open)'
+    cap, _ = _intercept(0x15F00, 0x15A1C, max_insn=30000)
+    assert not cap, 'bl 0x15a1c reached with gate closed'
+t(0x15F00, 'E2-b53: 0x15f00 gated delegate -> bl 0x15a1c (RAM+0x1F11==1 && u16@RAM+0x1FB8==0)')(_t_15f00)
+
+def _t_15ffc(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # r0->u32@RAM+0xC80; гейт: byte@RAM+0xB8C==1 && u32@RAM+0xC80==0 -> bl 0x15a1c
+    cap, _ = _intercept(0x15FFC, 0x15A1C, max_insn=30000, arg=0,
+                        extra_ram=[(_R + 0xB8C, b'\x01')])
+    assert cap, 'bl 0x15a1c not reached (gate open)'
+    cap, _ = _intercept(0x15FFC, 0x15A1C, max_insn=30000, arg=0)
+    assert not cap, 'bl 0x15a1c reached with gate closed'
+t(0x15FFC, 'E2-b53: 0x15ffc gated delegate -> bl 0x15a1c (RAM+0xB8C==1 && u32@RAM+0xC80==0)')(_t_15ffc)
+
+def _t_d33c(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    # counter byte@RAM+0xA67: ++, >5 -> bl 0x1c60(r0=8, r1=0x7f, r2=&RAM+0x164B, r3=1)
+    cap, _ = _intercept(0xD33C, 0x1C60, max_insn=30000, extra_ram=[(_R + 0xA67, b'\x05')])
+    assert cap, 'bl 0x1c60 not reached (counter=5 -> 6>5)'
+    assert cap.get('r0') == 8, f'r0={cap.get("r0"):#x} want 0x8'
+    assert cap.get('r1') == 0x7F, f'r1={cap.get("r1"):#x} want 0x7f'
+    assert cap.get('r2') == _R + 0x164B, f'r2={cap.get("r2"):#x}'
+    assert cap.get('r3') == 1, f'r3={cap.get("r3")} want 1'
+    cap, _ = _intercept(0xD33C, 0x1C60, max_insn=30000)
+    assert not cap, 'bl 0x1c60 reached with counter=0 (1<=5)'
+t(0xD33C, 'E2-b53: 0xd33c counter-gate -> bl 0x1c60(op=8, reg=0x7f, buf=&RAM+0x164b, len=1) при counter>5')(_t_d33c)
+
+def _t_f1ec(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    import struct as _st
+    # bit1(RAM+0xF72)==0 && u16(RAM+0xF9B)<=u16(flash 0x19d98)=6084 && counter u16@RAM+0xA22 >= порог u16(flash 0x19d9c)=16801 -> bl 0x156ac
+    # (сравнение `cmp r0,r1; bgt` инвертировано: bl когда порог <= счётчик)
+    cap, _ = _intercept(0xF1EC, 0x156AC, max_insn=30000,
+                        extra_ram=[(_R + 0xA22, _st.pack('<H', 16801))])
+    assert cap, 'bl 0x156ac not reached (counter at threshold)'
+    cap, _ = _intercept(0xF1EC, 0x156AC, max_insn=30000)
+    assert not cap, 'bl 0x156ac reached with counter=0'
+t(0xF1EC, 'E2-b53: 0xf1ec dual-counter throttle -> bl 0x156ac (когда counter>=порога flash 0x19d9c)')(_t_f1ec)
+
+def _t_5b5a(run, rng):
+    # delay-loop делегатор: 2 цикла countdown 0x2710 -> bl 0x1c1c(r0=0x90)
+    cap, _ = _intercept(0x5B5A, 0x1C1C, max_insn=300000)
+    assert cap, 'bl 0x1c1c not reached after delay loops'
+    assert cap.get('r0') == 0x90, f'r0={cap.get("r0"):#x} want 0x90'
+t(0x5B5A, 'E2-b53: 0x5b5a delay-loop delegate (2x0x2710) -> bl 0x1c1c(r0=0x90)')(_t_5b5a)
 
 
 if __name__ == '__main__':
