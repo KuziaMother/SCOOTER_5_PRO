@@ -6808,6 +6808,210 @@ def _t_1647c(run, rng):
         assert not cap, f'{bad}: bl 0x16410 reached with invalid args'
 t(0x1647C, 'E2-b54: 0x1647c валидатор: a∈[1,0xc] && b∈[1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b); id не ограничивает (эмпирически)')(_t_1647c)
 
+# --- E2-batch55: чистые compute-функции (reference-model) + табличные поиски ---
+def _sdiv(a, b):
+    """ARM SDIV: signed-деление с усечением к нулю."""
+    q = abs(a) // abs(b)
+    return -q if (a < 0) != (b < 0) else q
+
+def _t_506a(run, rng):
+    # bubble sort u16: n проходов, i от n-k-1 вниз до 0, swap если buf[i] > buf[i+1] (unsigned);
+    # ЧИТАЕТ buf[n] (один элемент за концом!) — caller обязан дать n+1 слотов (эмпирически).
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(20):
+        n = rng.randint(2, 12)
+        data = [rng.randint(0, 0xFFFF) for _ in range(n + 1)]
+        run.ram_write(0x400, _st.pack('<%dH' % (n + 1), *data))
+        run.call(0x506A, args=(_R + 0x400, n), max_insn=30000)
+        buf = data[:]
+        for k in range(n):
+            for i in range(n - k - 1, -1, -1):
+                if buf[i] > buf[i + 1]:
+                    buf[i], buf[i + 1] = buf[i + 1], buf[i]
+        got = list(_st.unpack('<%dH' % (n + 1), run.ram_read(0x400, 2 * (n + 1))))
+        assert got == buf, f'n={n}: {got} want {buf}'
+t(0x506A, 'E2-b55: 0x506a bubble sort u16 (n проходов, читает buf[n] — нужен n+1 слот)')(_t_506a)
+
+def _ref_50b0(buf, data, n):
+    # 0x50b0 (эмпирически): СРАВНЕНИЯ min/max — по байтам БУФ-АРГУМЕНТА (s8);
+    # значения при обновлении + суммирование — из ФИКСИРОВАННОГО буфера RAM+0x44 (pool-литерал).
+    # mn=mx=s8(buf[0]); r8=ip=1; sum=0 (sxth-накопление s8(data[i]));
+    # if s8(buf[i]) > mx: mx=s8(data[i]), ip=i+1;  if s8(buf[i]) < mn: mn=s8(data[i]), r8=i+1
+    # out = {s8(sdiv(sum,n)), mn, mx, r8, ip}
+    def _s8(b):
+        return b - 0x100 if b >= 0x80 else b
+    mn = mx = _s8(buf[0])
+    r8 = ip = 1
+    s = 0
+    for i in range(n):
+        cv, dv = _s8(buf[i]), _s8(data[i])
+        if cv > mx:
+            mx, ip = dv, (i + 1) & 0xFF
+        if cv < mn:
+            mn, r8 = dv, (i + 1) & 0xFF
+        s = _sxth(s + dv)
+    return [(_sdiv(s, n) & 0xFF), mn & 0xFF, mx & 0xFF, r8, ip]
+
+def _t_50b0(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(20):
+        n = rng.randint(1, 40)
+        buf = bytes(rng.randint(0, 0xFF) for _ in range(n))
+        data = bytes(rng.randint(0, 0xFF) for _ in range(n))
+        run.ram_write(0x44, data)
+        run.ram_write(0x500, buf)
+        run.call(0x50B0, args=(_R + 0x500, n, _R + 0x600), max_insn=30000)
+        got = list(run.ram_read(0x600, 5))
+        exp = _ref_50b0(buf, data, n)
+        assert got == exp, f'n={n} buf0={buf[0]:#x}: {got} want {exp}'
+t(0x50B0, 'E2-b55: 0x50b0 byte-stats: сравнения по s8(buf[i]), значения/сумма из фикс. RAM+0x44; out={s8(sdiv(sum,n)),min,max,last_min+1,last_max+1}, init=s8(buf[0])')(_t_50b0)
+
+def _ref_rle(src, max_out):
+    # RLE-токен (эмпирически, оба декодера идентичны по формату):
+    # h: lit = h&7 (0 -> extended-байт), КОПИРУЕТСЯ lit-1 литералов (pre-decrement цикл);
+    # lf = h>>4 логически (0 -> extended); bit3(h): backward (offset-байт, count=lf+2 от dst-offset)
+    # иначе lf нулей. Порядок: h, [lit-ext], [lf-ext], литералы, [off].
+    out = bytearray()
+    p = 0
+    while len(out) < max_out:
+        h = src[p]; p += 1
+        lit = h & 7
+        if lit == 0:
+            lit = src[p]; p += 1
+        lf = h >> 4
+        if lf == 0:
+            lf = src[p]; p += 1
+        for _ in range(lit - 1):
+            out.append(src[p]); p += 1
+        if (h >> 3) & 1:
+            offv = src[p]; p += 1
+            back = len(out) - offv
+            for _ in range(lf + 2):
+                out.append(out[back]); back += 1
+        else:
+            out.extend(b'\x00' * lf)
+    return bytes(out[:max_out])
+
+def _mk_rle(off):
+    def _test(run, rng):
+        from emulator.mcu_emu import RAM as _R
+        for _ in range(15):
+            max_out = rng.randint(8, 64)
+            src = bytearray()
+            out = bytearray()
+            while len(out) < max_out:
+                L = rng.randint(0, 20)      # желаемое число литералов
+                LF = rng.randint(0, 20)     # len-поле (нули или backward count-2)
+                B = rng.getrandbits(1)
+                if L == 0 and LF == 0:      # гарантия прогресса токена
+                    LF = 2
+                if B and len(out) == 0:     # backward требует >=1 байт в out
+                    L = 1
+                # lit-поле: 3 бита = L+1 (1..7), 0 -> extended-байт = L+1
+                if L <= 6:
+                    lit_field, lit_ext = L + 1, None
+                else:
+                    lit_field, lit_ext = 0, L + 1
+                # len-поле: 4 бита = LF (1..15), 0 -> extended-байт = LF
+                if 1 <= LF <= 15:
+                    lf_field, lf_ext = LF, None
+                else:
+                    lf_field, lf_ext = 0, LF
+                h = (B << 3) | (lf_field << 4) | lit_field
+                src.append(h)
+                if lit_ext is not None:
+                    src.append(lit_ext)
+                if lf_ext is not None:
+                    src.append(lf_ext)
+                for _ in range(L):
+                    out.append(rng.randint(0, 0xFF))
+                    src.append(out[-1])
+                if B:
+                    offv = rng.randint(1, max(1, len(out)))
+                    src.append(offv)
+                    back = len(out) - offv
+                    for _ in range(LF + 2):
+                        out.append(out[back]); back += 1
+                else:
+                    out.extend(b'\x00' * LF)
+            run.ram_write(0x400, bytes(src))
+            run.ram_write(0xC00, bytes(max_out))
+            run.call(off, args=(_R + 0x400, _R + 0xC00, max_out), max_insn=50000)
+            got = run.ram_read(0xC00, max_out)
+            exp = _ref_rle(bytes(src), max_out)
+            assert got == exp, f'max_out={max_out}: {got.hex()} want {exp.hex()}'
+    return _test
+
+_t_152a = _mk_rle(0x152A)
+t(0x152A, 'E2-b55: 0x152a RLE-декодер: lit=h&7 (0->ext), count=lit-1; lf=h>>4 (0->ext); bit3=backward(off,count=lf+2) иначе lf нулей')(_t_152a)
+_t_1a24c = _mk_rle(0x1A24C)
+t(0x1A24C, 'E2-b55: 0x1a24c RLE-декодер #2 (твин 0x152a, формат токена идентичен)')(_t_1a24c)
+
+def _mk_tbl_search(off, tbl_off, n_entries, out_off):
+    def _test(run, rng):
+        import struct as _st
+        from emulator.mcu_emu import RAM as _R
+        for _ in range(15):
+            keys = [rng.randint(0, 0xFF) for _ in range(n_entries)]
+            entries = b''.join(_st.pack('<IB3x', rng.randint(0, 0x10000), k) for k in keys)
+            run.ram_write(tbl_off, entries)
+            key = rng.choice(keys + [rng.randint(0, 0xFF)])
+            r0, _ = run.call(off, args=(key, _R + out_off), max_insn=30000)
+            exp_i = next((i for i in range(n_entries) if keys[i] == key), None)
+            exp_r0 = (_R + tbl_off + exp_i * 8) if exp_i is not None else 0
+            assert r0 == exp_r0, f'key={key:#x}: r0={r0:#x} want {exp_r0:#x}'
+            assert run.ram_read(out_off, 1)[0] == (1 if exp_i is not None else 0), \
+                f'key={key:#x}: *out flag'
+    return _test
+
+_t_3994 = _mk_tbl_search(0x3994, 0x5CC, 58, 0x7A0)
+t(0x3994, 'E2-b55: 0x3994 табличный поиск: 58×8B @RAM+0x5CC (..0x79B), match byte@+4 -> r0=указатель, *u8=1; out ОБЯЗАТЕЛЬНО вне таблицы (strb до скана!)')(_t_3994)
+_t_583c = _mk_tbl_search(0x583C, 0x92C, 17, 0xA00)
+t(0x583C, 'E2-b55: 0x583c табличный поиск (twin 0x3994): 17×8B @RAM+0x92C')(_t_583c)
+
+def _t_befc(run, rng):
+    # 2 записи @RAM+0x7C4: lo=byte@entry+4, hi=lo+byte@[u32@entry+8]; match: lo<=key<hi (эмпирически);
+    # r0 = указатель на запись или 0, *u8 = флаг.
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(15):
+        e = []
+        bounds = []
+        for j in range(2):
+            lo = rng.randint(0, 0x80)
+            ln = rng.randint(1, 0x60)
+            p = _R + 0x400 + j * 0x100
+            run.ram_write(0x400 + j * 0x100 + 8, bytes([ln]))
+            e.append(_st.pack('<IB3x', p, lo))
+            bounds.append((lo, lo + ln))
+        run.ram_write(0x7C4, b''.join(e))
+        key = rng.randint(0, 0x120)
+        r0, _ = run.call(0xBEFC, args=(key, _R + 0x600), max_insn=20000)
+        exp_i = next((i for i in range(2) if bounds[i][0] <= key < bounds[i][1]), None)
+        exp_r0 = (_R + 0x7C4 + exp_i * 8) if exp_i is not None else 0
+        assert r0 == exp_r0, f'key={key}: r0={r0:#x} want {exp_r0:#x}'
+        assert run.ram_read(0x600, 1)[0] == (1 if exp_i is not None else 0), f'key={key}: *out flag'
+t(0xBEFC, 'E2-b55: 0xbefc range-поиск: 2 записи @RAM+0x7C4, [lo, lo+len) через u32-указатель -> r0=указатель')(_t_befc)
+
+def _t_17524(run, rng):
+    # boot-wait предикат: byte[RAM+0xFD3]>0x1E -> u32[RAM+8]=0, ret 0;
+    # u32[RAM+8] < 0x10E0 -> ret 0; иначе u32[RAM+8]=0x10E0 (clamp), ret 1.
+    from emulator.mcu_emu import RAM as _R
+    cases = [(0, 0, 0, 0), (0, 4000, 0, 4000), (0, 0x10DF, 0, 0x10DF),
+             (0, 0x10E0, 1, 0x10E0), (0, 9999, 1, 0x10E0),
+             (0x1E, 5000, 1, 0x10E0), (0x1F, 5000, 0, 0), (0x80, 0x10E0, 0, 0),
+             (0xFF, 7, 0, 0)]
+    import struct as _st
+    for b, v, exp_r0, exp_v in cases:
+        run.ram_write(0xFD3, bytes([b]))
+        run.ram_write(8, _st.pack('<I', v))
+        r0, _ = run.call(0x17524, args=(), max_insn=20000)
+        got_v = int.from_bytes(run.ram_read(8, 4), 'little')
+        assert r0 == exp_r0, f'({b},{v}): r0={r0} want {exp_r0}'
+        assert got_v == exp_v, f'({b},{v}): u32@8={got_v} want {exp_v}'
+t(0x17524, 'E2-b55: 0x17524 boot-wait предикат: byte@FD3>0x1e->reset u32@8,ret0; u32@8<0x10e0->ret0; иначе clamp=0x10e0,ret1')(_t_17524)
+
 
 if __name__ == '__main__':
     sys.exit(main())
