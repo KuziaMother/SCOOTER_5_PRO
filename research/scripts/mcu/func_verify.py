@@ -7174,6 +7174,318 @@ def _t_cbb8(run, rng):
         assert got_reg == exp_reg, f'v={v:#x}: REG={got_reg:#x} want {exp_reg:#x}'
 t(0xCBB8, 'E2-b56: 0xcbb8: u32@PERIPH+0x280C&0x40 -> ret1; иначе REG=0x80 + спин 0x2000 итераций, ret0')(_t_cbb8)
 
+# --- E2-batch57: предикаты/валидаторы/NVIC-сеты/пороговые счётчики (pool-литералы эмпирически) ---
+def _t_12804(run, rng):
+    # 0x12804: ret = (arg <= u16[FLASH+0x19B3C]) ? 0x65 : -31.
+    # Блок бинарного поиска (0x1282c..) — мёртвый код для этой таблицы (first<last).
+    from emulator.mcu_emu import FLASH0
+    img = open('D:/SCOOTER_5_PRO/research/images/mcu_0007.bin', 'rb').read()
+    first = struct.unpack_from('<H', img, 0x19B3C)[0]
+    for arg in (0, first - 1, first, first + 1, 0xFFFF):
+        r0, _ = run.call(0x12804, args=(arg,), max_insn=20000)
+        exp = 0x65 if arg <= first else (-31 & 0xFFFFFFFF)
+        assert r0 == exp, f'arg={arg:#x}: r0={r0:#x} want {exp:#x}'
+t(0x12804, 'E2-b57: 0x12804 порог: arg<=u16[FLASH+0x19B3C](=0x1980) -> 0x65; иначе -31 (блок поиска мёртв)')(_t_12804)
+
+def _t_b978(run, rng):
+    # 0xb978: q = u32[orig_sp+4] (stack-arg!); u32[q]==0 -> ret1; byte[q+0x13]!=0 -> ret0;
+    # иначе init-путь: u16[q+0x36]=0 + запись флагов, ret3. Запускаем на отдельном McuEmu
+    # (Run.call ставит SP=STACK_TOP, и [SP+4] уже вне RAM).
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
+    Q = 0x400
+    sp0 = STACK_TOP - 0x80
+    for _ in range(12):
+        q0 = rng.choice([0, 1, rng.randint(1, 0xFFFF)])
+        b13 = rng.choice([0, 0, 2, 3, 0xFF])   # b13==1 — handler-путь (blx в ноль), не проверяем
+        emu = McuEmu(max_insn=50000)
+        uc = emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        qb = bytearray(0x60)
+        struct.pack_into('<I', qb, 0, q0); qb[0x13] = b13
+        uc.mem_write(RAM + Q, bytes(qb))
+        uc.mem_write(sp0 + 4, struct.pack('<I', RAM + Q))
+        def _code(uc_, a, s, ud):
+            aa = a & ~1
+            if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _code)
+        uc.reg_write(_SP, sp0)
+        uc.reg_write(_LR, 0x0BADF001)
+        emu.insn = 0
+        try: uc.emu_start(0xB978 | 1, 0, count=50000)
+        except UcError as e: pass
+        r0 = uc.reg_read(UC_ARM_REG_R0)
+        if q0 == 0:
+            exp = 1
+        elif b13 == 0:
+            exp = 3
+            u36 = struct.unpack('<H', bytes(uc.mem_read(RAM + Q + 0x36, 2)))[0]
+            assert u36 == 0, f'q0={q0:#x}: u16[q+0x36]={u36:#x} want 0'
+        else:   # b13 >= 2 — активное состояние
+            exp = 0
+        assert r0 == exp, f'q0={q0:#x} b13={b13}: r0={r0} want {exp}'
+t(0xB978, 'E2-b57: 0xb978 очередь (stack-arg q=[sp+4]): u32[q]==0->1; byte[q+0x13]>=2->0; ==0 -> init u16[q+0x36]=0->3')(_t_b978)
+
+def _ref_bcc0(type_, val, b1, e0_lo, p0a, p0h, e1_lo, p1a, p1h):
+    # 0xbcc0: type/val = u16_be[f+2]/[f+4]; local=(val<<1)&0xFFFF; если b1==6: local=2;
+    # range-поиск 0xbeec по таблице @RAM+0x7C4 (out/gate=@RAM+0x7D4);
+    # при match: (byte[ptr+8]*byte[ptr+1]) >= local && lo+H >= val+type -> success.
+    local = (val << 1) & 0xFFFF
+    if b1 == 6:
+        local = 2
+    entry = None
+    for lo, A, H in ((e0_lo, p0a, p0h), (e1_lo, p1a, p1h)):
+        if lo <= type_ < lo + H:
+            entry = (lo, A, H); break
+    if entry is None:
+        return 0, 0
+    lo, A, H = entry
+    if (H * A) < local:
+        return 0, 0
+    if lo + H < val + type_:
+        return 0, 0
+    return 1, local & 0xFF
+
+def _t_bcc0(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(15):
+        e0_lo = rng.randint(0, 0x40); p0a = rng.randint(0, 0x20); p0h = rng.randint(1, 0x40)
+        e1_lo = rng.randint(0x40, 0x80); p1a = rng.randint(0, 0x20); p1h = rng.randint(1, 0x40)
+        type_ = rng.randint(0, 0xC0); val = rng.randint(0, 0x60); b1 = rng.choice([0, 0, 6])
+        run.ram_write(0x7C4, struct.pack('<IB3x', _R + 0x500, e0_lo) + struct.pack('<IB3x', _R + 0x600, e1_lo))
+        pl0 = bytearray(16); pl0[1] = p0a; pl0[8] = p0h
+        pl1 = bytearray(16); pl1[1] = p1a; pl1[8] = p1h
+        run.ram_write(0x500, bytes(pl0)); run.ram_write(0x600, bytes(pl1))
+        fr = bytearray(0x20)
+        fr[1] = b1; fr[2], fr[3] = type_ >> 8, type_ & 0xFF   # u16 BE
+        fr[4], fr[5] = val >> 8, val & 0xFF
+        run.ram_write(0x400, bytes(fr))
+        r0, _ = run.call(0xBCC0, args=(_R + 0x400,), max_insn=20000)
+        exp_r0, exp_f6 = _ref_bcc0(type_, val, b1, e0_lo, p0a, p0h, e1_lo, p1a, p1h)
+        got_f6 = run.ram_read(0x406, 1)[0]
+        assert r0 == exp_r0, f'type={type_} val={val} b1={b1}: r0={r0} want {exp_r0}'
+        assert got_f6 == exp_f6, f'type={type_} val={val}: f[6]={got_f6:#x} want {exp_f6:#x}'
+t(0xBCC0, 'E2-b57: 0xbcc0 frame-валидатор: u16_BE type/val; range-поиск 0xbeec (gate@RAM+0x7D4); H*A>=local && lo+H>=val+type -> f[6]=local,f[7]=0,ret1')(_t_bcc0)
+
+def _t_22b7c(run, rng):
+    # 0x22b7c: k=byte[r1+4]∈{0..4}, j=byte[r1+0xC]∈{0..2} (иначе спин);
+    # k>=2: u32[base]=(old&~0x60)|((k-2)<<6); иначе u32[base]&=~0x70;
+    # base∈{0x40000000,TIM4..}: u32[base]=(old&~0x300)|(j<<8);
+    # u32[base+0x3C]=u32[r1+8]; u32[base+0x38]=u32[r1+0];
+    # base∈{TIM4..,TIM2}: u32[base+0x40]=(old&0xFF00FF)|(u32[r1+0x10]&0xFF); u32[base+0x24]|=1
+    # base — абсолютные адреса регистров TIM (PERIPH-диапазон); эмпирика:
+    VJ = {0x40000000, 0x40000400, 0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
+    V40 = {0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
+    for _ in range(15):
+        k = rng.randint(0, 4); j = rng.randint(0, 2)
+        base = rng.choice(sorted(VJ) + [0x40001000])
+        f0 = rng.randint(0, 0xFFFFFFFF); f8 = rng.randint(0, 0xFFFFFFFF)
+        f10 = rng.randint(0, 0xFF); old = rng.randint(0, 0xFFFFFFFF)
+        st = bytearray(0x20); st[4] = k; st[0xC] = j
+        struct.pack_into('<I', st, 0, f0); struct.pack_into('<I', st, 8, f8)
+        struct.pack_into('<I', st, 0x10, f10)
+        run.ram_write(0x400, bytes(st))
+        run.periph_write(base, old)
+        run.call(0x22B7C, args=(base, RAM + 0x400), max_insn=20000)
+        e = old
+        if k >= 2: e = (e & ~0x60) | ((k << 5) - 0x20)   # биты[7:6] = k-1
+        else: e = (e & ~0x70) | (k << 4)                 # k=0/1: свой путь (0x22c3a), j-блок всё же применяется
+        if base in VJ: e = (e & ~0x300) | (j << 8)
+        g = run.periph_read(base)
+        assert g == e, f'k={k} j={j} base={base:#x} old={old:#x}: {g:#x} want {e:#x}'
+        assert run.periph_read(base + 0x3C) == f8, 'field+0x3c'
+        assert run.periph_read(base + 0x38) == f0, 'field+0x38'
+        if base in V40:
+            assert (run.periph_read(base + 0x40) & 0xFF) == f10, 'field+0x40'
+        assert run.periph_read(base + 0x24) & 1, 'bit0 @+0x24'
+    # спин при k>4 / j>2: на отдельном McuEmu — дошёл до лимита инструкций
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
+    for bad in ((5, 0), (0, 3)):
+        emu = McuEmu(max_insn=2000)
+        uc = emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        st = bytearray(16); st[4] = bad[0]; st[0xC] = bad[1]
+        uc.mem_write(RAM + 0x400, bytes(st))
+        def _code(uc_, a, s, ud):
+            aa = a & ~1
+            if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _code)
+        uc.reg_write(UC_ARM_REG_R0, 0x40012C00); uc.reg_write(UC_ARM_REG_R1, RAM + 0x400)
+        uc.reg_write(_SP, STACK_TOP - 0x40); uc.reg_write(_LR, 0x0BADF001)
+        emu.insn = 0
+        try: uc.emu_start(0x22B7C | 1, 0, count=2000)
+        except UcError as e: pass
+        assert emu.insn >= 1990, f'k={bad[0]} j={bad[1]}: insn={emu.insn} (ожидался спин)'
+t(0x22B7C, 'E2-b57: 0x22b7c TIM-CR1 сеттер: k=byte[r1+4]∈0..4,j=byte[r1+0xC]∈0..2 (иначе спин); k≥2: биты[7:6]=k-1; k∈{0,1}: чистит[7:5], k=1 ставит бит5; j-блок (7 баз): биты[9:8]=j; поля +0x3C/+0x38/+0x40')(_t_22b7c)
+
+# --- пороговые счётчики #5/#2/#6 (общий паттерн: фаза A считает, latch-бит, фаза B) ---
+def _s8(b): return b - 0x100 if b >= 0x80 else b
+
+def _ref_10468(mode, b5, v, c1, c2):
+    # 0x10468: b5=bit5(byte@FCD); V=s8[FC8];
+    # фаза A (gate byte@80∈{1,2} и b5==0): s8[F+0x19E3A]=10, cap u16[F+0x19E3B]=0xAAE:
+    #   v>10 -> c1=0; иначе c1+=1; c1>=cap -> b5=1, c1=0.
+    # фаза B (b5==1) — ВСЕГДА (gate не влияет): s8[F+0x19E3D]=-32, cap u16[F+0x19E3F]=0x5F:
+    #   v<-32 -> c2=0; иначе c2+=1; c2>=cap -> b5=0, c2=0.
+    if mode in (1, 2) and b5 == 0:
+        if v > 10: c1 = 0
+        else:
+            c1 += 1
+            if c1 >= 0xAAE: b5 = 1; c1 = 0
+    if b5 == 1:
+        if v < -32: c2 = 0
+        else:
+            c2 += 1
+            if c2 >= 0x5F: b5 = 0; c2 = 0
+    return c1, c2, b5
+
+def _t_10468(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(15):
+        mode = rng.randint(0, 3)
+        b5 = rng.getrandbits(1)
+        v = rng.choice([0, 10, 11, -32, -33, rng.randint(-0x80, 0x7F)])
+        c1 = rng.choice([0, 1, 0xAAD, 0xAAE, 0xAAF])
+        c2 = rng.choice([0, 1, 0x5E, 0x5F, 0x60])
+        run.ram_write(0x80, bytes([mode]))
+        run.ram_write(0xFCD, bytes([b5 << 5]))
+        run.ram_write(0xFC8, bytes([v & 0xFF]))
+        run.ram_write(0x9EE, struct.pack('<H', c1))
+        run.ram_write(0x9EC, struct.pack('<H', c2))
+        run.call(0x10468, args=(), max_insn=20000)
+        e1, e2, eb5 = _ref_10468(mode, b5, v, c1, c2)
+        g1 = struct.unpack('<H', run.ram_read(0x9EE, 2))[0]
+        g2 = struct.unpack('<H', run.ram_read(0x9EC, 2))[0]
+        gb5 = (run.ram_read(0xFCD, 1)[0] >> 5) & 1
+        assert (g1, g2, gb5) == (e1, e2, eb5), f'mode={mode} b5={b5} v={v}: got ({g1},{g2},{gb5}) want ({e1},{e2},{eb5})'
+t(0x10468, 'E2-b57: 0x10468 порог #5: gate byte@80∈{1,2}; bit5(byte@FCD); s8[FC8] vs flash 10/-32; счётчики @9EE/@9EC, latch-бит5')(_t_10468)
+
+def _ref_10524(b1, v, c1, c2):
+    # 0x10524: b1=bit1(byte@FD0); V=s8[FCF]; фаза A (b1==0): s8[F+0x19E4C]=-86, cap u16[F+0x19E4D]=0x7C18:
+    #   v<-86 -> c1=0; иначе c1+=1; c1>=cap -> b1=1, c1=0. Фаза B (b1==1): s8[F+0x19E4F]=65, cap u16[F+0x19E50]=0x1C49:
+    #   v>65 -> c2=0; иначе c2+=1; c2>=cap -> b1=0, c2=0.
+    if b1 == 0:
+        if v < -86: c1 = 0
+        else:
+            c1 += 1
+            if c1 >= 0x7C18: b1 = 1; c1 = 0
+    else:
+        if v > 65: c2 = 0
+        else:
+            c2 += 1
+            if c2 >= 0x1C49: b1 = 0; c2 = 0
+    return c1, c2, b1
+
+def _t_10524(run, rng):
+    for _ in range(15):
+        b1 = rng.getrandbits(1)
+        v = rng.choice([0, -86, -87, 65, 66, rng.randint(-0x80, 0x7F)])
+        c1 = rng.choice([0, 1, 0x7C18, 0x7C19])
+        c2 = rng.choice([0, 1, 0x1C49, 0x1C4A])
+        run.ram_write(0xFD0, bytes([b1 << 1]))
+        run.ram_write(0xFCF, bytes([v & 0xFF]))
+        run.ram_write(0x9E4, struct.pack('<H', c1))
+        run.ram_write(0x9E6, struct.pack('<H', c2))
+        run.call(0x10524, args=(), max_insn=20000)
+        e1, e2, eb1 = _ref_10524(b1, v, c1, c2)
+        g1 = struct.unpack('<H', run.ram_read(0x9E4, 2))[0]
+        g2 = struct.unpack('<H', run.ram_read(0x9E6, 2))[0]
+        gb1 = (run.ram_read(0xFD0, 1)[0] >> 1) & 1
+        assert (g1, g2, gb1) == (e1, e2, eb1), f'b1={b1} v={v}: got ({g1},{g2},{gb1}) want ({e1},{e2},{eb1})'
+t(0x10524, 'E2-b57: 0x10524 порог #2: bit1(byte@FD0); s8[FCF] vs flash -86/65; счётчики @9E4/@9E6, latch-бит1')(_t_10524)
+
+def _ref_105c4(mode, b6, v, cA, cB, fb):
+    # 0x105c4: b6=bit6(byte@FA1); V=u16[F99] (беззнак);
+    # фаза A (gate byte@80∈{1,2} и b6==0): v>u16[F+0x19DDC](=0x849) -> cA=0; иначе cA+=1;
+    #   cA>u16[F+0x19DE0](=0x9909) -> b6=1, cA=0.
+    # фаза B (b6==1) — ВСЕГДА (gate не влияет):
+    #   доп. сброс: byte@80==0 и u32[RAM+0xFBF]>=0x64 -> b6=0, cB=0;
+    #   иначе v<u16[F+0x19DDE](=0x910B) -> cB=0; иначе cB+=1; cB>u16[F+0x19DE2](=0x9808) -> b6=0, cB=0.
+    if mode in (1, 2) and b6 == 0:
+        if v > 0x849: cA = 0
+        else:
+            cA += 1
+            if cA >= 0x9909: b6 = 1; cA = 0
+    if b6 == 1:
+        if mode == 0 and fb >= 0x64:
+            b6 = 0; cB = 0
+        elif v < 0x910B: cB = 0
+        else:
+            cB += 1
+            if cB >= 0x9808: b6 = 0; cB = 0
+    return cA, cB, b6
+
+def _t_105c4(run, rng):
+    for _ in range(15):
+        mode = rng.randint(0, 3)
+        b6 = rng.getrandbits(1)
+        v = rng.choice([0, 0x849, 0x84A, 0x910A, 0x910B, rng.randint(0, 0xFFFF)])
+        cA = rng.choice([0, 1, 0x9908, 0x9909, 0x990A])
+        cB = rng.choice([0, 1, 0x9807, 0x9808, 0x9809])
+        fb = rng.choice([0, 0x63, 0x64, rng.randint(0, 0xFFFFFFFF)])   # u32[RAM+0xFBF] (лит. @FBB + 4)
+        run.ram_write(0x80, bytes([mode]))
+        run.ram_write(0xFA1, bytes([b6 << 6]))
+        run.ram_write(0xF99, struct.pack('<H', v))
+        run.ram_write(0x9F8, struct.pack('<H', cA))
+        run.ram_write(0x9FA, struct.pack('<H', cB))
+        run.ram_write(0xFBF, struct.pack('<I', fb))
+        run.call(0x105C4, args=(), max_insn=20000)
+        eA, eB, eb6 = _ref_105c4(mode, b6, v, cA, cB, fb)
+        gA = struct.unpack('<H', run.ram_read(0x9F8, 2))[0]
+        gB = struct.unpack('<H', run.ram_read(0x9FA, 2))[0]
+        gb6 = (run.ram_read(0xFA1, 1)[0] >> 6) & 1
+        assert (gA, gB, gb6) == (eA, eB, eb6), f'mode={mode} b6={b6} v={v:#x}: got ({gA},{gB},{gb6}) want ({eA},{eB},{eb6})'
+t(0x105C4, 'E2-b57: 0x105c4 порог #6: gate byte@80∈{1,2}; bit6(byte@FA1); u16[F99] vs flash 0x849/0x910B; счётчики @9F8/@9FA; доп. сброс b6 при mode==0 и u32[FBB]>=0x64')(_t_105c4)
+
+def _t_23544(run, rng):
+    # 0x23544: r2∈{0,1}, r1<4 (иначе спин). mode0: r0>=0 -> u32[SYS+0xE180]=1<<(r0&31) (ICER0).
+    # mode1: r0>=0: u32[SYS+0xE100]=u32[SYS+0xE280]=1<<(r0&31); u32[SYS+0xE400+(r0>>2)*4] |= (r1&3)<<((r0&3)*8+6);
+    # r0<0: u32[SYS+0xED24+(r0>>2)*4] = (r1&3)<<((r0&3)*8+6).
+    from emulator.mcu_emu import SYS as _S
+    for _ in range(15):
+        mode = rng.getrandbits(1)
+        idx = rng.choice([rng.randint(0, 31), rng.randint(-8, -1)])
+        r1 = rng.randint(0, 3)
+        run.call(0x23544, args=(idx & 0xFFFFFFFF, r1, mode), max_insn=20000)
+        if mode == 0:
+            if idx >= 0:
+                assert run.periph_read(_S + 0xE180) == (1 << (idx & 31)), f'ICER idx={idx}'
+        else:
+            if idx >= 0:
+                m = 1 << (idx & 31)
+                # ISER0/E280 — assignment (эмпирика); ITNS/SHPR — OR
+                assert run.periph_read(_S + 0xE100) == m, f'ISER idx={idx}: {run.periph_read(_S+0xE100):#x}'
+                assert run.periph_read(_S + 0xE280) == m, f'E280 idx={idx}'
+                w = _S + 0xE400 + (idx >> 2) * 4
+                if r1 & 3:
+                    assert run.periph_read(w) & ((r1 & 3) << ((idx & 3) * 8 + 6)), f'ITNS idx={idx} r1={r1}'
+            else:
+                w = _S + 0xED24 + (idx >> 2) * 4
+                if r1 & 3:
+                    assert run.periph_read(w) & ((r1 & 3) << ((idx & 3) * 8 + 6)), f'SHPR idx={idx} r1={r1}'
+    # спин: r2=5 / r1=4 — на отдельном McuEmu дошёл до лимита
+    from unicorn import UC_HOOK_CODE
+    from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
+    for bad in ((0, 0, 5), (0, 4, 1)):
+        emu = McuEmu(max_insn=2000)
+        uc = emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        def _code(uc_, a, s, ud):
+            aa = a & ~1
+            if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
+                uc_.emu_stop()
+        sh = uc.hook_add(UC_HOOK_CODE, _code)
+        uc.reg_write(UC_ARM_REG_R0, bad[0]); uc.reg_write(UC_ARM_REG_R1, bad[1]); uc.reg_write(UC_ARM_REG_R2, bad[2])
+        uc.reg_write(_SP, STACK_TOP - 0x40); uc.reg_write(_LR, 0x0BADF001)
+        emu.insn = 0
+        try: uc.emu_start(0x23544 | 1, 0, count=2000)
+        except UcError as e: pass
+        assert emu.insn >= 1990, f'args={bad}: insn={emu.insn} (ожидался спин)'
+t(0x23544, 'E2-b57: 0x23544 NVIC-сеттер: mode0 r0>=0 -> ICER0=1<<(r0&31); mode1 r0>=0 -> ISER0+E280=маска, ITNS|=(r1&3)<<((r0&3)*8+6); r0<0 -> SHPR; r2∉{0,1}/r1>=4 -> спин')(_t_23544)
+
 
 if __name__ == '__main__':
     sys.exit(main())
