@@ -7487,5 +7487,173 @@ def _t_23544(run, rng):
 t(0x23544, 'E2-b57: 0x23544 NVIC-сеттер: mode0 r0>=0 -> ICER0=1<<(r0&31); mode1 r0>=0 -> ISER0+E280=маска, ITNS|=(r1&3)<<((r0&3)*8+6); r0<0 -> SHPR; r2∉{0,1}/r1>=4 -> спин')(_t_23544)
 
 
+# ===========================================================================
+# E2-b58: 8 leaf-функций (bl==0) — packer/getter/flag-setter/spin/countdown
+# ===========================================================================
+
+def _t_ded4(run, rng):
+    # 0xded4: push{r0..r3}; если byte1(r0)==3:
+    #   u32[RAM+0xFE9] = (r0>>24)<<24 | (byte0(r1)<<16) | (byte1(r1)<<8) | byte2(r1)  (байты r1 в перевёрнутом порядке!)
+    #   ret 1; иначе ret 0.
+    for _ in range(12):
+        hit = rng.getrandbits(1)
+        b1 = 3 if hit else rng.choice([0, 1, 2, 4, 0xFF])
+        r0a = (rng.getrandbits(8)) | (b1 << 8) | (rng.getrandbits(16) << 16)
+        r1a = rng.randint(0, 0xFFFFFFFF)
+        r0v, _ = run.call(0xDed4, args=(r0a, r1a), max_insn=5000)
+        if hit:
+            want = ((r0a >> 24) << 24) | ((r1a & 0xFF) << 16) | (((r1a >> 8) & 0xFF) << 8) | ((r1a >> 16) & 0xFF)
+            got = struct.unpack('<I', run.ram_read(0xFE9, 4))[0]
+            assert r0v == 1 and got == want, f'r0={r0a:#x} r1={r1a:#x}: ret={r0v} u32@FE9={got:#x} want {want:#x}'
+        else:
+            assert r0v == 0, f'r0={r0a:#x} (byte1={b1}): ret={r0v} want 0'
+t(0xDed4, 'E2-b58: 0xded4 stack-packer: byte1(r0)==3 -> u32[RAM+0xFE9]=(r0>>24)<<24|(b0<<16|b1<<8|b2) r1 (байты r1 перевёрнуты), ret1; иначе ret0')(_t_ded4)
+
+def _t_164f8(run, rng):
+    # 0x164f8: ret = s16[RAM+0x13A4] (sign-extend)
+    for _ in range(10):
+        v = rng.choice([0, 1, -1, 0x7FFF, -0x8000, rng.randint(-0x8000, 0x7FFF)])
+        run.ram_write(0x13A4, struct.pack('<h', v))
+        r0v, _ = run.call(0x164F8, max_insn=2000)
+        assert r0v == (v & M32), f'v={v}: ret={r0v:#x} want {v & M32:#x}'
+t(0x164F8, 'E2-b58: 0x164f8 getter: ret = s16[RAM+0x13A4] (sign-extend)')(_t_164f8)
+
+def _t_174fc(run, rng):
+    # 0x174fc: u32[RAM+8]=0; u32[RAM+0x10]=u32[RAM+0xF95]; u32[RAM+0xC]=0
+    for _ in range(10):
+        f95 = rng.randint(0, 0xFFFFFFFF)
+        run.ram_write(0xF95, struct.pack('<I', f95))
+        run.call(0x174FC, max_insn=2000)
+        assert struct.unpack('<I', run.ram_read(8, 4))[0] == 0, 'u32@8'
+        assert struct.unpack('<I', run.ram_read(0xC, 4))[0] == 0, 'u32@C'
+        assert struct.unpack('<I', run.ram_read(0x10, 4))[0] == f95, 'u32@10'
+t(0x174FC, 'E2-b58: 0x174fc helper: u32[RAM+8]=0, u32[RAM+0x10]=u32[RAM+0xF95], u32[RAM+0xC]=0')(_t_174fc)
+
+def _t_12fe0(run, rng):
+    # 0x12fe0: type=(r1>>5)&7 -> off = {1:+0xC, 2:+0x10, else:+0x14}; mask=1<<(r1&0x1F);
+    # r2 ? u32[ptr+off]|=mask : &=~mask; ret = ptr+off
+    B = 0x600
+    for _ in range(15):
+        typ = rng.randint(0, 7)
+        bit = rng.randint(0, 31)
+        setc = rng.getrandbits(1)
+        old = rng.randint(0, 0xFFFFFFFF)
+        off = {1: 0xC, 2: 0x10}.get(typ, 0x14)
+        run.ram_write(B + off, struct.pack('<I', old))
+        r0v, _ = run.call(0x12FE0, args=(RAM + B, (typ << 5) | bit, setc), max_insn=5000)
+        got = struct.unpack('<I', run.ram_read(B + off, 4))[0]
+        want = (old | (1 << bit)) if setc else (old & ~(1 << bit))
+        assert r0v == (RAM + B + off) & M32, f'typ={typ}: ret={r0v:#x}'
+        assert got == want, f'typ={typ} bit={bit} set={setc} old={old:#x}: {got:#x} want {want:#x}'
+t(0x12FE0, 'E2-b58: 0x12fe0 flag-setter: type=(r1>>5)&7 -> off +0xC/+0x10/+0x14; mask=1<<(r1&0x1F); r2 ? |= : &=~; ret=ptr+off')(_t_12fe0)
+
+def _t_c2a8(run, rng):
+    # 0xc2a8: спин до u32[PERIPH+0x7010]&2==2 (seed в тесте); затем:
+    #   u32[P+0x7008] = (old & ~0x3000) | r1; u32[P+0x7000] = (old & ~7)|2 -> ret;
+    #   u32[SYS+0xED10] |= 4; arg==1: WFI, иначе SEV+WFE — эмулятор останавливается на WFI/WFE,
+    #   финальный ED10 &= ~4 НЕ выполняется.
+    from emulator.mcu_emu import PERIPH as _P, SYS as _S
+    for _ in range(10):
+        arg = rng.choice([0, 1, 5])
+        r1 = rng.randint(0, 0xFFFF)
+        old7008 = rng.randint(0, 0xFFFFFFFF)
+        old7000 = rng.randint(0, 0xFFFFFFFF)
+        run.periph_write(_P + 0x7010, 2)
+        run.periph_write(_P + 0x7008, old7008)
+        run.periph_write(_P + 0x7000, old7000)
+        r0v, _ = run.call(0xC2A8, args=(arg, r1), max_insn=5000)
+        assert run.periph_read(_P + 0x7008) == (old7008 & ~0x3000) | r1, f'P+7008: {run.periph_read(_P+0x7008):#x}'
+        w = (old7000 & ~7) | 2
+        assert run.periph_read(_P + 0x7000) == w, 'P+7000'
+        assert r0v == w, f'ret={r0v:#x} want {w:#x}'
+        assert run.periph_read(_S + 0xED10) & 4, 'ED10 bit2'
+t(0xC2A8, 'E2-b58: 0xc2a8: спин u32[P+7010]&2; P+7008=(old&~0x3000)|r1; P+7000=(old&~7)|2->ret; ED10|=4; стоп на WFI/WFE (clear не достигается)')(_t_c2a8)
+
+def _t_b860(run, rng):
+    # 0xb860: u32[RAM+0xEFC]=0x10000; byte=byte[arg+0x10C];
+    #   byte==3: wait-цикл (bl 0x9874 -> в эмуляторе сразу 0) -> ret0, u32[EFC]=0x10000;
+    #   иначе: цикл old=u32[EFC]; u32[EFC]=old-1; old==0 -> ret3; byte!=0 -> повтор.
+    #   byte=0: 1 итерация (0x10000->0xFFFF), ret3; byte∈{1,2}: полный отсчёт ~721K инстр. -> wrap 0xFFFFFFFF, ret3.
+    for _ in range(6):
+        run.ram_write(0x50C, b'\x00')
+        r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=5000)
+        efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
+        assert r0v == 3 and efc == 0xFFFF, f'ret={r0v} u32@EFC={efc:#x}'
+    # byte=3: wait-путь; опрашивает (u32[PERIPH+0x5818] & 2) — константа за цикл!
+    #   bit==0 -> сразу ret0, u32[EFC]=0x10000; bit==1 -> спин до wrap счётчика.
+    from emulator.mcu_emu import PERIPH as _P
+    run.ram_write(0x50C, b'\x03')
+    run.periph_write(_P + 0x5818, 0)
+    r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=5000)
+    efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
+    assert r0v == 0 and efc == 0x10000, f'byte=3: ret={r0v} u32@EFC={efc:#x}'
+    # bit==1: спин — счётчик падает, возврат не достигается за лимит
+    run.ram_write(0x50C, b'\x03')
+    run.periph_write(_P + 0x5818, 2)
+    r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=3000)
+    efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
+    assert efc < 0x10000, f'byte=3 спин: u32@EFC={efc:#x} (ожид. декремент)'
+    # медленный путь — отдельный эмулятор с большим лимитом
+    emu = McuEmu(max_insn=800000)
+    uc = emu.uc
+    uc.mem_write(RAM, bytes(0x20000))
+    uc.mem_write(RAM + 0x50C, b'\x01')
+    def _code(uc_, a, s, ud):
+        aa = a & ~1
+        if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
+            uc_.emu_stop()
+    sh = uc.hook_add(UC_HOOK_CODE, _code)
+    uc.reg_write(UC_ARM_REG_R0, RAM + 0x400)
+    uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x40)
+    uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+    emu.insn = 0
+    try: uc.emu_start(0xB860 | 1, 0, count=800000)
+    except UcError as e: pass
+    r0v = uc.reg_read(UC_ARM_REG_R0)
+    efc = struct.unpack('<I', bytes(uc.mem_read(RAM + 0xEFC, 4)))[0]
+    assert r0v == 3 and efc == 0xFFFFFFFF, f'ret={r0v} u32@EFC={efc:#x} (полный отсчёт)'
+t(0xB860, 'E2-b58: 0xb860 countdown/wait: u32[RAM+0xEFC]=0x10000; byte==3 -> wait-цикл ret0; иначе декр. пока byte[arg+0x10C]!=0 и old!=0; ret3')(_t_b860)
+
+def _t_7e98(run, rng):
+    # 0x7e98(arg): (arg&0x7FF)!=0 -> 0; arg>=0x0801FFFF -> 0; arg<0x08003000 -> 0;
+    # в диапазоне: bl 0x6378 (u32[PERIPH+0x22004] <- константы, fingerprint 0xCDEF89AB после полного пути)
+    # + 0x6230(arg) — flash-зависимый код; эмпирика на mcu_0007: всегда !=6 -> ret 0.
+    from emulator.mcu_emu import PERIPH as _P
+    CANARY = 0x5A5A5A5A
+    for _ in range(12):
+        kind = rng.choice(['mis', 'lo', 'hi', 'in'])
+        if kind == 'mis':
+            arg = rng.choice([0x08003000, 0x08010000]) + rng.randint(1, 0x7FF)
+        elif kind == 'lo':
+            arg = rng.randint(0, 0x08002FFF)
+        elif kind == 'hi':
+            arg = rng.choice([0x0801FFFF, 0x08020000, 0x09000000])
+        else:
+            arg = rng.choice([0x08003000, 0x08003800, 0x08010000, 0x0801F800])
+        run.periph_write(_P + 0x22004, CANARY)
+        if kind == 'in':
+            # статусное слово P+0x2200C: 0x61d4 ставит 0x7C, затем 0x6284 читает его -> детерм. ret3!=6
+            run.periph_write(_P + 0x2200C, 0)
+        r0v, _ = run.call(0x7E98, args=(arg,), max_insn=50000)
+        fp = run.periph_read(_P + 0x22004)
+        if kind == 'in':
+            assert r0v == 0 and fp == 0xCDEF89AB, f'arg={arg:#x}: ret={r0v} fp={fp:#x}'
+        else:
+            assert r0v == 0 and fp == CANARY, f'arg={arg:#x} ({kind}): ret={r0v} fp={fp:#x} (ожид. gate-reject)'
+t(0x7E98, 'E2-b58: 0x7e98 flash-range предикат: arg∈[0x08003000,0x0801FFFF), align 0x800 -> bl-путь (fp P+22004=0xCDEF89AB), ret эмпирически 0; иначе gate->0')(_t_7e98)
+
+def _t_2359c(run, rng):
+    # 0x2359c(base, idx, val): r0 = base + (idx<<4) + 0x100; цикл записи u32[r0+8]=val с read-back до совпадения
+    B = 0x600
+    for _ in range(12):
+        idx = rng.randint(0, 15)
+        val = rng.randint(0, 0xFFFFFFFF)
+        run.call(0x2359C, args=(RAM + B, idx, val), max_insn=5000)
+        off = B + (idx << 4) + 0x108
+        got = struct.unpack('<I', run.ram_read(off, 4))[0]
+        assert got == val, f'idx={idx} val={val:#x}: u32[{off:#x}]={got:#x}'
+t(0x2359C, 'E2-b58: 0x2359c store-with-readback: u32[base+(idx<<4)+0x108]=val (цикл до совпадения)')(_t_2359c)
+
+
 if __name__ == '__main__':
     sys.exit(main())
