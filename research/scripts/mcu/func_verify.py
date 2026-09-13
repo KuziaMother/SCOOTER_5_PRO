@@ -7012,6 +7012,168 @@ def _t_17524(run, rng):
         assert got_v == exp_v, f'({b},{v}): u32@8={got_v} want {exp_v}'
 t(0x17524, 'E2-b55: 0x17524 boot-wait предикат: byte@FD3>0x1e->reset u32@8,ret0; u32@8<0x10e0->ret0; иначе clamp=0x10e0,ret1')(_t_17524)
 
+# --- E2-batch56: чистые предикаты/флаги + stateful-счётчики (pool-литералы эмпирически) ---
+def _ref_44c0(gate, u_lo, u_hi, s8a, s8b):
+    # 0x44c0: ret1 <=> byte[A73]!=0 && u16[F9B]>0x7D0 && u16[F9D]<0x1194 && s8[FC8]>(-0x28) && s8[FC9]<0x64
+    return 1 if (gate != 0 and u_lo > 0x7D0 and u_hi < 0x1194 and s8a > -0x28 and s8b < 0x64) else 0
+
+def _t_44c0(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    def _s8(b): return b - 0x100 if b >= 0x80 else b
+    cases = [(rng.randint(0, 0xFF), rng.randint(0, 0xFFFF), rng.randint(0, 0x2000),
+              rng.randint(0, 0xFF), rng.randint(0, 0xFF)) for _ in range(20)]
+    cases += [(1, 0x7D1, 0x1193, -39 & 0xFF, 0x63),   # все границы pass
+              (0, 0x800, 0, 0, 0),                    # gate=0
+              (1, 0x7D0, 0, 0, 0),                    # lo==0x7D0 (не >)
+              (1, 0x800, 0x1194, 0, 0),               # hi==0x1194 (не <)
+              (1, 0x800, 0, -40 & 0xFF, 0),           # a==-0x28 (не >)
+              (1, 0x800, 0, 0, 0x64)]                 # b==0x64 (не <)
+    for g, lo, hi, a, b in cases:
+        run.ram_write(0xA73, bytes([g]))
+        run.ram_write(0xF9B, struct.pack('<H', lo))
+        run.ram_write(0xF9D, struct.pack('<H', hi))
+        run.ram_write(0xFC8, bytes([a & 0xFF]))
+        run.ram_write(0xFC9, bytes([b & 0xFF]))
+        r0, _ = run.call(0x44C0, args=(), max_insn=20000)
+        exp = _ref_44c0(g, lo, hi, _s8(a), _s8(b))
+        assert r0 == exp, f'g={g:#x} lo={lo:#x} hi={hi:#x} a={_s8(a)} b={_s8(b)}: r0={r0} want {exp}'
+t(0x44C0, 'E2-b56: 0x44c0 предикат: byte@A73!=0 && u16@F9B>0x7d0 && u16@F9D<0x1194 && s8@FC8>-0x28 && s8@FC9<0x64 -> 1')(_t_44c0)
+
+def _t_c4cc(run, rng):
+    # 0xc4cc: REG=u32[PERIPH+0x21000]: сброс бит 0x10000|0x40000; arg==0x10000 -> |=0x10000;
+    # arg==0x40000 -> |=0x50000 (оба бита!); иначе только сброс.
+    from emulator.mcu_emu import PERIPH
+    REG = PERIPH + 0x21000
+    for _ in range(10):
+        v = rng.randint(0, 0xFFFFFFFF)
+        run.periph_write(REG, v)
+        arg = rng.choice([0x10000, 0x40000, 0x10000, 0x40000, rng.randint(0, 0xFFFFFF)])
+        r0, _ = run.call(0xC4CC, args=(arg,), max_insn=20000)
+        e = v & ~0x10000 & ~0x40000
+        if arg == 0x10000: e |= 0x10000
+        elif arg == 0x40000: e |= 0x50000
+        got = run.periph_read(REG)
+        assert got == e, f'v={v:#x} arg={arg:#x}: {got:#x} want {e:#x}'
+t(0xC4CC, 'E2-b56: 0xc4cc бит-флаги @PERIPH+0x21000: сброс 0x10000|0x40000; arg=0x10000->|=0x10000, arg=0x40000->|=0x50000')(_t_c4cc)
+
+def _t_cc08(run, rng):
+    # 0xcc08: u32[PERIPH+0x280C] &= ~0x80 (in-place, оба литерала один адрес)
+    from emulator.mcu_emu import PERIPH
+    REG = PERIPH + 0x280C
+    for v in [0xFF, 0x80, 0x81, 0x7F, 0xFFFFFFFF, 0]:
+        run.periph_write(REG, v)
+        run.call(0xCC08, args=(), max_insn=20000)
+        got = run.periph_read(REG)
+        assert got == (v & ~0x80), f'v={v:#x}: {got:#x} want {v & ~0x80:#x}'
+t(0xCC08, 'E2-b56: 0xcc08: u32[PERIPH+0x280C] &= ~0x80 (in-place)')(_t_cc08)
+
+def _ref_cc68(arg, v2840, v2808, v280c):
+    # 0xcc68: arg∈{0x20000,0x40000,0x80000}: r3 = ((u32[2840]>>16)&0xFF)!=0;
+    # иначе r3 = u32[2808]&arg; r2 = u32[280C]&(arg>>4); ret = r3!=0 && (r2&0xFFFF)!=0
+    if arg in (0x20000, 0x40000, 0x80000):
+        r3 = 1 if ((v2840 >> 16) & 0xFF) else 0
+    else:
+        r3 = v2808 & arg
+    r2 = v280c & (arg >> 4)
+    return 1 if (r3 != 0 and (r2 & 0xFFFF) != 0) else 0
+
+def _t_cc68(run, rng):
+    from emulator.mcu_emu import PERIPH
+    for _ in range(15):
+        vA = rng.randint(0, 0xFFFFFFFF)
+        vB = rng.randint(0, 0xFFFFFFFF)
+        vC = rng.randint(0, 0xFFFFFFFF)
+        run.periph_write(PERIPH + 0x2840, vA)
+        run.periph_write(PERIPH + 0x2808, vB)
+        run.periph_write(PERIPH + 0x280C, vC)
+        arg = rng.choice([0x20000, 0x40000, 0x80000, 0x1, 0x3, rng.randint(0, 0xFFFF)])
+        r0, _ = run.call(0xCC68, args=(arg,), max_insn=20000)
+        exp = _ref_cc68(arg, vA, vB, vC)
+        assert r0 == exp, f'arg={arg:#x} A={vA:#x} B={vB:#x} C={vC:#x}: r0={r0} want {exp}'
+t(0xCC68, 'E2-b56: 0xcc68 канал-предикат: arg∈{2/4/8}0000 -> (u32@2840>>16)&0xff; иначе u32@2808&arg; && (u32@280C&(arg>>4))&0xffff')(_t_cc68)
+
+def _t_18b0(run, rng):
+    # 0x18b0: слияние struct(r0) <- src(r1): u32[s+4]=(old&0xFFF0FEFF)|src[0]<<8;
+    # u32[s+8]=(old&0xFFF1F7FD)|(u32[src+4]|u32[src+8]|src[1]<<1); u32[s+0x2C]=(old&~0xF00000)|((src[0xC]-1)&0xFF)<<20
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(15):
+        old4, old8, old2c = (rng.randint(0, 0xFFFFFFFF) for _ in range(3))
+        src = bytes(rng.randint(0, 0xFF) for _ in range(14))
+        run.ram_write(0x404, struct.pack('<I', old4))
+        run.ram_write(0x408, struct.pack('<I', old8))
+        run.ram_write(0x42C, struct.pack('<I', old2c))
+        run.ram_write(0x500, src)
+        run.call(0x18B0, args=(_R + 0x400, _R + 0x500), max_insn=20000)
+        e4 = (old4 & 0xFFF0FEFF) | (src[0] << 8)
+        e8 = (old8 & 0xFFF1F7FD) | (int.from_bytes(src[4:8], 'little') | int.from_bytes(src[8:12], 'little') | (src[1] << 1))
+        e2c = (old2c & ~0xF00000) | (((src[0xC] - 1) & 0xFF) << 20)
+        g4 = struct.unpack('<I', run.ram_read(0x404, 4))[0]
+        g8 = struct.unpack('<I', run.ram_read(0x408, 4))[0]
+        g2c = struct.unpack('<I', run.ram_read(0x42C, 4))[0]
+        assert (g4, g8, g2c) == (e4, e8, e2c), f'old=({old4:#x},{old8:#x},{old2c:#x}): got ({g4:#x},{g8:#x},{g2c:#x}) want ({e4:#x},{e8:#x},{e2c:#x})'
+t(0x18B0, 'E2-b56: 0x18b0 struct-слияние: маски 0xFFF0FEFF/0xFFF1F7FD; поля +4/+8/+0x2C из src[0],src[1],u32[src+4|8],src[0xC]-1')(_t_18b0)
+
+def _t_2d34(run, rng):
+    # 0x2d34: u16[RAM+0xB5C] = max(v-1, 0) — все 4 pool-литерала один и тот же адрес (эмпирически)
+    from emulator.mcu_emu import RAM as _R
+    for v in [0, 1, 2, 3, 0xFFFF, 0x7FFF] + [rng.randint(0, 0xFFFF) for _ in range(10)]:
+        run.ram_write(0xB5C, struct.pack('<H', v))
+        run.call(0x2D34, args=(), max_insn=20000)
+        got = struct.unpack('<H', run.ram_read(0xB5C, 2))[0]
+        exp = max(v - 1, 0)
+        assert got == exp, f'v={v:#x}: {got:#x} want {exp:#x}'
+t(0x2D34, 'E2-b56: 0x2d34 saturating-decrement u16[RAM+0xB5C] = max(v-1, 0) (все литералы один адрес)')(_t_2d34)
+
+def _ref_f304(pause, gate2, gate3, gate4, cnt):
+    # 0xf304: pause=bit3(byte@F72) -> без изменений;
+    # если bit0(byte@F71) или byte@80!=1 или u32@FBF<0x3E8 -> u16[A30]=0 (reset);
+    # иначе u16+=1; при u16>=0x12C: toggle bit3(byte@F72), u16=0.
+    if pause:
+        return cnt, False
+    if gate2 or gate3 != 1 or gate4 < 0x3E8:
+        return 0, False
+    c = (cnt + 1) & 0xFFFF
+    if c >= 0x12C:
+        return 0, True
+    return c, False
+
+def _t_f304(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    for _ in range(15):
+        pause = rng.getrandbits(1)
+        g2 = rng.getrandbits(1)
+        g3 = rng.randint(0, 3)          # byte@80 (==1 — pass)
+        g4 = rng.choice([0, 0x3E7, 0x3E8, 0x400, 0xFFFFFFFF])
+        cnt = rng.choice([0, 1, 0x12A, 0x12B, 0x12C, rng.randint(0, 0x200)])
+        run.ram_write(0xF72, bytes([pause << 3]))
+        run.ram_write(0xF71, bytes([g2]))
+        run.ram_write(0x80, bytes([g3]))
+        run.ram_write(0xFBF, struct.pack('<I', g4))
+        run.ram_write(0xA30, struct.pack('<H', cnt))
+        run.call(0xF304, args=(), max_insn=20000)
+        e_cnt, toggled = _ref_f304(bool(pause), bool(g2), g3, g4, cnt)
+        got_cnt = struct.unpack('<H', run.ram_read(0xA30, 2))[0]
+        got_pause = (run.ram_read(0xF72, 1)[0] >> 3) & 1
+        exp_pause = (pause ^ 1) if toggled else pause
+        assert got_cnt == e_cnt, f'cnt={cnt:#x} g=({pause},{g2},{g3},{g4:#x}): {got_cnt:#x} want {e_cnt:#x}'
+        assert got_pause == exp_pause, f'cnt={cnt:#x}: pause {got_pause} want {exp_pause}'
+t(0xF304, 'E2-b56: 0xf304 gated-счётчик u16@A30: pause=bit3(byte@F72); reset при gate2/3/4 fail; +1; >=0x12c -> toggle bit3(F72)+reset')(_t_f304)
+
+def _t_cbb8(run, rng):
+    # 0xcbb8: REG=u32[PERIPH+0x280C]; если REG&0x40 -> ret1 (быстро);
+    # иначе REG=0x80, спин до 0x2000 итераций ждёт REG&0x40, ret = (REG&0x40)!=0 (в эмуляторе 0)
+    from emulator.mcu_emu import PERIPH
+    REG = PERIPH + 0x280C
+    for v in [0x40, 0x41, 0x1234, 0x540, 0]:
+        run.periph_write(REG, v)
+        r0, _ = run.call(0xCBB8, args=(), max_insn=120000)
+        exp_r0 = 1 if (v & 0x40) else 0
+        exp_reg = v if (v & 0x40) else 0x80
+        got_reg = run.periph_read(REG)
+        assert r0 == exp_r0, f'v={v:#x}: r0={r0} want {exp_r0}'
+        assert got_reg == exp_reg, f'v={v:#x}: REG={got_reg:#x} want {exp_reg:#x}'
+t(0xCBB8, 'E2-b56: 0xcbb8: u32@PERIPH+0x280C&0x40 -> ret1; иначе REG=0x80 + спин 0x2000 итераций, ret0')(_t_cbb8)
+
 
 if __name__ == '__main__':
     sys.exit(main())
