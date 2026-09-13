@@ -6563,6 +6563,251 @@ def _t_5b5a(run, rng):
     assert cap.get('r0') == 0x90, f'r0={cap.get("r0"):#x} want 0x90'
 t(0x5B5A, 'E2-b53: 0x5b5a delay-loop delegate (2x0x2710) -> bl 0x1c1c(r0=0x90)')(_t_5b5a)
 
+# --- E2-batch54: семейство Q16-интерполяторов + валидатор (reference-model, возврат через LR-sentinel) ---
+_M32 = 0xFFFFFFFF
+
+def _sxth(x):
+    x &= 0xFFFF
+    return x - 0x10000 if x >= 0x8000 else x
+
+def _asr16(x):
+    v = x & _M32
+    v -= 0x100000000 if v >= 0x80000000 else 0
+    return v >> 16
+
+def _div16328(num, den):
+    """0x16328: signed-деление (udiv |a|/|b|, trunc); den==0 -> +0x7fffffff/-0x80000000; overflow -> clamp."""
+    if den == 0:
+        return 0x7FFFFFFF if num >= 0 else -0x80000000
+    sign = ((num ^ den) >> 31) & 1
+    q = abs(num) // abs(den)
+    if sign:
+        return -q if q < 0x80000000 else -0x80000000
+    return q if q < 0x7FFFFFFF else 0x7FFFFFFF
+
+def _floor_idx(key, arr, hi):
+    """последний i в [0,hi) с arr[i] <= key (сравнение — как в вызывающем: signed/unsigned)."""
+    return max(i for i in range(hi) if arr[i] <= key)
+
+def _s32(x):
+    x &= _M32
+    return x - 0x100000000 if x >= 0x80000000 else x
+
+def _ref_e36c(a0, a1):
+    # проверено эмпирически (b54): min/max — unsigned; diff — unsigned;
+    # "max < 0x2710" — SIGNED (blt); min<0 — signed; div-ветка: num=min*0x2710 (u32),
+    # den=0x2710-diff, res=div16328(num,den) с clamp в [-0x8000, 0x7FFF]; *out=sxth(res).
+    # min/max — SIGNED (blt на 0xe376 проверено эмпирически: (1640,-335)->sxth(min))
+    x, y = a0 & _M32, a1 & _M32
+    xs, ys = _s32(x), _s32(y)
+    mx, mn = (x, y) if xs >= ys else (y, x)
+    diff = (mx - mn) & _M32
+    if diff >= 0x2710:
+        return 0
+    if _s32(mx) < 0x2710:
+        if _s32(mn) < 0:
+            return _sxth(mn)
+        res = _div16328((mn * 0x2710) & _M32, (0x2710 - diff) & _M32)
+        if res > 0x7FFF:
+            res = 0x7FFF
+        elif res < -0x8000:
+            res = -0x8000
+        return _sxth(res)
+    return _sxth(mx)
+
+def _t_e36c(run, rng):
+    from emulator.mcu_emu import RAM as _R
+    out = 0x600
+    for _ in range(25):
+        a0 = rng.randint(-0x4000, 0x4000)
+        a1 = rng.randint(-0x4000, 0x4000)
+        run.call(0xE36C, args=(a0 & _M32, a1 & _M32, _R + out), max_insn=50000)
+        exp = _ref_e36c(a0, a1)
+        got = int.from_bytes(run.ram_read(out, 2), 'little')
+        assert got == (exp & 0xFFFF), f'({a0},{a1}): *out={got:#x} want {exp & 0xFFFF:#x}'
+t(0xE36C, 'E2-b54: 0xe36c fixed-point lerp с насыщением: diff>=0x2710->0; max(signed)>=0x2710->sxth(max); min<0->sxth(min); иначе div16328(min*0x2710, 0x2710-diff) clamp[-0x8000,0x7fff]')(_t_e36c)
+
+def _ref_17306(key, arr, hi):
+    if key < arr[0]:
+        return 0, 0
+    if arr[hi] <= key:
+        return hi - 1, 0x10000
+    idx = _floor_idx(key, arr, hi)
+    diff = arr[idx + 1] - arr[idx]
+    frac = 0 if diff == 0 else (((key - arr[idx]) << 16) & _M32) // diff & _M32
+    return idx, frac
+
+def _t_17306(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    base, out = 0x400, 0xC00
+    for _ in range(25):
+        n = rng.randint(3, 12)
+        arr = sorted(rng.randint(-20000, 20000) for _ in range(n))
+        while len(set(arr)) < n:
+            arr = sorted(rng.randint(-20000, 20000) for _ in range(n))
+        hi = n - 1
+        key = rng.randint(-32768, 32767)
+        run.ram_write(base, _st.pack('<%dh' % n, *arr))
+        r0, _ = run.call(0x17306, args=(key & _M32, _R + base, hi, _R + out), max_insn=50000)
+        exp_idx, exp_frac = _ref_17306(key, arr, hi)
+        assert r0 == exp_idx, f'key={key}: idx={r0} want {exp_idx}'
+        got = int.from_bytes(run.ram_read(out, 4), 'little')
+        assert got == exp_frac, f'key={key}: *out={got:#x} want {exp_frac:#x}'
+t(0x17306, 'E2-b54: 0x17306 i16-интерполятор: r0=idx (bsearch floor), *u32=Q15.16 frac; key<arr[0]->(0,0); key>=arr[hi]->(hi-1,0x10000)')(_t_17306)
+
+def _ref_1736a(key, arr, hi):
+    if key < arr[0]:
+        return 0, 0
+    if arr[hi] <= key:
+        return hi - 1, 0x10000
+    idx = _floor_idx(key, arr, hi)
+    diff = (arr[idx + 1] - arr[idx]) & _M32
+    frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32   # 0x161ea(num, den, 16)
+    return idx, frac
+
+def _t_1736a(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    base, out = 0x400, 0xC00
+    for _ in range(25):
+        n = rng.randint(3, 12)
+        arr = sorted(rng.randint(0, 0x40000) for _ in range(n))
+        while len(set(arr)) < n:
+            arr = sorted(rng.randint(0, 0x40000) for _ in range(n))
+        hi = n - 1
+        key = rng.randint(0, 0x50000)
+        run.ram_write(base, _st.pack('<%dI' % n, *arr))
+        r0, _ = run.call(0x1736A, args=(key, _R + base, hi, _R + out), max_insn=50000)
+        exp_idx, exp_frac = _ref_1736a(key, arr, hi)
+        assert r0 == exp_idx, f'key={key:#x}: idx={r0} want {exp_idx}'
+        got = int.from_bytes(run.ram_read(out, 4), 'little')
+        assert got == exp_frac, f'key={key:#x}: *out={got:#x} want {exp_frac:#x}'
+t(0x1736A, 'E2-b54: 0x1736a u32-интерполятор (twin 0x17306): bsearch 0x1619e + frac=0x161ea(key-x0, dx, 16)')(_t_1736a)
+
+def _ref_16aa2(key, arr, table, hi):
+    # x-таблица: u16 (ldrh), ключ: u32 — сравнения unsigned; y-таблица: s16 (ldrsh).
+    if not arr[0] < key:
+        idx, frac = 0, 0
+    elif arr[hi] <= key:
+        idx, frac = hi - 1, 0x10000
+    else:
+        idx = _floor_idx(key, arr, hi)
+        diff = arr[idx + 1] - arr[idx]
+        frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32   # udiv — точно
+    t0, t1 = _sxth(table[idx]), _sxth(table[idx + 1])
+    prod = (frac * (t1 - t0)) & _M32          # muls: signed low-32
+    return _sxth((table[idx] & 0xFFFF) + _asr16(prod))
+
+def _t_16aa2(run, rng):
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    xbase, ybase = 0x400, 0x800
+    for _ in range(25):
+        n = rng.randint(3, 12)
+        arr = sorted(rng.randint(0, 0xFFFF) for _ in range(n))
+        while len(set(arr)) < n:
+            arr = sorted(rng.randint(0, 0xFFFF) for _ in range(n))
+        table = [rng.randint(-32768, 32767) for _ in range(n + 1)]
+        hi = n - 1
+        key = rng.randint(0, 0xFFFF)
+        run.ram_write(xbase, _st.pack('<%dH' % n, *arr))
+        run.ram_write(ybase, _st.pack('<%dh' % (n + 1), *table))
+        r0, _ = run.call(0x16AA2, args=(key & _M32, _R + xbase, _R + ybase, hi), max_insn=50000)
+        exp = _ref_16aa2(key, arr, table, hi)
+        got = _sxth(r0)
+        assert got == exp, f'key={key}: r0={got} want {exp}'
+t(0x16AA2, 'E2-b54: 0x16aa2 u16-ключ/u16-x-таблица -> s16-таблица: bsearch(unsigned) + lerp frac*(t1-t0) asr16, sxth')(_t_16aa2)
+
+def _ref_table_interp(key, arr, table, hi, signed):
+    if signed:
+        below = key < arr[0]
+        above = arr[hi] <= key
+        idx = _floor_idx(key, arr, hi) if not (below or above) else (0 if below else hi - 1)
+        num = (key - arr[idx]) & _M32
+    else:
+        below = key < arr[0]
+        above = arr[hi] <= key
+        idx = _floor_idx(key, arr, hi) if not (below or above) else (0 if below else hi - 1)
+        num = (key - arr[idx]) & _M32
+    if below:
+        idx, frac = 0, 0
+    elif above:
+        idx, frac = hi - 1, 0x10000
+    else:
+        diff = (arr[idx + 1] - arr[idx]) & _M32
+        # 0x161ea — shift-and-subtract: ТОЧНЫЙ floor((key-arr[idx])*2^16/dx) без u32-wrap числителя
+        frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32
+    t0, t1 = table[idx] & 0xFFFF, table[idx + 1] & 0xFFFF
+    if t0 <= t1:
+        return (t0 + ((frac * (t1 - t0)) >> 16)) & 0xFFFF
+    return (t0 - ((frac * (t0 - t1)) >> 16)) & 0xFFFF
+
+def _mk_table_interp(off, signed):
+    def _test(run, rng):
+        import struct as _st
+        from emulator.mcu_emu import RAM as _R
+        xbase, ybase = 0x400, 0x800
+        for _ in range(25):
+            n = rng.randint(3, 12)
+            lo, hi_v = (-20000, 20000) if signed else (0, 0x40000)
+            arr = sorted(rng.randint(lo, hi_v) for _ in range(n))
+            while len(set(arr)) < n:
+                arr = sorted(rng.randint(lo, hi_v) for _ in range(n))
+            table = [rng.randint(0, 0xFFFF) for _ in range(n + 1)]
+            hi = n - 1
+            krange = (-32768, 32767) if signed else (0, 0x50000)
+            key = rng.randint(*krange)
+            fmt = 'i' if signed else 'I'
+            run.ram_write(xbase, _st.pack('<%d%s' % (n, fmt), *arr))
+            run.ram_write(ybase, _st.pack('<%dH' % (n + 1), *table))
+            r0, _ = run.call(off, args=(key & _M32, _R + xbase, _R + ybase, hi), max_insn=50000)
+            exp = _ref_table_interp(key, arr, table, hi, signed)
+            got = r0 & 0xFFFF
+            assert got == exp, f'key={key:#x}: r0={got:#x} want {exp:#x}'
+    return _test
+
+_t_169f0 = _mk_table_interp(0x169F0, False)
+t(0x169F0, 'E2-b54: 0x169f0 u32-ключ -> u16-таблица: bsearch + Q16-lerp (ветки asc/desc), r0=u16')(_t_169f0)
+def _t_16b22(run, rng):
+    # «signed twin» по каталогу, НО эмпирически сравнения — unsigned (проверено:
+    # arr=[-5000,5000]: key=-4999/-1000 -> t1, key=-12418/0/5000/5001 -> t0) —
+    # контракт идентичен 0x169f0. Тестируем весь u32-диапазон ключей (включая >0x80000000).
+    import struct as _st
+    from emulator.mcu_emu import RAM as _R
+    xbase, ybase = 0x400, 0x800
+    for _ in range(25):
+        n = rng.randint(3, 12)
+        arr = sorted(rng.randint(0, 0x400000) for _ in range(n))
+        while len(set(arr)) < n:
+            arr = sorted(rng.randint(0, 0x400000) for _ in range(n))
+        table = [rng.randint(0, 0xFFFF) for _ in range(n + 1)]
+        hi = n - 1
+        key = rng.randint(0, 0xFFFFFFFF)
+        run.ram_write(xbase, _st.pack('<%dI' % n, *arr))
+        run.ram_write(ybase, _st.pack('<%dH' % (n + 1), *table))
+        r0, _ = run.call(0x16B22, args=(key, _R + xbase, _R + ybase, hi), max_insn=50000)
+        exp = _ref_table_interp(key, arr, table, hi, False)
+        got = r0 & 0xFFFF
+        assert got == exp, f'key={key:#x}: r0={got:#x} want {exp:#x}'
+t(0x16B22, 'E2-b54: 0x16b22 u32-ключ -> u16-таблица (twin 0x169f0; эмпирически unsigned-контракт на всём u32), r0=u16')(_t_16b22)
+
+def _t_1647c(run, rng):
+    # валидатор: a∈[1,0xc] && b∈[1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b)
+    # (id проверок не ограничивает — эмпирически ни один id из [0..0xbbb], 0x1000,
+    #  0x10000, 0x80000000, 0xffffffff не отклонён; r3 в bl не передаётся)
+    cap, _ = _intercept(0x1647C, 0x16410, max_insn=30000, args=(0xC00, 5, 0x10, 3))
+    assert cap and cap.get('r0') == 0xC00 and cap.get('r1') == 5 and cap.get('r2') == 0x10, \
+        f'args={cap} want (0xc00,5,0x10)'
+    for good in ((0, 1, 1, 0), (0xBB8, 0xC, 0x1F, 0x17), (0xFFFFFFFF, 5, 0x10, 3)):
+        cap, _ = _intercept(0x1647C, 0x16410, max_insn=30000, args=good)
+        assert cap, f'{good}: bl 0x16410 not reached'
+    for bad in ((0xC00, 0, 0x10, 3), (0xC00, 0xD, 0x10, 3),
+                (0xC00, 5, 0, 3), (0xC00, 5, 0x20, 3), (0xC00, 5, 0x10, 0x18)):
+        cap, _ = _intercept(0x1647C, 0x16410, max_insn=30000, args=bad)
+        assert not cap, f'{bad}: bl 0x16410 reached with invalid args'
+t(0x1647C, 'E2-b54: 0x1647c валидатор: a∈[1,0xc] && b∈[1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b); id не ограничивает (эмпирически)')(_t_1647c)
+
 
 if __name__ == '__main__':
     sys.exit(main())
