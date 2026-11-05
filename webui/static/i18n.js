@@ -88,9 +88,9 @@
       scooters_del_confirm: "Удалить самокат ",
 
       // LTMK Modal
-      ltmk_title: "Получить LTMK",
-      ltmk_qr_btn: "🔑 Показать QR для входа",
-      ltmk_qr_wait: "Ожидаю подтверждения входа через Mi Home…",
+      ltmk_title: "Получить / указать LTMK",
+      ltmk_qr_btn: "🔑 Создать QR и ссылку для входа",
+      ltmk_qr_wait: "Ожидаю подтверждения входа в Xiaomi Passport…",
       ltmk_qr_expired: "Срок действия QR-кода истёк. Нажмите кнопку, чтобы получить новый.",
       ltmk_qr_success: "Вход выполнен успешно!",
       ltmk_extract_btn: "⚡ Извлечь LTMK из облака",
@@ -220,10 +220,10 @@
       scooters_del_confirm: "Delete scooter ",
 
       // LTMK Modal
-      ltmk_title: "Retrieve LTMK",
-      ltmk_qr_btn: "🔑 Show QR for Login",
-      ltmk_qr_wait: "Waiting for login confirmation in Mi Home…",
-      ltmk_qr_expired: "QR code expired. Click the button to generate a new one.",
+      ltmk_title: "Retrieve / Provide LTMK",
+      ltmk_qr_btn: "🔑 Generate QR & Login Link",
+      ltmk_qr_wait: "Waiting for login confirmation in Xiaomi Passport…",
+      ltmk_qr_expired: "QR code or link expired. Click button to generate a new one.",
       ltmk_qr_success: "Login successful!",
       ltmk_extract_btn: "⚡ Extract LTMK from Cloud",
       ltmk_extracted_success: "LTMK successfully retrieved and saved!",

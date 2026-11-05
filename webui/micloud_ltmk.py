@@ -135,16 +135,53 @@ def start_qr_login():
             ok = False
             err = f"{type(e).__name__}: {e}"
         else:
-            err = "login declined or scan timeout expired"
+            err = "login declined or scan timeout expired" if not ok else None
         with _state_lock:
             if ok:
                 _save_session(c)
                 _qr_state.update(status="done")
             else:
-                _qr_state.update(status="error", error=err)
+                _qr_state.update(status="error", error=err or "login failed")
 
     threading.Thread(target=_wait, daemon=True).start()
     return png, login_url
+
+
+def login_with_password(username, password):
+    """Authenticates with Xiaomi Cloud via username (email/phone/ID) and password.
+    Saves session to secrets/micloud_session.json on success."""
+    clean_user = (username or "").strip()
+    clean_pwd = password or ""
+    if not clean_user or not clean_pwd:
+        raise LtmkError("Username and password are required")
+
+    c = tx.PasswordXiaomiCloudConnector(username=clean_user, password=clean_pwd)
+    try:
+        ok = c.login()
+    except Exception as e:
+        raise LtmkError(f"Login failed: {e}")
+
+    if not ok or not c._ssecurity or not c._serviceToken:
+        err = getattr(c, "_last_error", None) or "Invalid username or password, or 2FA required"
+        raise LtmkError(err)
+
+    _save_session(c)
+    with _state_lock:
+        _qr_state.clear()
+        _qr_state["status"] = "done"
+    return True
+
+
+def logout():
+    """Removes stored Mi Cloud session."""
+    if os.path.exists(SESSION_JSON):
+        try:
+            os.remove(SESSION_JSON)
+        except Exception:
+            pass
+    with _state_lock:
+        _qr_state.clear()
+        _qr_state["status"] = "idle"
 
 
 def get_connector():
@@ -259,3 +296,21 @@ def load_saved_ltmk_hex_exact(mac):
         return None
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
+
+
+def save_manual_ltmk(mac, hex_str):
+    """Validates and saves a manually entered LTMK key (hex string) for a MAC address."""
+    clean = (hex_str or "").strip().replace(" ", "").replace(":", "").replace("-", "").lower()
+    if not clean:
+        raise LtmkError("LTMK key cannot be empty")
+    try:
+        key_bytes = bytes.fromhex(clean)
+    except ValueError:
+        raise LtmkError("Invalid hex format — use only hex characters 0-9, a-f")
+    if len(key_bytes) not in (16, 32):
+        raise LtmkError(
+            f"Invalid key length: {len(key_bytes)} bytes ({len(clean)} hex chars). "
+            f"Expected 32 bytes (64 hex characters) or 16 bytes (32 hex characters)"
+        )
+    path = save_ltmk(mac, key_bytes)
+    return path, len(key_bytes)

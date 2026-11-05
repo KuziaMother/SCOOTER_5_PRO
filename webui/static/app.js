@@ -349,39 +349,234 @@ $("ltmk-overlay").addEventListener("click", (e) => {
   if (e.target === $("ltmk-overlay")) $("ltmk-overlay").hidden = true;
 });
 
+let currentLtmkTab = "qr";
+
 async function ltmkStepLogin(mac, name) {
   ltmkSetBody(`<div class="scooter-mac">Checking Mi Cloud session…</div>`);
-  const st = await (await fetch("/api/ltmk/status")).json();
-  if (st.logged_in) { await ltmkStepDevices(mac, name); return; }
+  try {
+    const st = await (await fetch("/api/ltmk/status")).json();
+    if (st.logged_in) {
+      await ltmkStepDevices(mac, name);
+      return;
+    }
+  } catch (e) {
+    // Proceed to tabbed login view
+  }
+  renderLtmkLoginTabs(mac, name);
+}
 
-  ltmkSetBody(
-    `<div class="scooter-mac">Mi Cloud login is required once — session is stored locally (no password, via QR).</div>
-     <button id="ltmk-qr-start" type="button" class="modal-btn scooter-select">Show QR for login</button>
-     <div id="ltmk-qr-box"></div>`);
+function renderLtmkLoginTabs(mac, name) {
+  const tabsHtml = `
+    <div class="ltmk-tabs">
+      <button type="button" class="ltmk-tab-btn ${currentLtmkTab === 'qr' ? 'active' : ''}" data-tab="qr">📱 QR & Link</button>
+      <button type="button" class="ltmk-tab-btn ${currentLtmkTab === 'pwd' ? 'active' : ''}" data-tab="pwd">🔑 Account Login</button>
+      <button type="button" class="ltmk-tab-btn ${currentLtmkTab === 'manual' ? 'active' : ''}" data-tab="manual">✍ Manual Key</button>
+    </div>
+    <div id="ltmk-tab-content"></div>
+  `;
+  ltmkSetBody(tabsHtml);
+
+  document.querySelectorAll(".ltmk-tab-btn").forEach(btn => {
+    btn.onclick = () => {
+      currentLtmkTab = btn.dataset.tab;
+      renderLtmkLoginTabs(mac, name);
+    };
+  });
+
+  if (currentLtmkTab === "qr") {
+    renderLtmkQrTab(mac, name);
+  } else if (currentLtmkTab === "pwd") {
+    renderLtmkPwdTab(mac, name);
+  } else {
+    renderLtmkManualTab(mac, name);
+  }
+}
+
+function renderLtmkQrTab(mac, name) {
+  const content = $("ltmk-tab-content");
+  content.innerHTML = `
+    <div class="ltmk-note">
+      <strong>How to log in:</strong><br>
+      • <strong>In Browser:</strong> Click "Generate QR & Login Link", then click the link to log in directly on this computer.<br>
+      • <strong>Xiaomi Phone:</strong> Settings → Xiaomi Account → Scan icon (top-right).<br>
+      • <strong>Any Smartphone:</strong> Scan QR code with Phone Camera, tap the link and confirm in browser.<br>
+      <span style="color:var(--text-faint); font-size:11px;">(Note: Mi Home device scanner will not recognize passport QR codes — use Phone Settings or Camera instead).</span>
+    </div>
+    <button id="ltmk-qr-start" type="button" class="modal-btn scooter-select">Generate QR & Login Link</button>
+    <div id="ltmk-qr-box"></div>
+  `;
+
   $("ltmk-qr-start").onclick = async () => {
     $("ltmk-qr-start").disabled = true;
-    const r = await fetch("/api/ltmk/qr_start", { method: "POST" });
-    const j = await r.json();
-    if (!j.ok) { alert(j.error || "failed to start login"); $("ltmk-qr-start").disabled = false; return; }
-    const linkHtml = j.login_url
-      ? `<div class="scooter-mac">Or, if Xiaomi account is already open in this computer's browser:
-           <a href="${esc(j.login_url)}" target="_blank" rel="noopener">log in via link</a> without scanning.</div>`
-      : "";
-    $("ltmk-qr-box").innerHTML =
-      `<img class="ltmk-qr-img" src="data:image/png;base64,${j.qr_png_b64}" alt="QR для входа в Mi Cloud">
-       <div class="scooter-mac">Scan in Mi Home / Xiaomi Home app…</div>
-       ${linkHtml}`;
-    pollLtmkQrLogin(mac, name);
+    $("ltmk-qr-start").textContent = "Requesting link…";
+    try {
+      const r = await fetch("/api/ltmk/qr_start", { method: "POST" });
+      const j = await r.json();
+      if (!j.ok) {
+        alert(j.error || "Failed to start login");
+        $("ltmk-qr-start").disabled = false;
+        $("ltmk-qr-start").textContent = "Generate QR & Login Link";
+        return;
+      }
+      $("ltmk-qr-start").hidden = true;
+      const linkHtml = j.login_url
+        ? `<div style="text-align:center; margin-top:8px;">
+             <a href="${esc(j.login_url)}" target="_blank" rel="noopener" class="ltmk-direct-link">
+               🔗 Click here to open Xiaomi Web Login
+             </a>
+           </div>`
+        : "";
+
+      $("ltmk-qr-box").innerHTML = `
+        <img class="ltmk-qr-img" src="data:image/png;base64,${j.qr_png_b64}" alt="Xiaomi Cloud Login QR">
+        <div class="scooter-mac" style="text-align:center; margin-top:4px;">
+          Waiting for authorization… (auto-refreshes when approved)
+        </div>
+        ${linkHtml}
+      `;
+      pollLtmkQrLogin(mac, name);
+    } catch (e) {
+      alert("Error: " + e.message);
+      $("ltmk-qr-start").disabled = false;
+      $("ltmk-qr-start").textContent = "Generate QR & Login Link";
+    }
+  };
+}
+
+function renderLtmkPwdTab(mac, name) {
+  const content = $("ltmk-tab-content");
+  content.innerHTML = `
+    <div class="ltmk-note">
+      Sign in directly with your Xiaomi Account credentials to retrieve scooter keys.
+    </div>
+    <div class="ltmk-input-group">
+      <label for="ltmk-user">Xiaomi ID, Email or Phone:</label>
+      <input id="ltmk-user" type="text" autocomplete="username" placeholder="e.g. user@example.com or +123456789">
+    </div>
+    <div class="ltmk-input-group">
+      <label for="ltmk-pwd">Password:</label>
+      <input id="ltmk-pwd" type="password" autocomplete="current-password" placeholder="Password">
+    </div>
+    <button id="ltmk-pw-btn" type="button" class="modal-btn scooter-select" style="margin-top:6px;">Sign In</button>
+    <div id="ltmk-pw-status" class="scooter-mac" style="margin-top:6px;"></div>
+  `;
+
+  $("ltmk-pw-btn").onclick = async () => {
+    const user = $("ltmk-user").value.trim();
+    const pwd = $("ltmk-pwd").value;
+    const status = $("ltmk-pw-status");
+    if (!user || !pwd) {
+      status.textContent = "Please enter both username and password.";
+      return;
+    }
+    $("ltmk-pw-btn").disabled = true;
+    status.textContent = "Authenticating with Xiaomi Cloud…";
+    try {
+      const r = await fetch("/api/ltmk/password_login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user, password: pwd }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        status.textContent = "Login error: " + (j.error || "Authentication failed");
+        $("ltmk-pw-btn").disabled = false;
+        return;
+      }
+      status.textContent = "Success! Loading devices…";
+      await ltmkStepDevices(mac, name);
+    } catch (e) {
+      status.textContent = "Network error: " + e.message;
+      $("ltmk-pw-btn").disabled = false;
+    }
+  };
+}
+
+function renderLtmkManualTab(mac, name) {
+  const content = $("ltmk-tab-content");
+  content.innerHTML = `
+    <div class="ltmk-note">
+      Already have the LTMK key for ${esc(mac || "selected scooter")}? Enter it directly:
+    </div>
+    <div class="ltmk-input-group">
+      <label for="ltmk-hex-val">LTMK Hex Key (32 bytes / 64 hex chars or 16 bytes):</label>
+      <textarea id="ltmk-hex-val" class="ltmk-hex-area" placeholder="e.g. 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"></textarea>
+    </div>
+    <button id="ltmk-save-manual-btn" type="button" class="modal-btn scooter-select" style="margin-top:6px;">Save Key</button>
+    <div id="ltmk-manual-status" class="scooter-mac" style="margin-top:6px;"></div>
+  `;
+
+  $("ltmk-save-manual-btn").onclick = async () => {
+    const hexVal = $("ltmk-hex-val").value.trim();
+    const status = $("ltmk-manual-status");
+    if (!hexVal) {
+      status.textContent = "Please enter the hex key.";
+      return;
+    }
+    if (!mac) {
+      status.textContent = "Error: No target MAC selected.";
+      return;
+    }
+    $("ltmk-save-manual-btn").disabled = true;
+    status.textContent = "Saving key…";
+    try {
+      const r = await fetch("/api/ltmk/save_manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mac, ltmk_hex: hexVal }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        status.textContent = "Error: " + (j.error || "Failed to save key");
+        $("ltmk-save-manual-btn").disabled = false;
+        return;
+      }
+      ltmkSetBody(`
+        <div class="scooter-mac">Done: LTMK saved for ${esc(mac)} (${j.length} bytes).</div>
+        <button id="ltmk-reveal" type="button" class="modal-btn scooter-select">Show QR for phone</button>
+        <div id="ltmk-reveal-box"></div>
+      `);
+      $("ltmk-reveal").onclick = async () => {
+        const rr = await fetch("/api/ltmk/reveal_qr", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mac }),
+        });
+        const jj = await rr.json();
+        if (!jj.ok) { alert(jj.error || "failed to show QR"); return; }
+        $("ltmk-reveal-box").innerHTML =
+          `<img class="ltmk-qr-img" src="data:image/png;base64,${jj.qr_png_b64}" alt="LTMK QR code">
+           <div class="scooter-mac">Scan in PWA when adding this scooter. Keep this screen confidential.</div>`;
+      };
+    } catch (e) {
+      status.textContent = "Error: " + e.message;
+      $("ltmk-save-manual-btn").disabled = false;
+    }
   };
 }
 
 async function pollLtmkQrLogin(mac, name) {
-  for (;;) {
+  for (let i = 0; i < 150; i++) {
     await sleep(2000);
-    if ($("ltmk-overlay").hidden) return;   // модалку закрыли — прекращаем поллинг
-    const j = await (await fetch("/api/ltmk/qr_status")).json();
-    if (j.status === "done") { await ltmkStepDevices(mac, name); return; }
-    if (j.status === "error") { ltmkSetBody(`<div class="scooter-mac">Login error: ${esc(j.error || "?")}</div>`); return; }
+    if ($("ltmk-overlay").hidden) return;
+    try {
+      const r = await fetch("/api/ltmk/qr_status");
+      const j = await r.json();
+      if (j.status === "done") {
+        await ltmkStepDevices(mac, name);
+        return;
+      }
+      if (j.status === "error") {
+        const qrBox = $("ltmk-qr-box");
+        if (qrBox) {
+          qrBox.innerHTML += `<div class="scooter-mac" style="color:var(--bad, #ff5c5c); margin-top:8px;">
+            Login status: ${esc(j.error || "Expired or cancelled")}.
+          </div>`;
+        }
+        return;
+      }
+    } catch (e) {
+      // transient poll error
+    }
   }
 }
 
@@ -389,9 +584,27 @@ async function ltmkStepDevices(mac, name) {
   ltmkSetBody(`<div class="scooter-mac">Loading account device list…</div>`);
   const r = await fetch("/api/ltmk/devices");
   const j = await r.json();
-  if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Error: ${esc(j.error || "?")}</div>`); return; }
+  if (!j.ok) {
+    ltmkSetBody(`
+      <div class="scooter-mac">Error: ${esc(j.error || "?")}</div>
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button type="button" class="modal-btn" onclick="currentLtmkTab='manual'; renderLtmkLoginTabs('${mac}', '${esc(name)}')">Enter Key Manually</button>
+        <button type="button" class="modal-btn" onclick="fetch('/api/ltmk/logout', {method:'POST'}).then(() => { currentLtmkTab='qr'; renderLtmkLoginTabs('${mac}', '${esc(name)}'); })">Log Out</button>
+      </div>
+    `);
+    return;
+  }
   const devices = j.devices || [];
-  if (!devices.length) { ltmkSetBody(`<div class="scooter-mac">No devices found in this account.</div>`); return; }
+  if (!devices.length) {
+    ltmkSetBody(`
+      <div class="scooter-mac">No devices found in this Xiaomi account.</div>
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button type="button" class="modal-btn" onclick="currentLtmkTab='manual'; renderLtmkLoginTabs('${mac}', '${esc(name)}')">Enter Key Manually</button>
+        <button type="button" class="modal-btn" onclick="fetch('/api/ltmk/logout', {method:'POST'}).then(() => { currentLtmkTab='qr'; renderLtmkLoginTabs('${mac}', '${esc(name)}'); })">Switch Account</button>
+      </div>
+    `);
+    return;
+  }
 
   const box = document.createElement("div");
   box.className = "scooters-list";
@@ -416,8 +629,36 @@ async function ltmkStepDevices(mac, name) {
     row.append(info, btn);
     box.appendChild(row);
   }
+
+  const footer = document.createElement("div");
+  footer.style.marginTop = "14px";
+  footer.style.display = "flex";
+  footer.style.justifyContent = "space-between";
+  footer.style.alignItems = "center";
+
+  const manualBtn = document.createElement("button");
+  manualBtn.type = "button";
+  manualBtn.className = "modal-btn";
+  manualBtn.textContent = "Enter Key Manually";
+  manualBtn.onclick = () => {
+    currentLtmkTab = "manual";
+    renderLtmkLoginTabs(mac, name);
+  };
+
+  const logoutLink = document.createElement("a");
+  logoutLink.className = "ltmk-switch-link";
+  logoutLink.textContent = "Log out / Switch account";
+  logoutLink.onclick = async () => {
+    await fetch("/api/ltmk/logout", { method: "POST" });
+    currentLtmkTab = "qr";
+    renderLtmkLoginTabs(mac, name);
+  };
+
+  footer.append(manualBtn, logoutLink);
+
   $("ltmk-body").innerHTML = "";
   $("ltmk-body").appendChild(box);
+  $("ltmk-body").appendChild(footer);
 }
 
 async function ltmkStepFetch(did, country, mac, pin) {
@@ -436,7 +677,7 @@ async function ltmkStepFetch(did, country, mac, pin) {
     await ltmkStepFetch(did, country, mac, enteredPin);
     return;
   }
-  if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Ошибка: ${esc(j.error || "?")}</div>`); return; }
+  if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Error: ${esc(j.error || "?")}</div>`); return; }
 
   ltmkSetBody(
     `<div class="scooter-mac">Done: LTMK saved for ${esc(mac)} (${j.length} bytes).</div>

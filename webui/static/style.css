@@ -866,7 +866,7 @@ body.write-on .prop.writable::after {
 .scooter-ltmk:hover { color: var(--accent); }
 
 /* --- получение LTMK (Mi Cloud QR-логин + перенос ключа на телефон) --- */
-.ltmk-modal { max-width: 420px; }
+.ltmk-modal { max-width: 440px; }
 #ltmk-body { margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
 #ltmk-body a { color: var(--accent); }
 .ltmk-qr-img {
@@ -876,6 +876,101 @@ body.write-on .prop.writable::after {
   border-radius: var(--radius-sm);
   background: #fff;
   padding: 10px;
+}
+.ltmk-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+}
+.ltmk-tab-btn {
+  flex: 1;
+  padding: 7px 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.ltmk-tab-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ltmk-tab-btn.active {
+  background: rgba(0, 180, 216, 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.ltmk-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 6px 0;
+}
+.ltmk-input-group label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ltmk-input-group input,
+.ltmk-hex-area {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ltmk-input-group input:focus,
+.ltmk-hex-area:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.ltmk-hex-area {
+  font-family: monospace;
+  font-size: 12px;
+  min-height: 75px;
+  resize: vertical;
+}
+.ltmk-direct-link {
+  display: inline-block;
+  margin: 6px auto;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  text-align: center;
+}
+.ltmk-direct-link:hover {
+  background: rgba(0, 180, 216, 0.15);
+  border-color: var(--accent);
+}
+.ltmk-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin: 4px 0 8px 0;
+}
+.ltmk-switch-link {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.ltmk-switch-link:hover {
+  color: var(--bad, #ff5c5c);
 }
 
 /* --- сканирование QR камерой (PWA — добавление самоката по ключу из webui) --- */

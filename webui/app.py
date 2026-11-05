@@ -334,6 +334,48 @@ def api_ltmk_status():
     return jsonify(ok=True, logged_in=ml.has_session(), qr=ml.qr_login_status())
 
 
+@app.post("/api/ltmk/password_login")
+def api_ltmk_password_login():
+    """Authenticates with Xiaomi Cloud using username (email/phone/ID) and password."""
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+    if not username or not password:
+        return jsonify(ok=False, error="Username and password are required"), 400
+    try:
+        ml.login_with_password(username, password)
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 401
+    STATE.handle({"type": "log", "message": f"Mi Cloud session authenticated via password for {username}"})
+    return jsonify(ok=True)
+
+
+@app.post("/api/ltmk/logout")
+def api_ltmk_logout():
+    """Clears stored Mi Cloud session."""
+    ml.logout()
+    STATE.handle({"type": "log", "message": "Mi Cloud session cleared"})
+    return jsonify(ok=True)
+
+
+@app.post("/api/ltmk/save_manual")
+def api_ltmk_save_manual():
+    """Saves manually provided LTMK hex string to secrets/ltmk_<MAC>.hex."""
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    ltmk_hex = str(data.get("ltmk_hex", "")).strip()
+    if not mac or not MAC_RE.match(mac):
+        return jsonify(ok=False, error="Invalid MAC address"), 400
+    if not ltmk_hex:
+        return jsonify(ok=False, error="LTMK key is required"), 400
+    try:
+        path, length = ml.save_manual_ltmk(mac, ltmk_hex)
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    STATE.handle({"type": "log", "message": f"Manual LTMK saved for {mac} ({os.path.relpath(path, _ROOT)}), {length} B"})
+    return jsonify(ok=True, mac=mac, length=length)
+
+
 @app.post("/api/ltmk/qr_start")
 def api_ltmk_qr_start():
     """Starts QR login into Mi Cloud — login proceeds in background thread (waiting
