@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-READ-ONLY: пробует `down rd_info` с разными 3-байтными суффиксами, чтобы понять,
-является ли он читателем NVM/DFU-региона по селектору (и можно ли так дампит данные).
-НИЧЕГО не пишет — rd_info = read info. Если какой-то селектор даст ответ НЕ вида
-"ok …", это тоже фиксируем (но команду не повторяем агрессивно).
+READ-ONLY: probes `down rd_info` with different 3-byte suffixes to determine
+whether it reads the NVM/DFU region by selector (and if data can be dumped this way).
+Writes NOTHING — rd_info = read info.
 """
 import time
 import serial
@@ -70,10 +69,10 @@ def main():
             if d.endswith(b"\r") and d.split(b"\r")[0]:
                 line = d.split(b"\r")[0].decode("ascii", "replace")
             else:
-                line = f"НЕТ (raw={d.hex(' ')})"
+                line = f"NO (raw={d.hex(' ')})"
             print(f"rd_info\\r{suf.hex():>10}  ->  {line!r}")
             time.sleep(0.3)
-        print("\n[+] готово.")
+        print("\n[+] complete.")
     finally:
         s.close()
 

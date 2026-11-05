@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Random-sweep: верификация P-term и 2-фазного toggle в 0x1d078 (Phase B).
-Проверяем поля, НЕ трогаемые anti-windup tail: S+0x2c (err clamp 300) и
-S+0x5c (= s16(S+0x2c)<<7). Плюс toggle счётчика S+0x28."""
+"""Random-sweep: verification of P-term and 2-phase toggle in 0x1d078 (Phase B).
+Verify fields NOT touched by anti-windup tail: S+0x2c (err clamp 300) and
+S+0x5c (= s16(S+0x2c)<<7). Plus counter toggle S+0x28."""
 import struct
 import sys
 
@@ -32,7 +32,7 @@ def main():
         F = rng.getrandbits(1)
         mode = rng.choice([2, 3, 0xb, 5, 7])
         f339 = rng.getrandbits(16)
-        c326 = rng.randint(1, 0x7fff)   # positive s16 (реалистичный speed-setpoint)
+        c326 = rng.randint(1, 0x7fff)   # positive s16 (realistic speed-setpoint)
         m2t = rng.randint(1, 0x7fff)
         acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
         acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
@@ -43,24 +43,24 @@ def main():
         run.ram_write(0x339, struct.pack('<H', f339))
         run.ram_write(0x324, struct.pack('<H', m2t))
         run.ram_write(0x326, struct.pack('<H', c326))
-        # working struct: контролируем интеграторы
+        # working struct: control integrators
         run.ram_write(0x1768, struct.pack('<H', 0))
         run.ram_write(0x176C, struct.pack('<I', acc2))
         run.ram_write(0x1770, struct.pack('<H', out2 & 0xFFFF))
         run.ram_write(0x1774, struct.pack('<I', acc1))
         run.ram_write(0x1778, struct.pack('<H', out1 & 0xFFFF))
-        # внешние inходы = 0 (anti-windup tail сбросит S+0x58/S+0x64, не трогая 2c/5c)
+        # external inputs = 0 (anti-windup tail will reset S+0x58/S+0x64, leaving 2c/5c untouched)
         run.ram_write(0x1760, struct.pack('<I', 0))
         run.ram_write(0x1764, struct.pack('<I', 0))
         run.ram_write(0x388, struct.pack('<I', 0))
         run.ram_write(0x224, struct.pack('<I', 0))
-        # structB: Phase B (counter S+0x28=1), остальное 0
+        # structB: Phase B (counter S+0x28=1), rest 0
         run.ram_write(0x3C8, b'\x00' * 0x70)
         run.ram_write(0x3C8 + 0x28, struct.pack('<H', 1))
 
         run.call(0x1D078, (), max_insn=400000)
 
-        # --- модель ---
+        # --- model ---
         val = 0 if F == 0 else s16(sdiv(48000, V))
         na1 = (acc1 + val - out1) & 0xFFFFFFFF; o1n = s16(na1 >> 5)
         na2 = (acc2 + val - out2) & 0xFFFFFFFF; o2n = max(0, s16(na2 >> 3))
@@ -89,8 +89,8 @@ def main():
         if g_28 != 0:
             bad_toggle += 1
 
-    print(f"\n[positive-target домен] S+0x2c (P-term err clamp): {N - bad_2c}/{N}")
-    print(f"[positive-target домен] S+0x5c (= s16(2c)<<7):      {N - bad_5c}/{N}")
+    print(f"\n[positive-target domain] S+0x2c (P-term err clamp): {N - bad_2c}/{N}")
+    print(f"[positive-target domain] S+0x5c (= s16(2c)<<7):      {N - bad_5c}/{N}")
     print(f"toggle counter→0 (Phase B): {N - bad_toggle}/{N}")
 
 

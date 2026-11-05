@@ -1,38 +1,38 @@
 #!/usr/bin/env python3
 """
-Dreame Scooter 5 Pro — прошивальщик (BLE/MCU DFU) поверх реверснутого протокола.
+Dreame Scooter 5 Pro — firmware flasher (BLE/MCU DFU) over reversed protocol.
 ==============================================================================
 
-Использует транспорт и security-chip login из dreame_auth.py и заливает
-официальный образ прошивки через канал FE95/0x0018.
+Uses transport and security-chip login from dreame_auth.py and flashes
+official firmware image via FE95/0x0018 channel.
 
-Полностью разобранный протокол — docs/dreame_dfu_protocol.md, разделы 6.14–6.16.
-Кратко (little-endian):
-  Команды  (0x0017 W/RESP): [opcode u16][len u8][params]  ; ответ [01][len][opcode u16][status][data]
+Fully analyzed protocol — docs/dreame_dfu_protocol.md, sections 6.14–6.16.
+Brief summary (little-endian):
+  Commands (0x0017 W/RESP): [opcode u16][len u8][params]  ; response [01][len][opcode u16][status][data]
       2=getFragmentSize, 3=lastFragmentIndex(BLE), 5=lastFragmentIndex(MCU),
       4=switchFirmware(BLE), 6=switchFirmware(MCU)
-  Данные   (0x0018):
-      CTR   [00 00][00][subtype=00][frameCount u16]           -> device ACK 01 (готов)
-      DATA  [seq u16][data]  seq 1-based, кадр = 18Б данных (frameSize канала по умолчанию)
+  Data     (0x0018):
+      CTR   [00 00][00][subtype=00][frameCount u16]           -> device ACK 01 (ready)
+      DATA  [seq u16][data]  seq 1-based, frame = 18B data (default channel frameSize)
       ACK   [00 00][01][status][reqSeq u16]:
-              05 reqSeq = «пришли кадр reqSeq» (pull, окно=1),  00 = сообщение принято
-  После приёма фрагмента device шлёт на 0x0017 событие [02][03][status][index u16]:
-      status 00 = фрагмент ЗАЧТЁН, иначе отклонён (5 = та же/старая версия и т.п.).
+              05 reqSeq = "send frame reqSeq" (pull, window=1), 00 = message accepted
+  After fragment reception, device sends event on 0x0017: [02][03][status][index u16]:
+      status 00 = fragment ACCEPTED, else rejected (5 = same/older version etc.).
 
-Сообщение фрагмента = [index u16 LE][fragmentData(fragmentSize)],  index = lastIndex+1.
-switchFirmware НЕОБРАТИМ (риск кирпича) — шлётся только с флагом --commit.
+Fragment message = [index u16 LE][fragmentData(fragmentSize)], index = lastIndex+1.
+switchFirmware is IRREVERSIBLE (brick risk) — sent only with --commit flag.
 
-Использование:
+Usage:
     python dreame_flasher.py <ble|mcu> <firmware.bin> [MAC] [--commit] [--yes]
-        (без --commit заливает все фрагменты, но НЕ переключает прошивку)
+        (without --commit flashes all fragments, but does NOT switch firmware)
 
     python dreame_flasher.py <ble|mcu> <fw.bin> [--limit=K] [--burst=N] [--frame-size=N]
-        --limit: залить только K фрагментов (замер скорости, коммит не отправляется)
-        --burst: кадров сообщения до ожидания ACK (по умолчанию ВСЕ; 1 = старое поведение)
-        --frame-size: НЕ менять — 18 фиксирован устройством (см. docs/FACTS.md)
+        --limit: flash only K fragments (speed measurement, commit is not sent)
+        --burst: message frames before waiting for ACK (default ALL; 1 = old behavior)
+        --frame-size: DO NOT change — 18 is fixed by device (see docs/FACTS.md)
 
-    python dreame_flasher.py poll-mcu [MAC] [--poll-timeout СЕК]
-        только опрос версии MCU (read-only) — проверить, применилась ли установка
+    python dreame_flasher.py poll-mcu [MAC] [--poll-timeout SEC]
+        poll MCU version only (read-only) — verify if installation was applied
 """
 
 import os
@@ -47,22 +47,22 @@ from dreame_auth import (
     CH_DFU_CMD, CH_DFU_DATA, CH_LOGIN, PKT_CTR, PKT_MNG, PKT_MNG_ACK, MAC_DEFAULT, LTMK_HEX,
 )
 
-FRAME_SIZE = 18          # frameSize канала 0x0018 — ФИКСИРОВАН устройством.
-                         # Проверено: кадр 240Б -> устройство бесконечно pull'ит (249 раз),
-                         # т.к. собирает сообщение по смещению seq*frameSize. Не тюнится.
-BURST = 0                # сколько кадров сообщения слать до ожидания ACK; 0 = ВСЕ.
-                         # Проверено: все 29 кадров подряд (пейсинг 10 мс) -> 0 pull'ов,
-                         # ACK 00 + событие DFU, 3 прогона подряд. Ускорение ~2.7x.
-                         # Pull (ACK 05) — механизм ВОССТАНОВЛЕНИЯ, а не окно=1:
-                         # устройство просит кадры лишь когда их реально не хватает.
+FRAME_SIZE = 18          # frameSize of channel 0x0018 — FIXED by device.
+                         # Verified: 240B frame -> device pulls endlessly (249 times),
+                         # because it reassembles message by seq*frameSize offset. Do not tune.
+BURST = 0                # message frames to send before waiting for ACK; 0 = ALL.
+                         # Verified: all 29 frames in a row (10ms pacing) -> 0 pulls,
+                         # ACK 00 + DFU event, 3 runs in a row. ~2.7x speedup.
+                         # Pull (ACK 05) is a RECOVERY mechanism, not window=1:
+                         # device requests frames only when they are actually missing.
 OPS = {
     "ble": {"frag": 2, "last": 3, "switch": 4},
     "mcu": {"frag": 2, "last": 5, "switch": 6},
 }
-# Коды статуса фрагмента (событие 02 03 <status>): из MeshDfuManager.status2otaCode
+# Fragment status codes (event 02 03 <status>): from MeshDfuManager.status2otaCode
 FRAG_STATUS = {
-    0: "OK (зачтён)",
-    5: "отклонён (код -505: как правило — та же/несовместимая версия прошивки)",
+    0: "OK (accepted)",
+    5: "rejected (code -505: usually same/incompatible firmware version)",
 }
 
 
@@ -70,25 +70,25 @@ async def login(t, ltmk):
     """connect → A4/MNG → security-chip login (Stage A+B)."""
     await t.connect()
     if not await t.a4_handshake():
-        raise RuntimeError("транспорт не поднялся (нет MNG)")
-    for s, b in await t.drain(1.0):     # иногда MNG приходит повторно
+        raise RuntimeError("transport handshake failed (no MNG)")
+    for s, b in await t.drain(1.0):     # MNG sometimes arrives repeatedly
         if s == CH_LOGIN and len(b) >= 3 and b[2] == PKT_MNG:
             await t.write(CH_LOGIN, struct.pack("<HBB", 0, PKT_MNG_ACK, 0)
                           + bytes([t.pkg_num, t.dmtu]))
     priv, dev_pub = await stage_a_pubkey_exchange(t)
     if not (dev_pub and len(dev_pub) >= 64):
-        raise RuntimeError("Stage A: не получен pubkey устройства")
+        raise RuntimeError("Stage A: device pubkey not received")
     ok = await stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False)
     if not ok:
-        raise RuntimeError("login отклонён (0x22) — неверный ltmk/пин")
+        raise RuntimeError("login rejected (0x22) — invalid ltmk/pin")
     print("[+] LOGIN OK")
 
 
 async def _cmd_value(t, opcode, params=b"", timeout=2.5):
     """
-    Команда 0x0017 + разбор ответа [01][len][opcode u16][status][value].
-    Строго сверяет opcode ответа с запрошенным (в очереди бывают чужие пакеты).
-    Возвращает (status, value_bytes) либо (None, None).
+    Command 0x0017 + parsing response [01][len][opcode u16][status][value].
+    Strictly matches response opcode with requested (queue may contain other packets).
+    Returns (status, value_bytes) or (None, None).
     """
     frame = struct.pack("<HB", opcode, len(params)) + params
     while not t.rx.empty():
@@ -114,7 +114,7 @@ async def get_fragment_size(t, op):
 
 
 async def get_last_index(t, op):
-    """Ответ: [status][lastIndex u16][crc32 u32 LE]. Возвращает (lastIndex, crc|None)."""
+    """Response: [status][lastIndex u16][crc32 u32 LE]. Returns (lastIndex, crc|None)."""
     st, v = await _cmd_value(t, op["last"])
     if st != 0 or len(v) < 2:
         return 0, None
@@ -133,12 +133,12 @@ async def _next_pkt(t, deadline):
 
 async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
     """
-    Заливка одного фрагмента: сообщение [index u16][data] на 0x0018
-    (CTR(fc) → окно=1: кадры 18Б, pull по ACK 05 reqSeq → ACK 00), затем ловим
-    DFU-событие 0x0017 [02 03 status idx].
-    Возвращает статус фрагмента: 0 = зачтён, >0 = код отказа, None = сбой транспорта.
-    Один общий цикл сырого чтения очереди — чтобы не потерять событие 0x0017,
-    приходящее рядом с ACK 00 на 0x0018.
+    Upload single fragment: message [index u16][data] on 0x0018
+    (CTR(fc) -> window=1: 18B frames, pull on ACK 05 reqSeq -> ACK 00), then catch
+    DFU event 0x0017 [02 03 status idx].
+    Returns fragment status: 0 = accepted, >0 = rejection code, None = transport failure.
+    Single common raw queue reading loop to avoid losing 0x0017 event
+    arriving adjacent to ACK 00 on 0x0018.
     """
     fs = frame_size or FRAME_SIZE
     msg = struct.pack("<H", index) + data
@@ -148,7 +148,7 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
     while not t.rx.empty():
         t.rx.get_nowait()
 
-    # CTR + ждём start-ACK
+    # CTR + wait for start-ACK
     await t.write(CH_DFU_DATA, struct.pack("<HBBH", 0, PKT_CTR, 0, fc))
     deadline = loop.time() + timeout
     started = False
@@ -163,14 +163,14 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
     async def send_seq(n):
         await t.write(CH_DFU_DATA, struct.pack("<H", n) + frames[n - 1], response=False)
 
-    # Окно отправки. MNG отдаёт maxPackageNum (у нас 6) — значит устройство готово
-    # принять несколько кадров до подтверждения, а не строго один на round-trip.
-    # burst=1 — прежнее поведение (медленно, но проверено).
+    # Send window. MNG yields maxPackageNum (6 for us) — means device is ready
+    # to accept several frames before confirmation, rather than strictly one per round-trip.
+    # burst=1 — previous behavior (slow but verified).
     burst = fc if BURST in (0, None) else max(1, min(BURST, fc))
     for n in range(1, burst + 1):
         await send_seq(n)
         if burst > 1:
-            await asyncio.sleep(0.01)   # пейсинг W/O-RESP, чтобы не терять кадры
+            await asyncio.sleep(0.01)   # pacing W/O-RESP to prevent frame loss
     transport_done = False
     deadline = loop.time() + timeout
     for _ in range((fc + 80) * 3):
@@ -178,17 +178,17 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
         if p is None:
             return None
         s, b = p
-        # DFU-событие фрагмента на командном канале
+        # DFU fragment event on command channel
         if s == CH_DFU_CMD and len(b) >= 3 and b[0] == 0x02 and b[1] == 0x03:
             return b[2]
         if s != CH_DFU_DATA or len(b) < 4 or b[0] != 0 or b[1] != 0 or b[2] != 0x01:
             continue
         status = b[3]
-        if status == 0x00:                       # транспорт принял сообщение целиком
+        if status == 0x00:                       # transport accepted entire message
             transport_done = True
-            deadline = loop.time() + timeout     # ждём событие 02 03
+            deadline = loop.time() + timeout     # wait for event 02 03
             continue
-        if status == 0x05 and len(b) >= 6:       # pull: пришли reqSeq
+        if status == 0x05 and len(b) >= 6:       # pull: send reqSeq
             n = struct.unpack_from("<H", b, 4)[0]
             if 1 <= n <= fc:
                 await send_seq(n)
@@ -197,154 +197,154 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
 
 
 async def flash(t, path, target, commit=False, frame_size=None, limit=None, on_progress=None):
-    """on_progress(dict), если задан, вызывается на тех же контрольных точках,
-    что уже печатаются в консоль — для UI-прогресса (webui/firmware_worker.py),
-    без изменения существующего консольного поведения CLI."""
+    """on_progress(dict), if specified, is called at the same checkpoints
+    printed to console — for UI progress (webui/firmware_worker.py),
+    without altering existing console CLI behavior."""
     def _emit(**kw):
         if on_progress:
             on_progress(kw)
 
     op = OPS[target]
     fw = open(path, "rb").read()
-    print(f"\n=== FLASH {target.upper()} : {path} ({len(fw)} байт) ===")
-    _emit(phase="starting", message=f"{target.upper()}: {os.path.basename(path)} ({len(fw)} байт)")
+    print(f"\n=== FLASH {target.upper()} : {path} ({len(fw)} bytes) ===")
+    _emit(phase="starting", message=f"{target.upper()}: {os.path.basename(path)} ({len(fw)} bytes)")
 
     frag = await get_fragment_size(t, op)
     if not frag:
-        print("[!] getFragmentSize не ответил — прерываю")
-        _emit(phase="error", success=False, message="getFragmentSize не ответил")
+        print("[!] getFragmentSize did not respond — aborting")
+        _emit(phase="error", success=False, message="getFragmentSize did not respond")
         return False
     last, dev_crc = await get_last_index(t, op)
     N = -(-len(fw) // frag)          # ceil
-    # Безопасность резюма (аналог MeshDfuManager.checkLastFragmentIndex):
-    # device-crc32 должен совпасть с CRC нашего файла до last*frag; иначе в буфере
-    # чужой/битый образ — заливаем с нуля.
+    # Resume safety (analogous to MeshDfuManager.checkLastFragmentIndex):
+    # device-crc32 must match CRC of our file up to last*frag; otherwise buffer has
+    # foreign/corrupted image — flash from scratch.
     if last > 0 and dev_crc is not None:
         local_crc = zlib.crc32(fw[:last * frag]) & 0xFFFFFFFF
         if local_crc != dev_crc:
-            print(f"[!] resume-CRC не совпал (device={dev_crc:08x}, file={local_crc:08x}) "
-                  f"— в буфере другой образ; заливаю с фрагмента 1")
+            print(f"[!] resume-CRC mismatch (device={dev_crc:08x}, file={local_crc:08x}) "
+                  f"— different image in buffer; flashing from fragment 1")
             last = 0
         else:
-            print(f"[i] resume-CRC OK — докачиваю с фрагмента {last + 1}")
-    print(f"[i] fragmentSize={frag}, lastFragmentIndex={last}, всего фрагментов={N}")
+            print(f"[i] resume-CRC OK — resuming from fragment {last + 1}")
+    print(f"[i] fragmentSize={frag}, lastFragmentIndex={last}, total fragments={N}")
     if last >= N:
-        print("[i] устройство уже имеет все фрагменты — сразу к switchFirmware")
+        print("[i] device already has all fragments — proceeding to switchFirmware")
     _emit(phase="uploading", index=last, total=N, ok=0, bad=0,
-          message=f"fragmentSize={frag}, уже загружено {last}/{N}")
+          message=f"fragmentSize={frag}, already uploaded {last}/{N}")
 
     t0 = time.time()
     n_ok = n_bad = 0
     stop_at = N if limit is None else min(N, last + limit)
     if stop_at < N:
-        print(f"[i] --limit: заливаю только фрагменты {last+1}..{stop_at} из {N} "
-              f"(замер скорости, коммит невозможен)")
+        print(f"[i] --limit: uploading only fragments {last+1}..{stop_at} of {N} "
+              f"(speed measurement, commit disabled)")
     for index in range(last + 1, stop_at + 1):
         data = fw[(index - 1) * frag: index * frag]
         st = await send_fragment(t, index, data, frame_size=frame_size)
         if st is None:
-            print(f"\n[!] фрагмент {index}/{N}: сбой транспорта (нет ACK 00 / нет события)")
+            print(f"\n[!] fragment {index}/{N}: transport failure (no ACK 00 / no event)")
             _emit(phase="error", success=False,
-                  message=f"фрагмент {index}/{N}: сбой транспорта")
+                  message=f"fragment {index}/{N}: transport failure")
             return False
         if st == 0:
             n_ok += 1
         else:
             n_bad += 1
-            # статус != 0 не прерываем: проверяем гипотезу, что фрагмент всё равно
-            # буферизуется (05 на старте сессии). Итог сверим по CRC ниже.
+            # do not abort on status != 0: testing hypothesis that fragment is still
+            # buffered (05 at session start). Outcome checked via CRC below.
             if n_bad <= 3 or index == last + 1:
-                print(f"\n  [~] фрагмент {index}/{N}: статус={st} ({FRAG_STATUS.get(st,'?')}) — продолжаю")
-            # если ПОДРЯД много не-нулевых и ни одного OK — это реальный отказ
+                print(f"\n  [~] fragment {index}/{N}: status={st} ({FRAG_STATUS.get(st,'?')}) — continuing")
+            # if MULTIPLE consecutive non-zeros and no OK — genuine failure
             if n_bad >= 8 and n_ok == 0:
-                print(f"\n[!] {n_bad} фрагментов подряд со статусом !=0 и ни одного OK — отказ, прерываю")
+                print(f"\n[!] {n_bad} consecutive fragments with status != 0 and none OK — failure, aborting")
                 _emit(phase="error", success=False,
-                      message=f"{n_bad} фрагментов подряд отклонены, ни одного OK")
+                      message=f"{n_bad} consecutive fragments rejected, none OK")
                 return False
         if index % 10 == 0 or index == N:
             spd = index / max(time.time() - t0, 0.1)
             eta = (N - index) / max(spd, 0.1)
-            print(f"\r  фрагмент {index}/{N} ({100*index//N}%) ok={n_ok} bad={n_bad} "
-                  f"{spd:.1f}фр/с ETA {eta:.0f}s   ", end="", flush=True)
+            print(f"\r  fragment {index}/{N} ({100*index//N}%) ok={n_ok} bad={n_bad} "
+                  f"{spd:.1f}fr/s ETA {eta:.0f}s   ", end="", flush=True)
             _emit(phase="uploading", index=index, total=N, ok=n_ok, bad=n_bad,
                   speed_kbps=spd * frag / 1024, eta_sec=eta,
                   message=f"{index}/{N} ({100*index//N}%) ok={n_ok} bad={n_bad}")
     dt = time.time() - t0
     sent = max(stop_at - last, 0)
     kbps = (sent * frag) / max(dt, 0.001) / 1024
-    print(f"\n[i] загрузка завершена за {dt:.0f}s (ok={n_ok}, статус!=0={n_bad})")
-    print(f"[i] СКОРОСТЬ: кадр={frame_size or FRAME_SIZE}Б, {sent} фрагм. за {dt:.1f}s "
-          f"= {kbps:.2f} КБ/с ({sent/max(dt,0.001):.2f} фрагм/с)")
+    print(f"\n[i] upload completed in {dt:.0f}s (ok={n_ok}, status!=0={n_bad})")
+    print(f"[i] SPEED: frame={frame_size or FRAME_SIZE}B, {sent} frags in {dt:.1f}s "
+          f"= {kbps:.2f} KB/s ({sent/max(dt,0.001):.2f} frags/s)")
     if stop_at < N:
-        print("[i] --limit задан: образ залит частично, switchFirmware не отправляю.")
-        _emit(phase="done", success=True, message="частичная заливка (--limit)")
+        print("[i] --limit specified: image uploaded partially, not sending switchFirmware.")
+        _emit(phase="done", success=True, message="partial upload (--limit)")
         return True
 
-    # ФИНАЛЬНАЯ ПРОВЕРКА: устройство реально приняло весь образ?
+    # FINAL CHECK: did device actually accept the entire image?
     last2, crc2 = await get_last_index(t, op)
     full_crc = zlib.crc32(fw) & 0xFFFFFFFF
     exp_crc = zlib.crc32(fw[:last2 * frag]) & 0xFFFFFFFF if last2 else None
     crc2s = f"{crc2:08x}" if crc2 is not None else "—"
-    print(f"[i] после загрузки: lastFragmentIndex={last2}/{N}, device-crc={crc2s}")
+    print(f"[i] after upload: lastFragmentIndex={last2}/{N}, device-crc={crc2s}")
     accepted = (last2 >= N) and (crc2 is not None) and (crc2 == full_crc)
     if accepted:
-        print(f"[+] ВЕСЬ ОБРАЗ ПРИНЯТ устройством (crc всего файла {full_crc:08x} совпал).")
+        print(f"[+] ENTIRE IMAGE ACCEPTED by device (full file crc {full_crc:08x} matched).")
     elif last2 and exp_crc is not None and crc2 == exp_crc:
-        print(f"[i] принято {last2}/{N} фрагментов (crc до этого места совпал) — образ лёг частично.")
+        print(f"[i] accepted {last2}/{N} fragments (crc matched up to this point) — image partially written.")
     else:
-        print(f"[!] образ НЕ подтверждён: lastIndex={last2}, device-crc={crc2}, "
-              f"ожидали полный {full_crc:08x}.")
-        _emit(phase="error", success=False, message="образ не подтверждён устройством после загрузки")
+        print(f"[!] image NOT verified: lastIndex={last2}, device-crc={crc2}, "
+              f"expected full {full_crc:08x}.")
+        _emit(phase="error", success=False, message="image not verified by device after upload")
         return False
 
     if not commit:
-        print("[i] --commit не задан: switchFirmware НЕ отправляю. Образ загружен в буфер;\n"
-              "    незавершённый DFU устройство сбросит само. Перезапуск с --commit завершит.")
-        _emit(phase="done", success=True, message="образ загружен и подтверждён, ждёт переключения")
+        print("[i] --commit not specified: NOT sending switchFirmware. Image uploaded to buffer;\n"
+              "    incomplete DFU will be reset by device. Rerun with --commit to complete.")
+        _emit(phase="done", success=True, message="image uploaded and verified, awaiting switch")
         return True
 
-    print("\n[!!!] switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Отправляю…")
-    _emit(phase="committing", message="отправляю switchFirmware (необратимо)")
+    print("\n[!!!] switchFirmware is an IRREVERSIBLE operation (brick risk). Sending…")
+    _emit(phase="committing", message="sending switchFirmware (irreversible)")
     r = await dfu_cmd(t, op["switch"], struct.pack("<I", 1))  # k81.OooOO0(1) = 01 00 00 00
     print(f"    switchFirmware resp: {r.hex() if r else None}")
 
     if target == "mcu":
-        # Установка MCU асинхронная: BLE-чип ретранслирует образ в контроллер по USART3,
-        # MCU прошивает себя сам. Mi Home на этом шаге опрашивает версию MCU до её смены
-        # (MeshDfuManager->pollMcuVersion: кадр [01] на 0x001c). Повторяем это же.
-        _emit(phase="committing", message="switchFirmware отправлен — жду смены версии MCU (до 3 мин)")
+        # MCU installation is asynchronous: BLE chip relays image to controller via USART3,
+        # MCU flashes itself. Mi Home polls MCU version until it changes at this step
+        # (MeshDfuManager->pollMcuVersion: frame [01] on 0x001c). We replicate this.
+        _emit(phase="committing", message="switchFirmware sent — waiting for MCU version change (up to 3 min)")
         ok = await poll_mcu_version(t, expected_before=None)
         if ok is True:
-            print("[+] MCU сообщил НОВУЮ версию — прошивка применена.")
-            _emit(phase="done", success=True, message="MCU сообщил новую версию — прошивка применена")
+            print("[+] MCU reported NEW version — firmware applied.")
+            _emit(phase="done", success=True, message="MCU reported new version — firmware applied")
         elif ok is False:
-            print("[!] версия MCU не изменилась за отведённое время. Это НЕ значит провал:\n"
-                  "    установка могла продолжаться дольше таймаута. Проверь версию позже\n"
+            print("[!] MCU version did not change within timeout. This does NOT mean failure:\n"
+                  "    installation may continue beyond timeout. Verify version later\n"
                   "    (python probes/mcu_opcode_sweep.py --max 1 --repeat 0).")
             _emit(phase="done", success=None,
-                  message="switchFirmware отправлен, но версия MCU не сменилась за таймаут — проверьте позже")
+                  message="switchFirmware sent, but MCU version did not change within timeout — verify later")
         else:
-            print("[!] MCU не отвечал на опрос версии (мог перезагружаться).")
+            print("[!] MCU did not respond to version poll (may be rebooting).")
             _emit(phase="done", success=None,
-                  message="switchFirmware отправлен, MCU не отвечал на опрос (мог перезагружаться)")
+                  message="switchFirmware sent, MCU did not respond to poll (may be rebooting)")
         return True
 
-    print("[+] Команда переключения отправлена. Устройство перезагрузится и применит прошивку.")
-    _emit(phase="done", success=True, message="switchFirmware отправлен, устройство перезагрузится")
+    print("[+] Switch command sent. Device will reboot and apply firmware.")
+    _emit(phase="done", success=True, message="switchFirmware sent, device will reboot")
     return True
 
 
 async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0):
-    """Опрос версии MCU до её смены — как MeshDfuManager->pollMcuVersion.
+    """Poll MCU version until it changes — like MeshDfuManager->pollMcuVersion.
 
-    Кадр — однобайтовый [0x01] (опкод 1 = mcu_version) на инфо-канал 0x001c,
-    ответ: [01][len][ascii-версия]. Только чтение.
+    Frame is single-byte [0x01] (opcode 1 = mcu_version) on info-channel 0x001c,
+    response: [01][len][ascii-version]. Read-only.
 
-    Возвращает True (версия сменилась), False (таймаут без смены) или None (нет ответа).
+    Returns True (version changed), False (timeout without change) or None (no response).
     """
     CH_INFO = 0x001C
     if CH_INFO not in t.chars:
-        print("    [!] характеристика 0x001c недоступна — опрос невозможен")
+        print("    [!] characteristic 0x001c unavailable — polling not possible")
         return None
 
     inbox = []
@@ -360,7 +360,7 @@ async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
         try:
             await t.client.write_gatt_char(t.chars[CH_INFO], b"\x01", response=False)
         except Exception as e:
-            print(f"    [!] запись на 0x001c: {e}")
+            print(f"    [!] write to 0x001c: {e}")
             return None
         await asyncio.sleep(1.0)
         for b in inbox:
@@ -371,8 +371,8 @@ async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
     try:
         if expected_before is None:
             expected_before = await read_version()
-            print(f"    версия MCU до установки: {expected_before!r}")
-        print(f"    опрос версии MCU (до {timeout:.0f} с, интервал {interval:.0f} с)…")
+            print(f"    MCU version before install: {expected_before!r}")
+        print(f"    polling MCU version (up to {timeout:.0f} s, interval {interval:.0f} s)...")
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         seen_silence = 0
@@ -382,13 +382,13 @@ async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
             left = int(deadline - loop.time())
             if v is None:
                 seen_silence += 1
-                print(f"    [{left:>3}с] нет ответа (MCU перезагружается?)")
+                print(f"    [{left:>3}s] no response (MCU rebooting?)")
                 continue
             seen_silence = 0
             if expected_before is not None and v != expected_before:
-                print(f"    [{left:>3}с] версия сменилась: {expected_before!r} -> {v!r}")
+                print(f"    [{left:>3}s] version changed: {expected_before!r} -> {v!r}")
                 return True
-            print(f"    [{left:>3}с] версия пока {v!r}")
+            print(f"    [{left:>3}s] version currently {v!r}")
         return None if seen_silence and expected_before is None else False
     finally:
         try:
@@ -414,7 +414,7 @@ async def main():
         elif a.startswith("--burst="):
             globals()["BURST"] = int(a.split("=", 1)[1])
 
-    # режим «только опрос версии MCU» — ничего не прошивает
+    # "MCU version poll only" mode — flashes nothing
     if args and args[0] == "poll-mcu":
         mac = args[1] if len(args) > 1 else MAC_DEFAULT
         ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
@@ -422,9 +422,9 @@ async def main():
         try:
             await login(t, ltmk)
             res = await poll_mcu_version(t, timeout=poll_to)
-            print({True: "[+] версия сменилась",
-                   False: "[i] версия не менялась за отведённое время",
-                   None: "[!] MCU не отвечал"}[res])
+            print({True: "[+] version changed",
+                   False: "[i] version did not change within timeout",
+                   None: "[!] MCU did not respond"}[res])
             return 0
         except Exception:
             import traceback; traceback.print_exc(); return 1
@@ -438,7 +438,7 @@ async def main():
     commit = "--commit" in flags
 
     if commit and "--yes" not in flags:
-        print("[!] --commit требует также --yes (подтверждение необратимой заливки).")
+        print("[!] --commit also requires --yes (confirmation of irreversible flashing).")
         return 2
 
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""A1 (GPIO): статический pin-map кастомного блока «портов». Прогоняем init,
-декодим MODER_LO/HI (2 бита/пин) и печатаем карту портов/пинов/режимов."""
+"""A1 (GPIO): static pin map of custom "ports" block. Run init,
+decode MODER_LO/HI (2 bits/pin) and print port/pin/mode map."""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "emulator"))
 from mcu_emu import McuEmu
 from func_verify import Run  # noqa
 
-MODE_NAMES = {0: "in/резо", 1: "out-одн", 2: "out-дв/AF", 3: "in-pull?"}
+MODE_NAMES = {0: "in/res", 1: "out-single", 2: "out-dual/AF", 3: "in-pull?"}
 
 def pinmap(entry, label):
     run = Run(max_insn=400000)
@@ -39,13 +39,13 @@ def pinmap(entry, label):
         lo, hi = gpio.read(p, 0x2c), gpio.read(p, 0x28)
         out = gpio.read(p, 0x10)
         if lo == hi == out == 0:
-            print(f"  порт {p} (0x{base:08x}): не сконфигурирован")
+            print(f"  port {p} (0x{base:08x}): not configured")
             continue
-        print(f"  порт {p} (0x{base:08x}): MODER=0x{lo:08x} HI=0x{hi:08x} OUTSEL=0x{out:08x}")
+        print(f"  port {p} (0x{base:08x}): MODER=0x{lo:08x} HI=0x{hi:08x} OUTSEL=0x{out:08x}")
         for pin in range(16):
             m = gpio.pin_mode(p, pin)
             if m:
                 print(f"      pin{pin:>2}: mode={m} ({MODE_NAMES.get(m,'?')})")
 
 if __name__ == "__main__":
-    pinmap(0x1BF48, "МОТОР-ИНИТ")
+    pinmap(0x1BF48, "MOTOR-INIT")

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""
-Полный дамп телеметрии Dreame/Xiaomi Scooter 5 Pro по MIoT-spec поверх BLE.
+"""Full telemetry dump for Dreame/Xiaomi Scooter 5 Pro via MIoT-spec over BLE.
 
-Читает всю карту свойств (siid 1..4 + логи siid 6) и печатает таблицу.
-Протокол и раскладка — см. research/REPORT.md; реализация в probes/spec_read.py.
+Reads the complete property map (siid 1..4 + siid 6 trip logs) and prints table.
+Protocol and layout details: see research/REPORT.md; implementation in probes/spec_read.py.
 
-ВАЖНО: читаем ПО ОДНОМУ свойству за запрос. Устройство обслуживает только первый
-объект в запросе, остальным ставит статус 0xf05d (-4003) — проверено тремя опытами
-(в т.ч. запросом одного и того же свойства дважды). Поэтому batch не используем.
+IMPORTANT: read properties ONE BY ONE per request. The device only services the first
+object in a request and sets status 0xf05d (-4003) for subsequent objects — verified by
+experimentation. Batch requests are not supported.
 
-ТОЛЬКО ЧТЕНИЕ: ни одного set-запроса.
+READ-ONLY: no set requests are executed.
 
-Запуск:  python tools/dump_telemetry.py [--out docs/telemetry.txt] [--all]
+Usage:  python tools/dump_telemetry.py [--out docs/telemetry.txt] [--all]
 """
 import argparse
 import asyncio
@@ -28,7 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "probes"))
 import dreame_auth as da                     # noqa: E402
 import spec_read as sr                       # noqa: E402
 
-# что читаем: (siid, piid). Порядок = порядок вывода.
+# Query list: (siid, piid). Order determines output table ordering.
 BATTERY = [(1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (3, 1), (3, 2), (3, 10),
            (3, 11), (3, 12)]
 RIDE = [(1, 1), (1, 7), (1, 9), (2, 1), (2, 6), (2, 7), (2, 8), (2, 9), (1, 8)]
@@ -36,8 +35,8 @@ SETTINGS = [(2, 2), (2, 3), (2, 4), (2, 5), (2, 10), (2, 12), (2, 13), (2, 14),
             (2, 15), (2, 16), (2, 17)]
 IDENT = [(4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (3, 3), (3, 5), (3, 8)]
 
-GROUPS = [("БАТАРЕЯ", BATTERY), ("ПОЕЗДКА", RIDE),
-          ("НАСТРОЙКИ", SETTINGS), ("ИДЕНТИФИКАЦИЯ / ПРОЧЕЕ", IDENT)]
+GROUPS = [("BATTERY", BATTERY), ("RIDE", RIDE),
+          ("SETTINGS", SETTINGS), ("IDENTIFICATION / OTHER", IDENT)]
 
 EXTRA_NAMES = {
     (2, 10): "ASR_IS_ON", (2, 11): "REMAINING_MILEAGE_ALGORITHM",
@@ -55,36 +54,31 @@ sr.NAMES.update(EXTRA_NAMES)
 
 
 async def login(mac):
-    """Поднять транспорт и залогиниться. Возвращает (transport, sessionKey)."""
+    """Establish transport and complete login. Returns (transport, sessionKey)."""
     import struct
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     await t.connect()
     if not await t.a4_handshake():
-        raise RuntimeError("транспорт не поднялся")
+        raise RuntimeError("transport failed to connect")
     for s, b in await t.drain(1.0):
         if s == da.CH_LOGIN and len(b) >= 3 and b[2] == da.PKT_MNG:
             await t.write(da.CH_LOGIN, struct.pack("<HBB", 0, da.PKT_MNG_ACK, 0)
                           + bytes([t.pkg_num, t.dmtu]))
     priv, dev_pub = await da.stage_a_pubkey_exchange(t)
     if not (dev_pub and len(dev_pub) >= 64):
-        raise RuntimeError("Stage A не дал pubkey")
+        raise RuntimeError("Stage A did not return pubkey")
     if not await da.stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
-        raise RuntimeError("login отказан")
+        raise RuntimeError("login refused")
     return t, da.LAST_SK
 
 
 def parse_one(pt):
-    """Ответ на одиночный запрос -> (siid, piid, tcode, value, status) или None.
-
-    Запись-ошибка короче обычной: 5 байт [u8 siid][u16 LE piid][u16 LE status]
-    (подтверждено ответом на 3.9: `03 0900 5ff0` = siid 3, piid 9, status -4001).
-    Обычная запись: 7 + len — [siid][piid][status][(type<<12)|len][value].
-    """
+    """Parse single property reply -> (siid, piid, tcode, value, status) or None."""
     import struct
     if not pt or len(pt) < 11 or pt[5] < 1:
         return None
-    if len(pt) < 13:                       # только запись-ошибка
+    if len(pt) < 13:                       # error record only (5 bytes)
         siid, piid, status = struct.unpack("<BHH", pt[6:11])
         return siid, piid, 0, b"", status
     siid, piid, status, tl = struct.unpack("<BHHH", pt[6:13])
@@ -94,7 +88,7 @@ def parse_one(pt):
 
 async def read_all(mac, props, out_path):
     t, sk = await login(mac)
-    print("[+] LOGIN OK — читаем свойства по одному\n")
+    print("[+] LOGIN OK — reading properties one by one\n")
     rows, cnt = [], 0
     try:
         for siid, piid in props:
@@ -108,30 +102,30 @@ async def read_all(mac, props, out_path):
                     break
                 await asyncio.sleep(0.6)
             if not pt:
-                # сессия могла подвиснуть — переподключаемся и продолжаем
-                print(f"  {siid}.{piid:<3} {name:<26} нет ответа, переподключаюсь")
+                # Session hung — reconnect and resume
+                print(f"  {siid}.{piid:<3} {name:<26} no response, reconnecting")
                 try:
                     await t.close()
                 except Exception:
                     pass
                 t, sk = await login(mac)
                 cnt = 0
-                rows.append((siid, piid, name, "нет ответа", ""))
+                rows.append((siid, piid, name, "no response", ""))
                 continue
             got = parse_one(pt)
             if not got:
-                rows.append((siid, piid, name, "не разобрано", pt.hex()))
-                print(f"  {siid}.{piid:<3} {name:<26} не разобрано  {pt.hex()}")
+                rows.append((siid, piid, name, "unparsed", pt.hex()))
+                print(f"  {siid}.{piid:<3} {name:<26} unparsed  {pt.hex()}")
                 continue
             g_siid, g_piid, tcode, val, status = got
             if status != 0 or not val:
-                sstr = f"ошибка {status - 0x10000 if status > 0x7fff else status}"
+                sstr = f"error {status - 0x10000 if status > 0x7fff else status}"
                 rows.append((siid, piid, name, sstr, ""))
                 print(f"  {siid}.{piid:<3} {name:<26} {sstr}")
                 continue
             line = sr.fmt_value(g_siid, g_piid, tcode, val)
             shown = line.split("] ", 1)[1] if "] " in line else line
-            shown = shown.split("   raw=")[0].strip()   # raw печатаем отдельной колонкой
+            shown = shown.split("   raw=")[0].strip()
             rows.append((siid, piid, name, shown, val.hex()))
             print(f"  {siid}.{piid:<3} {name:<26} {shown}")
             await asyncio.sleep(0.35)
@@ -141,10 +135,10 @@ async def read_all(mac, props, out_path):
         except Exception:
             pass
 
-    # отчёт
-    lines = [f"Dreame/Xiaomi Scooter 5 Pro — телеметрия ({mac})",
-             f"снято: {datetime.now():%Y-%m-%d %H:%M:%S}",
-             "источник: MIoT-spec поверх BLE (приватная спека из плагина Mi Home)", ""]
+    # Report
+    lines = [f"Dreame/Xiaomi Scooter 5 Pro — telemetry ({mac})",
+             f"captured: {datetime.now():%Y-%m-%d %H:%M:%S}",
+             "source: MIoT-spec over BLE (private spec from Mi Home plugin)", ""]
     by_key = {(s, p): (n, v, r) for s, p, n, v, r in rows}
     for title, group in GROUPS:
         picked = [(s, p) for s, p in group if (s, p) in by_key]
@@ -160,7 +154,7 @@ async def read_all(mac, props, out_path):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(text + "\n")
-        print(f"\n[*] сохранено: {out_path}")
+        print(f"\n[*] saved: {out_path}")
     print("\n" + text)
     return 0
 
@@ -170,12 +164,12 @@ def main():
     ap.add_argument("--mac", default=da.MAC_DEFAULT)
     ap.add_argument("--out", default=os.path.join(ROOT, "docs", "telemetry.txt"))
     ap.add_argument("--all", action="store_true",
-                    help="включая настройки, идентификацию и логи (дольше)")
-    ap.add_argument("--props", help='свой список: "6:1,6:2,4:7"')
+                    help="include settings, identification and logs (takes longer)")
+    ap.add_argument("--props", help='custom property list: "6:1,6:2,4:7"')
     a = ap.parse_args()
     if a.props:
         props = [tuple(int(x) for x in pr.split(":")) for pr in a.props.split(",")]
-        GROUPS[:] = [("ВЫБРАННЫЕ СВОЙСТВА", props)]
+        GROUPS[:] = [("SELECTED PROPERTIES", props)]
     else:
         props = BATTERY + RIDE + (SETTINGS + IDENT if a.all else [])
     return asyncio.run(read_all(a.mac, props, a.out))

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Диагностика: полное рукопожатие (как mcu_uart_flash.py фазы 1-6), затем
-nvm_write с СЫРЫМ (без strip_push) захватом ответа на 8 с. Только диагностика —
-дальше nvm_write не идёт, чанки не шлются, флеш не трогается.
+"""Diagnostics: full handshake, then nvm_write with raw capture of response for 8 s.
 
-Запуск: python tools/mcu_nvmwrite_sniff.py --port COM3 --fw firmware_ota/<mcu>.bin
+Usage: python tools/mcu_nvmwrite_sniff.py --port COM3 --fw firmware_ota/<mcu>.bin
 """
 import argparse
 import os
@@ -54,7 +52,7 @@ def main():
     a = ap.parse_args()
 
     fw = open(a.fw, "rb").read()
-    log(f"образ: {a.fw} ({len(fw)} Б)")
+    log(f"image: {a.fw} ({len(fw)} B)")
 
     s = serial.Serial(a.port, 19200, timeout=0.3)
     time.sleep(0.3)
@@ -73,7 +71,7 @@ def main():
             uid = d[i + 3:i + 3 + 16]
             break
     if uid is None:
-        sys.exit("ABORT: UID не получен")
+        sys.exit("ABORT: UID not received")
     log(f"UID: {uid.hex()}")
 
     # --- rd_info ---
@@ -82,7 +80,7 @@ def main():
     o = strip_push(read_for(s, 2.0))
     log(f"rd_info: {o[:40]!r}")
     if not o.startswith(b"ok"):
-        sys.exit("ABORT: rd_info не ok")
+        sys.exit("ABORT: rd_info not ok")
 
     # --- ble_rand ---
     import random
@@ -95,8 +93,8 @@ def main():
     mcu_key_resp = o[3:19]
     local_key = bytes(sign_rand(bytearray(uid), bytearray(rand), fw, 0x24187, 0x24387))
     if mcu_key_resp != local_key:
-        sys.exit("ABORT: sign_rand не совпал")
-    log("ble_rand: крипто совпала")
+        sys.exit("ABORT: sign_rand mismatch")
+    log("ble_rand: crypto matched")
 
     # --- mcu_rand ---
     s.reset_input_buffer()
@@ -113,11 +111,11 @@ def main():
     s.write(b"down mcu_key " + key + b"\r")
     o = strip_push(read_for(s, 2.0))
     if not o.startswith(b"ok"):
-        sys.exit(f"ABORT: mcu_key отклонён: {o[:20]!r}")
-    log("mcu_key: принят — держим сессию, готовлюсь к сырому захвату nvm_write")
+        sys.exit(f"ABORT: mcu_key rejected: {o[:20]!r}")
+    log("mcu_key: accepted — holding session, preparing for raw nvm_write capture")
 
-    # --- ДИАГНОСТИКА: nvm_write, сырой захват до 25 с, ОДНА отправка, без повтора ---
-    # (повтор команды рестартит erase сектора на MCU — не шлём второй раз, просто ждём дольше)
+    # --- DIAGNOSTICS: nvm_write, raw capture up to 25s, SINGLE send, no retry ---
+    # (retrying command restarts sector erase on MCU — don't send second time, just wait longer)
     s.reset_input_buffer()
     t0 = time.time()
     cmd = b"down nvm_write 00000000\r"
@@ -137,16 +135,16 @@ def main():
     fname = os.path.join(raw_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_nvmwrite_raw.bin")
     with open(fname, "wb") as f:
         f.write(raw)
-    log(f"nvm_write отправлен ({cmd!r}), ждал {el:.1f} с, получил {len(raw)} Б -> {fname}")
-    log(f"RAW (первые 200Б): {raw[:200].hex(' ')}")
+    log(f"nvm_write sent ({cmd!r}), waited {el:.1f} s, received {len(raw)} B -> {fname}")
+    log(f"RAW (first 200B): {raw[:200].hex(' ')}")
     stripped = strip_push(raw)
-    log(f"после strip_push осталось {len(stripped)} Б: {stripped[:100]!r}")
+    log(f"after strip_push {len(stripped)} B remaining: {stripped[:100]!r}")
     if found:
-        log(">>> ЕСТЬ ответ на nvm_write, диагностика окончена успешно.")
+        log(">>> Response received for nvm_write, diagnostics completed successfully.")
     else:
-        log(">>> ответа на nvm_write НЕ получено за 25 с одной отправки.")
+        log(">>> NO response received for nvm_write after 25s single transmission.")
 
-    log("Диагностика завершена. Дальше (чанки/dfu) НЕ отправляю — сессию закрываю.")
+    log("Diagnostics complete. Stopping (no chunks/dfu). Closing session.")
     s.close()
 
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,19 +8,21 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="stylesheet" href="./css/style.css">
 <script>
-  // Синхронно, до отрисовки — иначе будет вспышка не той темы при перезагрузке.
   (function () {
     try {
       var t = localStorage.getItem("scooter_theme");
       if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      var l = localStorage.getItem("scooter_lang");
+      if (l === "en" || l === "ru") document.documentElement.lang = l;
     } catch (e) {}
   })();
 </script>
 </head>
 <body>
 <div class="corner-actions">
-  <button id="pin-toggle" class="pin-toggle" type="button" title="PIN для разблокировки">🔑</button>
-  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  <button id="lang-toggle" class="lang-toggle" type="button" title="Language / Language switch">🌐 EN</button>
+  <button id="pin-toggle" class="pin-toggle" type="button" title="Unlock PIN">🔑</button>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Light / Dark theme">🌙</button>
 </div>
 
 <header class="topbar">
@@ -28,17 +30,17 @@
   <span id="badge" class="badge idle">idle</span>
   <div class="topbar-actions">
     <span id="conn" class="conn">—</span>
-    <button id="scooter-toggle" class="scooter-toggle" type="button" title="Мои самокаты — сохранённые профили (имя + LTMK)">📡 —</button>
-    <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
-    <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
+    <button id="scooter-toggle" class="scooter-toggle" type="button" data-i18n-title="scooter_btn_title" title="My scooters — saved profiles (name + LTMK)">📡 —</button>
+    <button id="ridemode-toggle" class="ridemode-toggle" type="button" data-i18n-title="ridemode_btn_title" title="Ride mode — large digits for handlebar">🏍️</button>
+    <button id="write-toggle" class="write-toggle" type="button" data-i18n-title="write_btn_title_ro" title="Enable settings control (SET)"><span data-i18n="write_btn_readonly">🔒 Read only</span></button>
   </div>
 </header>
 
 <section class="panel controls">
-  <button id="connect">Подключиться</button>
-  <button id="disconnect" disabled>Отключиться</button>
+  <button id="connect" data-i18n="connect_btn">Connect</button>
+  <button id="disconnect" disabled data-i18n="disconnect_btn">Disconnect</button>
   <span class="spacer"></span>
-  <span class="stat">обновлено: <b id="updated">—</b></span>
+  <span class="stat"><span data-i18n="stat_updated">updated:</span> <b id="updated">—</b></span>
 </section>
 <div id="msg" class="msg"></div>
 
@@ -48,34 +50,34 @@
   <div id="groups" class="groups"></div>
 
   <section class="panel">
-    <h2 data-icon="🛰️">События</h2>
+    <h2 data-icon="🛰️"><span data-i18n="events_title">Events</span></h2>
     <div id="events" class="log"></div>
   </section>
 </main>
 
-<footer class="dim">
-  BLE напрямую из браузера (Web Bluetooth) · без сервера · секреты (OOB_CODE/SN) скрыты
+<footer class="dim" data-i18n="footer_text">
+  BLE directly from browser (Web Bluetooth) · no server needed · secrets (OOB_CODE/SN) hidden
 </footer>
 
 <section id="ridemode" class="ridemode" hidden>
   <div id="rm-fault-banner" class="rm-fault-banner" hidden></div>
   <div class="rm-topbar">
-    <button id="ridemode-exit" class="rm-exit" type="button" aria-label="Выйти из режима езды">✕</button>
+    <button id="ridemode-exit" class="rm-exit" type="button" data-i18n-aria-label="rm_exit_label" aria-label="Exit ride mode">✕</button>
     <div id="rm-chips" class="rm-chips"></div>
   </div>
   <div class="rm-body">
     <aside class="rm-sidebar">
-      <div class="rm-side-stat"><span class="rm-stat-label">Пробег</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
-      <div class="rm-side-stat"><span class="rm-stat-label">Время в пути</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label" data-i18n="rm_trip_dist">Trip</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label" data-i18n="rm_trip_time">Riding time</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
     </aside>
     <div class="rm-main">
       <div id="rm-mode" class="rm-mode" hidden></div>
-      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit">км/ч</span></div>
+      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit" data-i18n="rm_speed_unit">km/h</span></div>
     </div>
   </div>
   <div class="rm-footer">
-    <div class="rm-stat"><span class="rm-stat-label">Заряд</span><span id="rm-battery" class="rm-stat-value">—</span></div>
-    <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label" data-i18n="rm_battery">Battery</span><span id="rm-battery" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label" data-i18n="rm_range">Range</span><span id="rm-range" class="rm-stat-value">—</span></div>
   </div>
 </section>
 
@@ -85,29 +87,29 @@
     <div id="modal-msg" class="modal-msg"></div>
     <input id="modal-input" class="modal-input" type="password" inputmode="numeric" autocomplete="off" hidden>
     <div class="modal-actions">
-      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
-      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel" data-i18n="modal_cancel">Cancel</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok" data-i18n="modal_ok">Confirm</button>
     </div>
   </div>
 </div>
 
 <div id="qrscan-overlay" class="modal-overlay" hidden>
   <div class="modal qrscan-modal">
-    <div class="modal-title">Сканирование QR</div>
+    <div class="modal-title" data-i18n="qrscan_title">Scan QR Code</div>
     <video id="qrscan-video" class="qrscan-video" playsinline muted></video>
     <div class="modal-actions">
-      <button id="qrscan-cancel" type="button" class="modal-btn">Отмена</button>
+      <button id="qrscan-cancel" type="button" class="modal-btn" data-i18n="qrscan_cancel">Cancel</button>
     </div>
   </div>
 </div>
 
 <div id="scooters-overlay" class="modal-overlay" hidden>
   <div class="modal scooters-modal">
-    <div class="modal-title">Мои самокаты</div>
+    <div class="modal-title" data-i18n="scooters_title">My Scooters</div>
     <div id="scooters-list" class="scooters-list"></div>
     <div class="modal-actions scooters-modal-actions">
-      <button id="scooters-add" type="button" class="modal-btn">+ Добавить</button>
-      <button id="scooters-close" type="button" class="modal-btn modal-ok">Готово</button>
+      <button id="scooters-add" type="button" class="modal-btn" data-i18n="scooters_add_btn">+ Add</button>
+      <button id="scooters-close" type="button" class="modal-btn modal-ok" data-i18n="modal_done">Done</button>
     </div>
   </div>
 </div>

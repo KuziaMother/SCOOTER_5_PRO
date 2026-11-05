@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Инструкционный эмулятор BLE-образа (Realtek RTL8762C, Cortex-M33) — Unicorn.
+Instruction emulator for BLE image (Realtek RTL8762C, Cortex-M33) — Unicorn.
 
-Исполняет РЕАЛЬНЫЙ код плейн-регионов ble_2.7.0_0015.bin (bootloader + flash/OTA-
-драйвер). Как и MCU-эмулятор: ФУНКЦИОНАЛЬНАЯ эмуляция (вызов конкретной функции с
-поднятым состоянием), а не boot-from-reset (нет вектор-таблицы в плейне, main-app
-зашифрован). Периферия заглушена (chitae): status-регистры читаются как 0xFFFFFFFF
-(все ready), записи логируются.
+Executes REAL code of plaintext regions of ble_2.7.0_0015.bin (bootloader + flash/OTA
+driver). Similar to MCU emulator: FUNCTIONAL emulation (invoking a specific function
+with populated state) rather than boot-from-reset (no vector table in plaintext, main app
+is encrypted). Peripheral accesses stubbed: status registers return 0xFFFFFFFF
+(all ready), writes are logged.
 
-Память RTL8762C (по firmware-адресам + SDK OpenOCD cfg):
-  FLASH @0x01800000 (образ), RAM @0x20000000, PERIPH @0x40000000, SYS @0xE0000000.
+RTL8762C memory layout (per firmware addresses + SDK OpenOCD cfg):
+  FLASH @0x01800000 (image), RAM @0x20000000, PERIPH @0x40000000, SYS @0xE0000000.
 
-Запуск:  python -X utf8 emulator/ble_emu.py --func 0x7dea [--max 200000] [--trace]
+Usage:  python -X utf8 emulator/ble_emu.py --func 0x7dea [--max 200000] [--trace]
 """
 import argparse
 import os
@@ -27,9 +27,9 @@ from unicorn.arm_const import (UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC,
 HERE = os.path.dirname(os.path.abspath(__file__))
 FW = os.path.join(os.path.dirname(HERE), "research", "images", "ble_2.7.0_0015.bin")
 
-FLASH = 0x01800000           # база флеша (адрес == 0x01800000 + смещение в файле)
+FLASH = 0x01800000           # flash base (address == 0x01800000 + file offset)
 RAM = 0x20000000
-RAM_SIZE = 0x80000           # 512K (exe_base 0x203800 здесь)
+RAM_SIZE = 0x80000           # 512K (exe_base 0x203800 here)
 PERIPH = 0x40000000
 PERIPH_SIZE = 0x00100000     # 1MB loose
 SYS = 0xE0000000
@@ -46,9 +46,9 @@ class BleEmu:
         self.trace = trace
         self.max_insn = max_insn
         self.insn = 0
-        self.ram_writes = []       # (pc, addr, size, val) в RAM
-        self.periph_writes = []    # (pc, addr, size, val) в PERIPH/SYS
-        self.flash_writes = []     # (pc, addr, size, val) в FLASH (OTA-установка!)
+        self.ram_writes = []       # (pc, addr, size, val) in RAM
+        self.periph_writes = []    # (pc, addr, size, val) in PERIPH/SYS
+        self.flash_writes = []     # (pc, addr, size, val) in FLASH (OTA installation!)
         self.stopped = None
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
         self._map()
@@ -72,7 +72,7 @@ class BleEmu:
     def _h_code(self, uc, address, size, user):
         self.insn += 1
         if self.insn > self.max_insn:
-            self.stopped = f"лимит инструкций {self.max_insn}"
+            self.stopped = f"instruction limit {self.max_insn}"
             uc.emu_stop()
             return
         if self.trace and self.insn <= 80:
@@ -88,25 +88,25 @@ class BleEmu:
             self.periph_writes.append((pc, address, size, value))
 
     def _h_unmapped(self, uc, access, address, size, value, user):
-        # по требованию маппим нулевую страницу (для обращений за пределы карты)
+        # on-demand map null page (for out-of-bounds accesses)
         page = address & ~0xFFF
         try:
             uc.mem_map(page, 0x1000)
             return True
         except UcError:
             pc = uc.reg_read(UC_ARM_REG_PC)
-            self.stopped = f"незамапленное 0x{address:08x} @pc=0x{pc:06x}"
+            self.stopped = f"unmapped 0x{address:08x} @pc=0x{pc:06x}"
             return False
 
     def periph_ready(self):
-        """Чтение периферии как 0xFFFFFFFF (все ready-биты) — poll-циклы не виснут."""
+        """Read peripherals as 0xFFFFFFFF (all ready bits) — polling loops do not hang."""
         def h(uc, access, addr, size, value, user):
             uc.mem_write(addr, struct.pack('<' + {1: 'B', 2: 'H', 4: 'I'}[size], (1 << (8 * size)) - 1))
             return True
         self.uc.hook_add(UC_HOOK_MEM_READ, h, None, PERIPH, PERIPH + PERIPH_SIZE)
 
     def run_func(self, addr, args=(), sp=None, max_insn=None):
-        """Вызвать функцию addr с аргументами в R0-R3; вернуть (r0, stopped)."""
+        """Invoke function at addr with arguments in R0-R3; return (r0, stopped)."""
         if max_insn:
             self.max_insn = max_insn
         self.insn = 0
@@ -114,13 +114,13 @@ class BleEmu:
         sp = sp or (STACK_TOP - 0x400)
         uc = self.uc
         uc.reg_write(UC_ARM_REG_SP, sp)
-        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)   # sentinel: остановимся на bx lr
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)   # sentinel: halt on bx lr
         for i, a in enumerate(args):
             uc.reg_write([UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3][i], a)
 
         def stop(uc_, a, size, u):
             a &= ~1
-            if a == 0x0BADF000 or a == 0x0BADF001:   # bx lr к sentinel
+            if a == 0x0BADF000 or a == 0x0BADF001:   # bx lr to sentinel
                 uc_.emu_stop()
         sh = uc.hook_add(UC_HOOK_CODE, stop)
         try:
@@ -135,8 +135,8 @@ class BleEmu:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--func', required=True, help='оффсет функции в файле (0x7dea)')
-    ap.add_argument('--args', default='', help='через запятую: 0x20001000,0x100,4')
+    ap.add_argument('--func', required=True, help='function offset in file (0x7dea)')
+    ap.add_argument('--args', default='', help='comma separated: 0x20001000,0x100,4')
     ap.add_argument('--max', type=int, default=300000)
     ap.add_argument('--trace', action='store_true')
     a = ap.parse_args()

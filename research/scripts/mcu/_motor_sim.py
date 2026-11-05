@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""§73.x motor dynamics: экспериментальный сим замкнутого контура.
+"""§73.x motor dynamics: experimental closed-loop sim.
 
 target → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(throttle→speed) →
-SpeedModel(speed→V) → PID ...  Находим параметры plant, при которых скорость
-сходится к target.
+SpeedModel(speed->V) -> PID ...  Find plant parameters where speed
+converges to target.
 """
 import os, struct, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,14 +21,14 @@ def run_loop(target, v_max, tau, throttle_ref, iters=40, speed0=0.0):
     run = Run()
     sm = SpeedModel(run.emu)
     uc = run.uc
-    # начальное состояние: target (mode=3 → u16[RAM+0x326]), гейты ramp-core, нулевые интеграторы
+    # initial state: target (mode=3 -> u16[RAM+0x326]), ramp-core gates, zero integrators
     uc.mem_write(RAM, bytes(0x20000))
     uc.mem_write(RAM + 0x229, bytes([3]))
     uc.mem_write(RAM + 0x326, struct.pack('<H', target))
     uc.mem_write(RAM + 0x339, b'\x00')
     uc.mem_write(RAM + 0x333, b'\x00')          # skip mode-change block
     uc.mem_write(RAM + 0x263, b'\x00')          # gate → ramp-core
-    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))  # u1760=мощность разрешена (не reset)
+    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))  # u1760=power enabled (not reset)
     uc.mem_write(RAM + 0x1764, struct.pack('<I', 0))
     uc.mem_write(RAM + 0x388, struct.pack('<I', 0))
     uc.mem_write(RAM + 0x224, struct.pack('<I', 0))
@@ -40,7 +40,7 @@ def run_loop(target, v_max, tau, throttle_ref, iters=40, speed0=0.0):
         run.call(0x1D078, (), max_insn=400000)
         thr = struct.unpack('<h', uc.mem_read(RAM + 0x42c, 2))[0]
         cnt = struct.unpack('<H', uc.mem_read(RAM + 0x3C8 + 0x28, 2))[0]
-        # plant: first-order lag к терминальной скорости для текущего throttle
+        # plant: first-order lag to terminal speed for current throttle
         tnorm = max(0.0, min(1.0, thr / throttle_ref)) if throttle_ref else 0.0
         v_term = v_max * tnorm
         speed += (1.0 / tau) * (v_term - speed)
@@ -60,9 +60,9 @@ def main():
             print(f'v_max={v_max} tau={tau} tref={tref}: '
                   f'speed: {traj[0][1]} -> {traj[len(traj)//2][1]} -> {last[1]} '
                   f'(target {target}); thr_last={last[2]}')
-        # детальная траектория для лучшего набора
+        # detailed trajectory for best set
         traj = run_loop(target, 520, 15.0, 4000, iters=40)
-        print('детально (v_max=520 tau=15 tref=4000):')
+        print('detailed (v_max=520 tau=15 tref=4000):')
         for it, sp, thr, cnt in traj:
             print(f'  it={it:2d} speed={sp:8.1f} throttle={thr:6d} cnt={cnt}')
 

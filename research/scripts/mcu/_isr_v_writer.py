@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""§73.x ISR: writer-sweep — какая функция пишет V=u32[RAM+0x158]?
+"""§73.x ISR: writer-sweep — which function writes V=u32[RAM+0x158]?
 
-Прогоняем ВСЕ начала функций (find_func_starts), ловим запись в 0x20000158.
-Также проверяем F=byte[RAM+0x100] (гейт скорости).
+Run ALL function entry points (find_func_starts), catch write to 0x20000158.
+Also check F=byte[RAM+0x100] (speed gate).
 """
 import struct, sys
 sys.path.insert(0, '.')
@@ -39,7 +39,7 @@ def run_one(emu_factory, addr, max_insn=12000):
 
 def main():
     starts = find_func_starts()
-    print(f'функций: {len(starts)}; ищу запись в V={V_ADDR:#x}')
+    print(f'functions: {len(starts)}; searching for write to V={V_ADDR:#x}')
     hits = []
     for i, s in enumerate(starts):
         emu = McuEmu(max_insn=12000)
@@ -62,7 +62,7 @@ def main():
         if v != 0xDEAD:
             f = struct.unpack('<B', emu.uc.mem_read(F_ADDR, 1))[0]
             hits.append((s, v, f))
-    print(f'--- ХИТЫ (записали V): {len(hits)} ---')
+    print(f'--- HITS (wrote V): {len(hits)} ---')
     for s, v, f in hits:
         print(f'  0x{s:05x}: V -> {v} ({v:#x}), F=byte[RAM+0x100]={f}')
 

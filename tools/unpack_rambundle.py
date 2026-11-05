@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""
-Распаковка React Native indexed RAM bundle (магия 0xFB0BD1E5) на отдельные JS-модули.
+"""Unpack React Native indexed RAM bundle (magic 0xFB0BD1E5) into separate JS modules.
 
-Формат:
+Format:
     uint32 magic = 0xFB0BD1E5
     uint32 module_count
     uint32 startup_code_len
-    module_count × {uint32 offset, uint32 length}   — таблица модулей
-    startup code, затем тела модулей (offset отсчитывается от конца таблицы)
-Пустые записи (offset=length=0) — дырки в нумерации модулей, это норма.
+    module_count * {uint32 offset, uint32 length} — module table
+    startup code, followed by module bodies
 
-Запуск:  python tools/unpack_rambundle.py <main.bundle> <out-dir>
+Usage:  python tools/unpack_rambundle.py <main.bundle> <out-dir>
 """
 import os
 import struct
@@ -23,11 +21,11 @@ def unpack(path, out_dir):
     d = open(path, "rb").read()
     magic, count, startup_len = struct.unpack("<III", d[:12])
     if magic != MAGIC:
-        print(f"не indexed RAM bundle: magic=0x{magic:08x}")
+        print(f"not an indexed RAM bundle: magic=0x{magic:08x}")
         return 1
     table_end = 12 + count * 8
-    print(f"модулей в таблице: {count}   startup_code_len={startup_len}")
-    print(f"таблица: 12..{table_end}   размер файла: {len(d)}")
+    print(f"modules in table: {count}   startup_code_len={startup_len}")
+    print(f"table: 12..{table_end}   file size: {len(d)}")
 
     os.makedirs(out_dir, exist_ok=True)
     written = empty = bad = 0
@@ -48,10 +46,9 @@ def unpack(path, out_dir):
         written += 1
         sizes.append(len(body))
 
-    print(f"записано: {written}   пустых записей: {empty}   битых: {bad}")
+    print(f"written: {written}   empty entries: {empty}   corrupted: {bad}")
     if sizes:
-        print(f"размеры модулей: min={min(sizes)} max={max(sizes)} "
-              f"сумма={sum(sizes)}")
+        print(f"module sizes: min={min(sizes)} max={max(sizes)} sum={sum(sizes)}")
     return 0
 
 

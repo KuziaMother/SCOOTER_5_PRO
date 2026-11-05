@@ -36,6 +36,6 @@ for A,B,ra,rb in cases:
     got=run(A,B,ra,rb)
     if got==model(A,B,ra,rb,True): ok_abs+=1
     if got==model(A,B,ra,rb,False): ok_sgn+=1
-print(f"Случаев: {len(cases)}")
-print(f"Модель devB=ABS : совпадений {ok_abs}/{len(cases)}")
-print(f"Модель devB=SGN : совпадений {ok_sgn}/{len(cases)}")
+print(f"Cases: {len(cases)}")
+print(f"Model devB=ABS : matches {ok_abs}/{len(cases)}")
+print(f"Model devB=SGN : matches {ok_sgn}/{len(cases)}")

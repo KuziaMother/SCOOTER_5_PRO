@@ -14,7 +14,7 @@ function esc(s) {
 // alert() легко принять за "ничего не произошло" (не вписан в дизайн,
 // нет истории показанных сообщений), плюс где-то может быть заблокирован.
 function showModal(title, message, opts = {}) {
-  const { danger = false, okText = "Подтвердить", infoOnly = false } = opts;
+  const { danger = false, okText = "Confirm", infoOnly = false } = opts;
   return new Promise((resolve) => {
     const overlay = $("modal-overlay");
     const okBtn = $("modal-ok");
@@ -50,7 +50,7 @@ function showModal(title, message, opts = {}) {
 }
 
 function showInfo(title, message, opts = {}) {
-  return showModal(title, message, { ...opts, infoOnly: true, okText: "Понятно" });
+  return showModal(title, message, { ...opts, infoOnly: true, okText: "OK" });
 }
 
 function getTargetMac() {
@@ -58,7 +58,8 @@ function getTargetMac() {
 }
 
 function renderTargetMac() {
-  $("fw-target-mac").textContent = getTargetMac() || "не выбран";
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  $("fw-target-mac").textContent = getTargetMac() || (isEn ? "not selected" : "не выбран");
 }
 
 // ---- предупреждение о занятом BLE-соединении. Раньше это вылезало только
@@ -74,8 +75,11 @@ async function checkMainSession() {
   } catch (e) {
     mainSessionRunning = false;
   }
+  const isEn = window.I18N && window.I18N.getLang() === "en";
   $("fw-session-text").textContent = mainSessionRunning
-    ? "⚠ На главной странице активна BLE-сессия (поллинг) — остановите её, прежде чем прошивать: одно BLE-соединение на процесс."
+    ? (isEn
+        ? "⚠ Active BLE session (polling) on main page — stop it before flashing: one BLE connection per process."
+        : "⚠ На главной странице активна BLE-сессия (поллинг) — остановите её, прежде чем прошивать: одно BLE-соединение на процесс.")
     : "";
   $("fw-session-banner").hidden = !mainSessionRunning;
 }
@@ -83,12 +87,12 @@ async function checkMainSession() {
 $("fw-session-stop").onclick = async () => {
   const btn = $("fw-session-stop");
   btn.disabled = true;
-  btn.textContent = "Останавливаю…";
+  btn.textContent = "Stopping…";
   try {
     const r = await fetch("/api/stop", { method: "POST" });
     const j = await r.json();
     if (!j.ok && r.status !== 409) {
-      await showInfo("Не удалось остановить", j.error || "неизвестная ошибка");
+      await showInfo("Failed to stop", j.error || "unknown error");
     }
     // остановка не мгновенна (воркер завершается асинхронно) — подождём,
     // пока running реально станет false, вместо немедленного разового чека
@@ -98,10 +102,10 @@ $("fw-session-stop").onclick = async () => {
       await new Promise((res) => setTimeout(res, 500));
     }
   } catch (e) {
-    await showInfo("Не удалось остановить", e.message);
+    await showInfo("Failed to stop", e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Остановить поллинг";
+    btn.textContent = "Stop polling";
   }
 };
 
@@ -115,11 +119,11 @@ async function loadInstalled() {
 // ---- проверка обновления в Mi Cloud ----
 $("fw-check-btn").onclick = async () => {
   const mac = getTargetMac();
-  if (!mac) { await showInfo("Самокат не выбран", "Сначала выберите самокат на главной странице («Мои самокаты»)."); return; }
+  if (!mac) { await showInfo("Scooter not selected", "Select a scooter on the main page first ('My Scooters')."); return; }
   const btn = $("fw-check-btn");
   const orig = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Проверяю…";
+  btn.textContent = "Checking…";
   $("fw-check-results").innerHTML = "";
   try {
     const r = await fetch("/api/firmware/check", {
@@ -129,10 +133,10 @@ $("fw-check-btn").onclick = async () => {
     const j = await r.json();
     if (!j.ok) {
       if (String(j.error || "").includes("Mi Cloud")) {
-        await showInfo("Нужен вход в Mi Cloud",
-          `${j.error}\n\nВойдите на главной странице: «Мои самокаты» → 🔑 → «Показать QR для входа».`);
+        await showInfo("Mi Cloud login required",
+          `${j.error}\n\nLog in on the main page: 'My Scooters' → 🔑 → 'Show QR for login'.`);
       } else {
-        await showInfo("Не удалось проверить", j.error || "неизвестная ошибка");
+        await showInfo("Failed to check", j.error || "unknown error");
       }
       return;
     }
@@ -147,7 +151,8 @@ function renderCheckResults(entries) {
   const box = $("fw-check-results");
   box.innerHTML = "";
   if (!entries.length) {
-    box.innerHTML = '<div class="scooter-mac">Облако не вернуло образов для этого устройства.</div>';
+    const isEn = window.I18N && window.I18N.getLang() === "en";
+    box.innerHTML = `<div class="scooter-mac">${isEn ? "No cloud firmware images returned for this device." : "Облако не вернуло образов для этого устройства."}</div>`;
     return;
   }
   for (const e of entries) {
@@ -160,7 +165,7 @@ function renderCheckResults(entries) {
     name.textContent = `${e.type === "mcu" ? "MCU" : "BLE"} ${e.version || "?"}`;
     const meta = document.createElement("div");
     meta.className = "scooter-mac";
-    meta.textContent = `md5 ${e.md5 || "?"}${e.downloaded ? " · уже скачан" : ""}`;
+    meta.textContent = `md5 ${e.md5 || "?"}${e.downloaded ? " · already downloaded" : ""}`;
     info.append(name, meta);
 
     const actions = document.createElement("div");
@@ -168,24 +173,24 @@ function renderCheckResults(entries) {
     if (e.downloaded) {
       const tag = document.createElement("span");
       tag.className = "scooter-mac";
-      tag.textContent = "готово";
+      tag.textContent = "ready";
       actions.appendChild(tag);
     } else {
       const dlBtn = document.createElement("button");
       dlBtn.type = "button";
       dlBtn.className = "modal-btn scooter-select";
-      dlBtn.textContent = "Скачать";
+      dlBtn.textContent = "Download";
       dlBtn.onclick = async () => {
         dlBtn.disabled = true;
-        dlBtn.textContent = "Скачиваю…";
+        dlBtn.textContent = "Downloading…";
         const r = await fetch("/api/firmware/download", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: e.url, md5: e.md5, type: e.type }),
         });
         const j = await r.json();
         if (!j.ok) {
-          await showInfo("Не удалось скачать", j.error || "неизвестная ошибка");
-          dlBtn.disabled = false; dlBtn.textContent = "Скачать"; return;
+          await showInfo("Failed to download", j.error || "unknown error");
+          dlBtn.disabled = false; dlBtn.textContent = "Download"; return;
         }
         e.downloaded = true;
         renderCheckResults(entries);
@@ -209,7 +214,8 @@ function renderLocalList(items) {
   const box = $("fw-local-list");
   box.innerHTML = "";
   if (!items.length) {
-    box.innerHTML = '<div class="scooter-mac">Пока ничего не скачано.</div>';
+    const isEn = window.I18N && window.I18N.getLang() === "en";
+    box.innerHTML = `<div class="scooter-mac">${isEn ? "Nothing downloaded yet." : "Пока ничего не скачано."}</div>`;
     return;
   }
   for (const it of items) {
@@ -222,7 +228,7 @@ function renderLocalList(items) {
     name.textContent = `${it.type === "mcu" ? "MCU" : "BLE"} · ${it.filename}`;
     const meta = document.createElement("div");
     meta.className = "scooter-mac";
-    meta.textContent = `${(it.size / 1024).toFixed(0)} КБ · md5 ${it.md5}`;
+    meta.textContent = `${(it.size / 1024).toFixed(0)} KB · md5 ${it.md5}`;
     info.append(name, meta);
 
     const actions = document.createElement("div");
@@ -230,7 +236,7 @@ function renderLocalList(items) {
     const flashBtn = document.createElement("button");
     flashBtn.type = "button";
     flashBtn.className = "modal-btn danger";
-    flashBtn.textContent = "Прошить";
+    flashBtn.textContent = "Flash";
     flashBtn.onclick = () => startFlashFlow(it);
     actions.appendChild(flashBtn);
 
@@ -244,19 +250,18 @@ let pollTimer = null;
 
 async function startFlashFlow(item) {
   const mac = getTargetMac();
-  if (!mac) { await showInfo("Самокат не выбран", "Сначала выберите самокат на главной странице («Мои самокаты»)."); return; }
+  if (!mac) { await showInfo("No scooter selected", "Please select a scooter on the main page first (\"My Scooters\")."); return; }
   await checkMainSession();
   if (mainSessionRunning) {
-    await showInfo("Сначала остановите поллинг",
-      "На главной странице активна BLE-сессия — остановите её кнопкой «Стоп», прежде чем прошивать (одно BLE-соединение на процесс).");
+    await showInfo("Stop polling first",
+      "Active BLE session on main page — stop it with 'Stop' button before flashing (one BLE connection per process).");
     return;
   }
   const ok = await showModal(
-    "Прошить самокат?",
-    `Заливка образа ${item.type === "mcu" ? "MCU" : "BLE"} (md5 ${item.md5}) на ${mac}.\n\n` +
-    "Это только ЗАГРУЗКА в буфер устройства — прошивка ещё НЕ переключится, это отдельный шаг после " +
-    "успешной загрузки. Убедитесь, что заряд самоката не критически низкий и соединение стабильно.",
-    { danger: true, okText: "Заливать" });
+    "Flash scooter?",
+    `Uploading ${item.type === "mcu" ? "MCU" : "BLE"} firmware image (md5 ${item.md5}) to ${mac}.\n\n` +
+    "This is only an UPLOAD into the device buffer — firmware will NOT switch yet until explicitly triggered. Ensure battery is charged and connection is stable.",
+    { danger: true, okText: "Flash" });
   if (!ok) return;
 
   const r = await fetch("/api/firmware/flash/start", {
@@ -264,7 +269,7 @@ async function startFlashFlow(item) {
     body: JSON.stringify({ mac, filename: item.filename, target: item.target }),
   });
   const j = await r.json();
-  if (!j.ok) { await showInfo("Не удалось начать заливку", j.error || "неизвестная ошибка"); return; }
+  if (!j.ok) { await showInfo("Failed to start flashing", j.error || "unknown error"); return; }
   $("fw-progress-panel").hidden = false;
   resetFlashLog();
   pollFlashStatus(mac, item);
@@ -316,9 +321,9 @@ function renderProgress(st, mac, item) {
     html += `<div style="background:var(--bg-elev);border-radius:8px;overflow:hidden;height:10px;margin:8px 0;">
       <div style="width:${pct}%;height:100%;background:var(--accent);"></div>
     </div>
-    <div class="scooter-mac">${st.index}/${st.total} (${pct}%) ok=${st.ok} bad=${st.bad} ${st.speed_kbps} КБ/с</div>`;
+    <div class="scooter-mac">${st.index}/${st.total} (${pct}%) ok=${st.ok} bad=${st.bad} ${st.speed_kbps} KB/s</div>`;
   }
-  if (st.error) html += `<div class="scooter-mac" style="color:var(--bad);">Ошибка: ${esc(st.error)}</div>`;
+  if (st.error) html += `<div class="scooter-mac" style="color:var(--bad);">Error: ${esc(st.error)}</div>`;
   body.innerHTML = html;
 
   // Кнопка "Переключить" — только после успешной ЗАЛИВКИ (commit:false), не
@@ -330,7 +335,7 @@ function renderProgress(st, mac, item) {
     commitBtn.id = "fw-commit-btn";
     commitBtn.type = "button";
     commitBtn.className = "modal-btn danger";
-    commitBtn.textContent = "⚠ Переключить прошивку (необратимо)";
+    commitBtn.textContent = "⚠ Switch firmware (irreversible)";
     commitBtn.style.marginTop = "12px";
     commitBtn.onclick = () => startCommitFlow(mac, item);
     body.appendChild(commitBtn);
@@ -340,23 +345,21 @@ function renderProgress(st, mac, item) {
 async function startCommitFlow(mac, item) {
   await checkMainSession();
   if (mainSessionRunning) {
-    await showInfo("Сначала остановите поллинг",
-      "На главной странице активна BLE-сессия — остановите её кнопкой «Стоп», прежде чем прошивать (одно BLE-соединение на процесс).");
+    await showInfo("Stop polling first",
+      "Active BLE session on main page — stop it with 'Stop' button before flashing (one BLE connection per process).");
     return;
   }
   const ok = await showModal(
-    "Переключить прошивку?",
-    "НЕОБРАТИМАЯ операция (риск \"кирпича\" при обрыве связи во время переключения) — устройство " +
-    "перезагрузится и применит новую прошивку. Убедитесь, что заряд самоката достаточный, а соединение " +
-    "стабильное, прежде чем продолжить.",
-    { danger: true, okText: "Переключить" });
+    "Switch firmware?",
+    "IRREVERSIBLE operation (risk of bricking if disconnected during switch) — device will reboot and apply new firmware. Ensure battery level is sufficient and connection is stable before continuing.",
+    { danger: true, okText: "Switch" });
   if (!ok) return;
   const r = await fetch("/api/firmware/flash/commit", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mac, filename: item.filename, target: item.target }),
   });
   const j = await r.json();
-  if (!j.ok) { await showInfo("Не удалось запустить переключение", j.error || "неизвестная ошибка"); return; }
+  if (!j.ok) { await showInfo("Failed to trigger firmware switch", j.error || "unknown error"); return; }
   pollFlashStatus(mac, item);
 }
 
@@ -383,7 +386,7 @@ async function loadHistoryLog() {
     const target = e.target ? ` ${e.target === "mcu" ? "MCU" : "BLE"}` : "";
     const commit = e.commit ? " commit" : "";
     const progress = e.total ? ` ${e.index}/${e.total} ok=${e.ok} bad=${e.bad}` : "";
-    const err = e.error ? ` ошибка: ${e.error}` : "";
+    const err = e.error ? ` error: ${e.error}` : "";
     line.textContent = `${e.ts}${mac}${target}${commit} [${e.phase}] ${e.message || ""}${progress}${err}`;
     box.appendChild(line);
   }
@@ -397,3 +400,11 @@ loadHistoryLog();
 resumeIfFlashing();
 checkMainSession();
 setInterval(checkMainSession, 3000);
+
+if (window.I18N) {
+  window.I18N.onLanguageChange(() => {
+    renderTargetMac();
+    checkMainSession();
+    loadLocalList();
+  });
+}

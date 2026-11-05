@@ -1,15 +1,17 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scooter 5 Pro — сервис</title>
+<title data-i18n="service_title">Scooter 5 Pro — Service</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
   (function () {
     try {
       var t = localStorage.getItem("scooter_theme");
       if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      var l = localStorage.getItem("scooter_lang");
+      if (l === "en" || l === "ru") document.documentElement.lang = l;
     } catch (e) {}
   })();
 </script>
@@ -17,54 +19,55 @@
 <body>
 
 <div class="corner-actions">
-  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  <button id="lang-toggle" class="lang-toggle" type="button" title="Language / Language switch">🌐 EN</button>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Light / Dark theme">🌙</button>
 </div>
 
 <header class="topbar">
-  <h1>Сервис — прошивка</h1>
+  <h1 data-i18n="service_header">Service — Firmware</h1>
   <div class="topbar-actions">
-    <a href="/" class="write-toggle" style="text-decoration:none;">← Панель</a>
+    <a href="/" class="write-toggle" style="text-decoration:none;"><span data-i18n="back_link_text">← Dashboard</span></a>
   </div>
 </header>
 
 <div id="fw-session-banner" class="fw-session-banner" hidden>
   <span id="fw-session-text"></span>
-  <button id="fw-session-stop" type="button" class="modal-btn danger">Остановить поллинг</button>
+  <button id="fw-session-stop" type="button" class="modal-btn danger" data-i18n="fw_session_stop">Stop polling</button>
 </div>
 
 <section class="panel">
-  <h2 data-icon="🔧">Текущая прошивка</h2>
+  <h2 data-icon="🔧" data-i18n="fw_current_title">Current Firmware</h2>
   <div class="cards">
     <div class="prop has-data"><div class="name">BLE</div><div class="value" id="fw-installed-ble">—</div></div>
     <div class="prop has-data"><div class="name">BMS</div><div class="value" id="fw-installed-bms">—</div></div>
   </div>
   <div class="scooter-mac" style="margin-top:10px;">
-    Целевой самокат: <b id="fw-target-mac">—</b>
-    (сменить — «Мои самокаты» на <a href="/">главной странице</a>)
+    <span data-i18n="fw_target_scooter">Target scooter:</span> <b id="fw-target-mac">—</b>
+    <span data-i18n="fw_target_change">(change via "My scooters" on main page)</span>
   </div>
 </section>
 
 <section class="panel">
-  <h2 data-icon="☁️">Проверить обновление</h2>
-  <button id="fw-check-btn" type="button" class="modal-btn scooter-select">Проверить в Mi Cloud</button>
+  <h2 data-icon="☁️" data-i18n="fw_check_title">Check Updates</h2>
+  <button id="fw-check-btn" type="button" class="modal-btn scooter-select" data-i18n="fw_check_btn">Check in Mi Cloud</button>
   <div id="fw-check-results" class="scooters-list" style="margin-top:12px;"></div>
 </section>
 
 <section class="panel">
-  <h2 data-icon="💾">Скачанные образы</h2>
+  <h2 data-icon="💾" data-i18n="fw_downloaded_title">Downloaded Images</h2>
   <div id="fw-local-list" class="scooters-list"></div>
 </section>
 
 <section id="fw-progress-panel" class="panel" hidden>
-  <h2 data-icon="⏳">Заливка</h2>
+  <h2 data-icon="⏳" data-i18n="fw_flashing_title">Flashing</h2>
   <div id="fw-progress-body"></div>
   <div id="fw-log" class="log" style="margin-top:12px;"></div>
 </section>
 
 <section class="panel">
-  <h2 data-icon="📜">История заливок/переключений</h2>
-  <div class="scooter-mac" style="margin-bottom:8px;">
-    Пишется в файл (logs/flash_log.jsonl) — переживает перезапуск сервера.
+  <h2 data-icon="📜" data-i18n="fw_history_title">Flashing & Switch History</h2>
+  <div class="scooter-mac" style="margin-bottom:8px;" data-i18n="fw_history_hint">
+    Logged to file (logs/flash_log.jsonl) — persists across server restarts.
   </div>
   <div id="fw-history-log" class="log"></div>
 </section>
@@ -74,12 +77,13 @@
     <div id="modal-title" class="modal-title"></div>
     <div id="modal-msg" class="modal-msg"></div>
     <div class="modal-actions">
-      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
-      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel" data-i18n="modal_cancel">Cancel</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok" data-i18n="modal_ok">Confirm</button>
     </div>
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
 <script src="{{ url_for('static', filename='theme.js') }}"></script>
 <script src="{{ url_for('static', filename='service.js') }}"></script>
 </body>

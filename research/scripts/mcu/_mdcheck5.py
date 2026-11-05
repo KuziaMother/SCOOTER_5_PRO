@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Поведенческая проверка спорных Thumb-кодировок через Unicorn (QEMU) + Keystone.
-Не зависит от capstone и от моей памяти о таблицах ARM ARM."""
+"""Behavioral verification of disputed Thumb encodings via Unicorn (QEMU) + Keystone.
+Independent of capstone and of memory of ARM ARM tables."""
 import struct
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE
 from unicorn.arm_const import (UC_ARM_REG_PC, UC_ARM_REG_LR, UC_ARM_REG_SP,
@@ -17,14 +17,14 @@ NAMES = {UC_ARM_REG_R0: 'r0', UC_ARM_REG_R1: 'r1', UC_ARM_REG_R2: 'r2',
 
 def run(hws, regs_before, readback=None):
     uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
-    uc.mem_map(BASE, 0x18000)                  # 0x10000..0x28000: куда ни прыгнем — видно PC
+    uc.mem_map(BASE, 0x18000)                  # 0x10000..0x28000: wherever we jump — PC visible
     uc.mem_map(STACK, 0x4000)                  # 0x30000..0x34000
     blob = b''.join(struct.pack('<H', h) for h in hws)
     uc.mem_write(BASE, blob)
     for r, v in regs_before.items():
         uc.reg_write(r, v)
     uc.reg_write(UC_ARM_REG_SP, STACK + 0x100)
-    uc.reg_write(UC_ARM_REG_LR, 0xDEAD0001)     # sentinel: BL его перезапишет, B — нет
+    uc.reg_write(UC_ARM_REG_LR, 0xDEAD0001)     # sentinel: BL will overwrite it, B will not
     stop = {'pc': None}
     def cb(u, kind, val, user):
         pc = u.reg_read(UC_ARM_REG_PC)
@@ -51,7 +51,7 @@ def run(hws, regs_before, readback=None):
 
 print('=== Unicorn (QEMU) behavioral ===')
 tests = [
-    # (имя, halfwords, регистры до, readback-адрес)
+    # (name, halfwords, registers before, readback address)
     ('A: 03 F0 9F F8 (capstone: bl #0x21b52, size 4)', [0xF003, 0xF89F], {}, None),
     ('B: 3A 0E   (capstone: subs r2, #0xe)',          [0x3A0E], {UC_ARM_REG_R0: 0x111, UC_ARM_REG_R2: 0x222}, None),
     ('C: 46 00   (capstone: mov r0, r0)',             [0x4600], {UC_ARM_REG_R0: 0x11, UC_ARM_REG_R1: 0xDEAD}, None),
@@ -62,34 +62,34 @@ tests = [
 for name, hws, regs, rb in tests:
     out, lr, pc, mv = run(hws, regs, rb)
     extra = '  mem[r0]=%02x' % mv if mv is not None else ''
-    lrnote = 'LR=0x%08x (%s)' % (lr, 'перезаписан -> BL?' if lr != 0xDEAD0001 else 'нетронут -> не BL')
+    lrnote = 'LR=0x%08x (%s)' % (lr, 'overwritten -> BL?' if lr != 0xDEAD0001 else 'untouched -> not BL')
     print('%s\n   regs: %s  %s  PC->0x%x%s' % (name, out, lrnote, pc - BASE, extra))
 
 print()
-print('=== Keystone (независимый ассемблер) ===')
+print('=== Keystone (independent assembler) ===')
 ks = keystone.Keystone(keystone.KS_ARCH_ARM, keystone.KS_MODE_THUMB)
 asm_tests = [
-    ('movs r0, r1',  'какой байт? (я думал 4608)'),
-    ('movs r1, r0',  'какой байт? (я думал 4601)'),
-    ('subs r2, #14', 'совпадает с 3A 0E?'),
-    ('lsls r4, r1, #28', 'совпадает с 0C 07?'),
-    ('strb r1, [r0]', 'совпадает с 70 01?'),
-    ('adds r0, r0, #1', 'какой байт?'),
-    ('movs r3, #0',  '2300 или 000F?'),
+    ('movs r0, r1',  'which byte? (I thought 4608)'),
+    ('movs r1, r0',  'which byte? (I thought 4601)'),
+    ('subs r2, #14', 'matches 3A 0E?'),
+    ('lsls r4, r1, #28', 'matches 0C 07?'),
+    ('strb r1, [r0]', 'matches 70 01?'),
+    ('adds r0, r0, #1', 'which byte?'),
+    ('movs r3, #0',  '2300 or 000F?'),
 ]
 for code, note in asm_tests:
     try:
         enc, n = ks.asm(code)
         print('  %-22s -> %s   (%s)' % (code, ''.join('%02x' % b for b in enc), note))
     except Exception as e:
-        print('  %-22s -> ОШИБКА: %s' % (code, e))
+        print('  %-22s -> ERROR: %s' % (code, e))
 
-# B vs BL в точке 0x1ea10: ассемблируем оба варианта с тем же целевым смещением
+# B vs BL at point 0x1ea10: assemble both variants with same target offset
 print()
 print('--- B/BL disambiguation (pc=BASE) ---')
 for code in ['b .+6', 'bl .+6']:
     try:
         enc, n = ks.asm(code)
-        print('  %-10s -> %s (%d байт)' % (code, ''.join('%02x' % b for b in enc), len(enc)))
+        print('  %-10s -> %s (%d bytes)' % (code, ''.join('%02x' % b for b in enc), len(enc)))
     except Exception as e:
-        print('  %-10s -> ОШИБКА: %s' % (code, e))
+        print('  %-10s -> ERROR: %s' % (code, e))

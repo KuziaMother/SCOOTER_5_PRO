@@ -3,8 +3,8 @@
 #
 # BW Flasher — keygen (vendored)
 # Copyright (C) 2024-2025 ScooterTeam
-# Источник: https://github.com/scooterteam/bw-flasher, bwflasher/keygen.py
-# Скопировано в проект без изменений логики (только убраны print_array/__main__).
+# Source: https://github.com/scooterteam/bw-flasher, bwflasher/keygen.py
+# Vendored into project without logic changes (only removed print_array/__main__).
 #
 # This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
 # To view a copy of this license, visit http://creativecommons.org/licenses/by-nc-sa/4.0/

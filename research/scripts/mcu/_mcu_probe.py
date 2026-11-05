@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Эмпирика для gen_functions_mcu: прологи, формула ldr-пула, база 0x08000000."""
+"""Empirics for gen_functions_mcu: prologues, ldr-pool formula, base 0x08000000."""
 import os, struct
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 
@@ -13,7 +13,7 @@ CODE = [(0x01200, 0x02400), (0x02600, 0x10200), (0x10400, 0x10e00),
         (0x14600, 0x17a00), (0x18e00, 0x19200), (0x19a00, 0x24200),
         (0x24400, 0x24600)]
 
-# --- 1. что в 0x0000..0x1200 (до первого CODE-региона) ---
+# --- 1. what is in 0x0000..0x1200 (before first CODE region) ---
 print("\n== head 0x0000..0x0040 ==")
 for i in range(0, 0x40, 16):
     row = d[i:i+16]
@@ -37,7 +37,7 @@ for (a, b) in CODE:
 b5_h = prologues(0x0, 0x1200)
 print(f"\n== prologues B5xx{{..,lr}} in CODE: {tot_b5}; head 0x0..0x1200: {len(b5_h)} {b5_h[:16]}")
 
-# эмпирика T32 push.w: какие наборы (w1,w2) с w1&0xFF80==0xE900 реально есть?
+# T32 push.w empirics: which sets (w1,w2) with w1&0xFF80==0xE900 actually exist?
 from collections import Counter
 pairs = Counter()
 for (a, b) in CODE:
@@ -52,7 +52,7 @@ print(f"== pairs with w1&0xFF80==0xE900: total={sum(pairs.values())}, uniq={len(
 for (p, c) in pairs.most_common(15):
     print(f"   {p[0]:#06x} {p[1]:#06x}  x{c}")
 
-# --- 2. формула ldr-пула: F1=(A+4)&~3 + imm  vs  F2=(A+4)+imm ---
+# --- 2. ldr-pool formula: F1=(A+4)&~3 + imm  vs  F2=(A+4)+imm ---
 md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
 md.detail = False
 
@@ -71,7 +71,7 @@ def word(off):
     return None
 
 stats = {"f1": {}, "f2": {}}
-gtruth = {  # addr: (imm, expected) — из проверенных дампов
+gtruth = {  # addr: (imm, expected) — from verified dumps
     0x1e9e2: (0x3fc, 0x200002c0),
     0x1ea00: (0x3e8, 0x20000881),
     0x1e9f4: (0x3e8, 0x200002c0),
@@ -105,7 +105,7 @@ print("== ground truth (imm_ok, F1_ok, F2_ok):")
 for a in sorted(gt_res):
     print(f"   {a:05x}: {gt_res[a]}")
 
-# --- 3. литералы с базой 0x08000000 ---
+# --- 3. literals with base 0x08000000 ---
 n_img8 = sum(1 for v in stats["f1"].keys() if False)  # placeholder
 cnt = {"ram": 0, "peri": 0, "sys": 0, "img": 0, "img8": 0, "out": 0, "none": 0}
 for (a, b) in CODE:
@@ -118,4 +118,4 @@ for (a, b) in CODE:
             v = word(((ins.address + 4) & ~3) + imm)
             cnt[plausible(v)] += 1
 print(f"\n== resolved-pool value classes (F1): {cnt}")
-print(f"   -> img8 (база 0x08000000): {cnt['img8']} из {sum(cnt.values())}")
+print(f"   -> img8 (base 0x08000000): {cnt['img8']} of {sum(cnt.values())}")

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Проба: открывается ли MCU-гейт (status 5 на фрагменте 1) после заливки BLE-образа
-в той же сессии? Mi Home всегда шьёт BLE и MCU одним релизом: сначала BLE-образ
-(опкоды 2/3/4), затем MCU (2/5/6). Наши пробы MCU шли «в одиночку» — возможно,
-гейт требует предшествующей BLE-передачи в сессии.
+Probe: does MCU gate open after uploading BLE image
+in same session? Mi Home always flashes BLE and MCU together in one release: BLE image first
+(opcodes 2/3/4), then MCU (2/5/6). Our MCU probes ran standalone — possibly,
+the gate requires a preceding BLE upload in the session.
 
-План (ОДИН прогон, без commit):
-  1. Залить ВЕСЬ BLE-образ (301 фрагмент) без switchFirmware — безопасно:
-     «без --commit заливает все фрагменты, но НЕ переключает прошивку»,
-     незавершённый/незакоммиченный DFU устройство сбрасывает само.
-  2. Послать MCU-фрагмент 1 (чистый, версия 0007).
-     status=0 -> гейт открывается после BLE-заливки (нашли, что упускали!);
-     status=5 -> зависит не от передачи, а от чего-то ещё (коммита/версии).
+Plan (ONE run, without commit):
+  1. Upload ENTIRE BLE image (301 fragments) without switchFirmware — safe:
+     "without --commit uploads all fragments, but does NOT switch firmware",
+     uncompleted/uncommitted DFU is reset by the device itself.
+  2. Send MCU fragment 1 (clean, version 0007).
+     status=0 -> gate opens after BLE upload (found what was missing!);
+     status=5 -> depends not on upload, but on something else (commit/version).
 
-Запуск:  python probes/mcu_gate_after_ble_upload.py
+Usage:  python probes/mcu_gate_after_ble_upload.py
 """
 import asyncio
 import os
@@ -38,24 +38,24 @@ async def main():
     try:
         await login(t, ltmk)
 
-        print("\n=== ШАГ 1: заливка BLE-образа БЕЗ commit ===")
+        print("\n=== STEP 1: BLE image upload WITHOUT commit ===")
         ok = await flash(t, BLE_IMG, "ble", commit=False)
         if not ok:
-            print("[!] BLE-заливка не прошла — пробу прекращаю")
+            print("[!] BLE upload failed — stopping probe")
             return 1
 
-        print("\n=== ШАГ 2: MCU-фрагмент 1 после BLE-заливки ===")
+        print("\n=== STEP 2: MCU fragment 1 after BLE upload ===")
         op = OPS["mcu"]
         frag_size = await get_fragment_size(t, op)
         last, crc = await get_last_index(t, op)
         fw = open(MCU_IMG, "rb").read()
         st = await send_fragment(t, 1, fw[:frag_size])
         if st is None:
-            print("[!] сбой транспорта — нет ACK/события")
+            print("[!] transport failure — no ACK/event")
             return 1
-        txt = {0: "ПРИНЯТ (status 0) — ГЕЙТ ОТКРЫЛСЯ ПОСЛЕ BLE-ЗАЛИВКИ",
-               5: "отклонён (status 5) — не от передачи зависит"}.get(st, f"статус={st}")
-        print(f"[i] MCU-фрагмент 1: {txt}")
+        txt = {0: "ACCEPTED (status 0) — GATE OPENED AFTER BLE UPLOAD",
+               5: "rejected (status 5) — does not depend on upload"}.get(st, f"status={st}")
+        print(f"[i] MCU fragment 1: {txt}")
         return 0
     finally:
         await t.close()

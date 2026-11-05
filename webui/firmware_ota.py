@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """
-Проверка и скачивание официальной прошивки Dreame Scooter 5 Pro из Mi Cloud.
+Check and download official Dreame Scooter 5 Pro firmware from Mi Cloud.
 
-Переиспользует уже залогиненный коннектор из micloud_ltmk.py (та же сессия,
-что используется для получения LTMK) — отдельного входа не требуется.
+Reuses authenticated connector from micloud_ltmk.py (same session
+used for obtaining LTMK) — separate login not required.
 
-Запрос — порт PluginHostApiImpl.getBluetoothFirmwareUpdateInfoV2 (реверс APK),
-тот же, что tools/fetch_firmware.py уже использует как CLI-инструмент:
+Request is a port of PluginHostApiImpl.getBluetoothFirmwareUpdateInfoV2 (APK reverse),
+same as tools/fetch_firmware.py already uses as CLI tool:
 
     POST {api}/v2/device/latest_ver
     data = {"did":.., "model":.., "platform":"android"}
 
-Ответ несёт BLE-образ в url/md5 и MCU-образ в mcu_safe_url/mcu_md5 (плюс
-diff_url для дельта-обновлений, которые мы не используем — заливаем только
-полные образы).
+Response contains BLE image in url/md5 and MCU image in mcu_safe_url/mcu_md5 (plus
+diff_url for delta updates, which we do not use — we flash full images only).
 
-Ничего не пишется на устройство — это чисто облачный HTTP + локальное
-файловое хранилище (firmware_ota/). Сама заливка по BLE — firmware_worker.py.
+Nothing is written to the device — purely cloud HTTP + local file
+storage (firmware_ota/). BLE flashing itself is handled by firmware_worker.py.
 """
 import hashlib
 import json
@@ -31,23 +30,23 @@ MODEL = "xiaomi.scooter.5pro"
 
 
 class FirmwareError(Exception):
-    """Ожидаемая отказная ветка (нет сессии, облако не ответило и т.п.)."""
+    """Expected failure branch (no session, cloud did not respond, etc.)."""
 
 
 def check_latest(did, country="ru"):
-    """Спрашивает Mi Cloud про последнюю версию для did. Возвращает список
-    записей [{type: "upd"|"mcu", version, url, md5}] — то, что реально можно
-    скачать, без диффов и служебных полей."""
+    """Queries Mi Cloud for latest version for did. Returns list of
+    records [{type: "upd"|"mcu", version, url, md5}] — downloadable images,
+    without diffs or internal fields."""
     c = ml.get_connector()
     if not c:
-        raise FirmwareError("нет активной сессии Mi Cloud — сначала войдите по QR")
+        raise FirmwareError("no active Mi Cloud session — log in via QR first")
 
     url = c.get_api_url(country) + "/v2/device/latest_ver"
     data = {"did": str(did), "model": MODEL, "platform": "android",
             "plugin_level": 0, "app_level": 0}
     resp = c.execute_api_call_encrypted(url, {"data": json.dumps(data)})
     if not resp or resp.get("code") not in (0, None):
-        raise FirmwareError(f"облако отказало (code={resp.get('code') if resp else '?'})")
+        raise FirmwareError(f"cloud request rejected (code={resp.get('code') if resp else '?'})")
 
     result = resp.get("result") or {}
     entries = []
@@ -63,9 +62,9 @@ def check_latest(did, country="ru"):
 
 
 def local_firmware_list():
-    """Уже скачанные образы в firmware_ota/ — имя файла кодирует md5/тип/модель
-    (та же схема, что download() в tools/fetch_firmware.py), поэтому список
-    строим прямо по именам файлов, без отдельного индекса."""
+    """Already downloaded images in firmware_ota/ — filename encodes md5/type/model
+    (same scheme as download() in tools/fetch_firmware.py), so list
+    is built directly from filenames without separate index."""
     if not os.path.isdir(OUT_DIR):
         return []
     items = []
@@ -86,19 +85,19 @@ def local_firmware_list():
 
 
 def download_firmware(url, md5_expected, fw_type):
-    """Качает образ, проверяет MD5 против ОЖИДАЕМОГО (из ответа облака) —
-    несовпадение — это повод остановиться, а не тихо принять повреждённый
-    файл (§5: прошиваем только официальные образы со сверенным MD5)."""
+    """Downloads image and verifies MD5 against EXPECTED (from cloud response) —
+    mismatch stops the process rather than silently accepting corrupted
+    file (§5: flash official images with verified MD5 only)."""
     import requests
     os.makedirs(OUT_DIR, exist_ok=True)
     r = requests.get(url, timeout=60)
     if r.status_code != 200:
-        raise FirmwareError(f"скачивание не удалось: HTTP {r.status_code}")
+        raise FirmwareError(f"download failed: HTTP {r.status_code}")
     data = r.content
     got_md5 = hashlib.md5(data).hexdigest()
     if md5_expected and got_md5.lower() != str(md5_expected).lower():
         raise FirmwareError(
-            f"MD5 не совпал (получено {got_md5}, ожидалось {md5_expected}) — файл повреждён, не сохраняю")
+            f"MD5 mismatch (got {got_md5}, expected {md5_expected}) — file corrupted, aborting save")
     name = f"{got_md5}_{fw_type}_{MODEL}.bin"
     path = os.path.join(OUT_DIR, name)
     with open(path, "wb") as f:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCU ч.3: дизасм PWM-мотора и USART3-протокола + поиск констант-лимитов."""
+"""MCU part 3: disassembly of PWM motor and USART3 protocol + search for constant limits."""
 import os, sys, struct, bisect, re
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
 IMG = os.path.join(os.path.dirname(__file__), "..", "..", "images", "mcu_0007.bin")
@@ -20,7 +20,7 @@ def dis(f, lim=42, title=""):
     print(f"\n=== {title} func_0x{f:05x} ===")
     n=0
     for ins in md.disasm(d[f:fend(f)], f):
-        # аннотация периф-адресов из literal-пула
+        # annotation of peripheral addresses from literal pool
         note=""
         if ins.mnemonic=="ldr" and "[pc" in ins.op_str:
             m=re.search(r"#(0x[0-9a-f]+|\d+)",ins.op_str.split(',',1)[1])
@@ -38,18 +38,18 @@ def dis(f, lim=42, title=""):
         n+=1
         if n>=lim: break
 
-dis(0x22c70, 44, "МОТОР PWM (TIM1)")
-dis(0x1e480, 40, "USART3-обработчик (протокол с BLE)")
-dis(0x06230, 40, "FLASH запись (OTA)")
+dis(0x22c70, 44, "MOTOR PWM (TIM1)")
+dis(0x1e480, 40, "USART3-handler (BLE protocol)")
+dis(0x06230, 40, "FLASH write (OTA)")
 
-# ---------- поиск констант-лимитов: movw/mov.w с «человеческими» значениями ----------
-print("\n=== movw-константы в мотор/лимит-функциях (км/ч×10, мВ, мА, %) ===")
+# ---------- search for constant limits: movw/mov.w with realistic values ----------
+print("\n=== movw constants in motor/limit functions (km/h*10, mV, mA, %) ===")
 INTEREST=set()
-# правдоподобные лимиты самоката
+# plausible scooter limits
 def plausible(v):
-    return (v in (5,6,20,25,32) or 40<=v<=320 or   # км/ч, км/ч×10
+    return (v in (5,6,20,25,32) or 40<=v<=320 or   # km/h, km/h*10
             v in (250,200,300,150,100) or
-            3000<=v<=5500 or 30000<=v<=55000 or     # мВ ячейка / АКБ
+            3000<=v<=5500 or 30000<=v<=55000 or     # mV cell / battery
             1000<=v<=60000)
 cnt=0
 for a,b in CODE:
@@ -60,13 +60,13 @@ for a,b in CODE:
                 v=int(m.group(1),16) if m.group(1).startswith("0x") else int(m.group(1))
                 if plausible(v) and v not in (0,1):
                     INTEREST.add((ins.address,v))
-# сгруппируем часто встречающиеся значения
+# group frequently occurring values
 from collections import Counter
 vals=Counter(v for _,v in INTEREST)
-print("  частые «осмысленные» immediate-значения:")
+print("  frequent meaningful immediate values:")
 for v,c in vals.most_common(30):
     hint=""
-    if 200<=v<=320: hint="~км/ч×10? (25.0=250)"
-    if 3200<=v<=4300: hint="~мВ ячейки Li-ion"
-    if 30000<=v<=44000: hint="~мВ батареи"
+    if 200<=v<=320: hint="~km/h*10? (25.0=250)"
+    if 3200<=v<=4300: hint="~mV Li-ion cell"
+    if 30000<=v<=44000: hint="~mV battery"
     print(f"    {v:6}  x{c:<3} {hint}")

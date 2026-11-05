@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Анализ RTL8762C fw, часть 2: строки по категориям, Thumb-функции, cert, заголовок."""
+"""RTL8762C fw analysis, part 2: categorized strings, Thumb functions, cert, header."""
 import os, sys, re, struct, base64, collections, math
 try:
     from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
@@ -11,8 +11,8 @@ IMG = os.path.join(os.path.dirname(__file__), "..", "..", "images", "ble_2.7.0_0
 FW = sys.argv[1] if len(sys.argv) > 1 else IMG
 d = open(FW, "rb").read()
 
-# ---------- заголовок (эвристика) ----------
-print("=== заголовок (интерпретация полей LE) ===")
+# ---------- header (heuristics) ----------
+print("=== header (LE field interpretation) ===")
 u16 = lambda o: struct.unpack_from("<H", d, o)[0]
 u32 = lambda o: struct.unpack_from("<I", d, o)[0]
 print(f"  [0x00] u16=0x{u16(0):04x}  [0x02] u16=0x{u16(2):04x}  [0x04] u32=0x{u32(4):08x} ({u32(4)})")
@@ -20,7 +20,7 @@ print(f"  [0x08] u32=0x{u32(8):08x} ({u32(8)})  [0x0c..0x1b] = {d[12:28].hex()}"
 print(f"  [0x1c] u32=0x{u32(0x1c):08x}  [0x20] u32=0x{u32(0x20):08x}  [0x24] u32=0x{u32(0x24):08x}")
 print(f"  [0x28] u32=0x{u32(0x28):08x}")
 
-# ---------- энтропия -> секции ----------
+# ---------- entropy -> sections ----------
 def ent(b):
     if not b: return 0
     c = collections.Counter(b); n = len(b)
@@ -37,31 +37,31 @@ for i in range(0, len(d), BLK):
         if cur: sect.append(cur)
         cur = [i, min(i+BLK, len(d)), k]
 if cur: sect.append(cur)
-print("\n=== секции по энтропии ===")
+print("\n=== sections by entropy ===")
 plain = []
 for s in sect:
     sz = s[1]-s[0]
-    print(f"  0x{s[0]:05x}-0x{s[1]:05x}  {s[2]:4}  {sz} байт")
+    print(f"  0x{s[0]:05x}-0x{s[1]:05x}  {s[2]:4}  {sz} bytes")
     if s[2] == "CODE" and sz >= 256:
         plain.append((s[0], s[1]))
 
-# ---------- все строки -> файл + категории ----------
+# ---------- all strings -> file + categories ----------
 strs = [(m.start(), m.group().decode('ascii','ignore'))
         for m in re.finditer(rb'[ -~]{4,}', d)]
 with open("strings.txt", "w", encoding="utf-8") as f:
     for o, s in strs:
         f.write(f"{o:06x}  {s}\n")
-print(f"\n=== строки: {len(strs)} шт -> strings.txt ===")
+print(f"\n=== strings: {len(strs)} items -> strings.txt ===")
 
 CATS = {
     "OTA/DFU/boot": ['dfu','ota','boot','image','flash','eras','unlock bp','bank','upgrade','reset'],
-    "батарея/BMS": ['batt','bms','charg','volt','current','cell','soc','temp'],
-    "мотор/езда": ['motor','speed','throttle','brake','cruise','km','rpm','wheel','drive','gear','limit'],
-    "свет/дисплей": ['light','lamp','led','display','screen','beep','buzz'],
-    "замок/защита": ['lock','pin','password','auth','secure','key','verify','sign','cert'],
-    "BLE/связь": ['ble','gatt','att','adv','notif','uart','mesh','conn','mtu','miot','spec'],
-    "ошибки/лог": ['error','fail','assert','warn','fault','timeout','invalid','overflow'],
-    "система": ['version','release','build','init','task','stack','heap','watchdog','sleep','clock'],
+    "battery/BMS": ['batt','bms','charg','volt','current','cell','soc','temp'],
+    "motor/ride": ['motor','speed','throttle','brake','cruise','km','rpm','wheel','drive','gear','limit'],
+    "light/display": ['light','lamp','led','display','screen','beep','buzz'],
+    "lock/security": ['lock','pin','password','auth','secure','key','verify','sign','cert'],
+    "BLE/comm": ['ble','gatt','att','adv','notif','uart','mesh','conn','mtu','miot','spec'],
+    "errors/log": ['error','fail','assert','warn','fault','timeout','invalid','overflow'],
+    "system": ['version','release','build','init','task','stack','heap','watchdog','sleep','clock'],
 }
 cat_hits = {c: [] for c in CATS}
 for o, s in strs:
@@ -74,9 +74,9 @@ for c, hs in cat_hits.items():
     for o, s in hs[:14]:
         print(f"   0x{o:05x}: {s[:74]}")
 
-# ---------- Thumb-функции в открытых секциях ----------
-print("\n=== поиск Thumb-функций (push {..,lr}) в открытых секциях ===")
-# prologi: PUSH {..,LR} = B5xx (16-bit). Считаем как границы функций.
+# ---------- search for Thumb functions (push {..,lr}) in open sections ----------
+print("\n=== search for Thumb functions (push {..,lr}) in open sections ===")
+# prologs: PUSH {..,LR} = B5xx (16-bit). Counted as function boundaries.
 prologue = re.compile(rb'[\x00-\xff]\xb5')  # ..B5 -> push {...,lr}
 for (a, b) in plain:
     region = d[a:b]
@@ -85,27 +85,27 @@ for (a, b) in plain:
         off = m.start()
         if off % 2 == 0:  # 16-bit align
             starts.add(a+off)
-    print(f"  секция 0x{a:05x}-0x{b:05x}: ~{len(starts)} прологов (push lr)")
+    print(f"  section 0x{a:05x}-0x{b:05x}: ~{len(starts)} prologs (push lr)")
 
 if HAVE_CS and plain:
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_LITTLE_ENDIAN)
     a, b = plain[0]
-    print(f"\n=== дизасм первых инструкций открытой секции 0x{a:05x} (Thumb) ===")
+    print(f"\n=== disasm first instructions of open section 0x{a:05x} (Thumb) ===")
     n = 0
     for ins in md.disasm(d[a:a+64], a):
         print(f"   0x{ins.address:05x}: {ins.mnemonic:8} {ins.op_str}")
         n += 1
         if n >= 20: break
 
-# ---------- сертификат из хвоста ----------
-print("\n=== сертификат в трейлере ===")
+# ---------- certificate in trailer ----------
+print("\n=== certificate in trailer ===")
 m = re.search(rb'MII[0-9A-Za-z+/=\r\n]{200,}', d)
 if m:
     b64 = re.sub(rb'[^0-9A-Za-z+/=]', b'', m.group())
     try:
         der = base64.b64decode(b64 + b'=' * (-len(b64) % 4))
-        print(f"  base64 @0x{m.start():05x}, DER {len(der)} байт")
-        # вытащим печатаемые куски (Organization/CN и т.п.)
+        print(f"  base64 @0x{m.start():05x}, DER {len(der)} bytes")
+        # extract printable chunks (Organization/CN, etc.)
         for t in re.finditer(rb'[ -~]{3,}', der):
             s = t.group().decode('ascii','ignore')
             if any(k in s for k in ['Mi','Xiao','scooter','dreame','CN','.com','Root','CA','ECDSA','P-256']):

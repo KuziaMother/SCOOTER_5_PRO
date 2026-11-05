@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Динамический разбор агрегатора 0x1f71c (mcu_0007.bin).
+Dynamic analysis of aggregator 0x1f71c (mcu_0007.bin).
 
-Агрегатор — 24-состоянная машина (jump-table по CTX[0x10]), обрабатывает
-сырые кадры из RX-кольца @0x20000c05 (3 слота × 150Б) и лог-кольца
-@0x200010b5. Семантика состояний:
+Aggregator is a 24-state machine (jump-table via CTX[0x10]), processing
+raw frames from RX-ring @0x20000c05 (3 slots x 150B) and log-ring
+@0x200010b5. State semantics:
 
   CTX = 0x20000170: state=@0x180, byte_off=@0x182
-  slotA = byte@0x2c8 → descA = 0x20000c05 + idx*0x96   (RX-кольцо)
-  slotB = byte@0x2c9 → descB = 0x200010b5 + idx*0x96   (лог-кольцо)
-  гейт: byte@0x2c8 != byte@0x2c7 (иначе tail-call 0x2000c)
+  slotA = byte@0x2c8 -> descA = 0x20000c05 + idx*0x96   (RX-ring)
+  slotB = byte@0x2c9 -> descB = 0x200010b5 + idx*0x96   (log-ring)
+  gate: byte@0x2c8 != byte@0x2c7 (otherwise tail-call 0x2000c)
 
-Запуск:  python research/mcu_agg.py [--frame 51525354] [--state N]
+Usage:  python research/mcu_agg.py [--frame 51525354] [--state N]
 """
 import argparse
 import os
@@ -35,11 +35,11 @@ SLOT = 0x96
 def run(frame_hex, state=0, off=0, slot_a=0, slot_b=0, max_insn=300000):
     emu = McuEmu(trace=False, max_insn=max_insn)
     uc = emu.uc
-    # периферия: status-биты готовы
+    # peripherals: status bits ready
     uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
     uc.mem_write(SYS, bytes(SYS_SIZE))
 
-    # гейт: 0x2c8 != 0x2c7
+    # gate: 0x2c8 != 0x2c7
     uc.mem_write(0x200002c8, struct.pack("<B", slot_a))
     uc.mem_write(0x200002c7, b"\x01")
     uc.mem_write(0x200002c9, struct.pack("<B", slot_b))
@@ -48,15 +48,15 @@ def run(frame_hex, state=0, off=0, slot_a=0, slot_b=0, max_insn=300000):
     uc.mem_write(CTX + (STATE_OFF - 0x170), struct.pack("<B", state))
     uc.mem_write(CTX + (OFF_OFF - 0x170), struct.pack("<B", off))
 
-    # системный тик
+    # system tick
     uc.mem_write(0x200001e0, struct.pack("<Q", 0x00100000))
 
-    # RX-кольцо: засеваем кадр в слот slot_a
+    # RX-ring: seed frame into slot slot_a
     frame = bytes.fromhex(frame_hex) if frame_hex else b""
     uc.mem_write(RX_RING + slot_a * SLOT, frame.ljust(SLOT, b"\x00"))
-    # лог-кольцо пусто
+    # log-ring is empty
 
-    # перехват ВСЕХ записей в RAM (кроме стека)
+    # intercept ALL writes to RAM (except stack)
     writes = []
 
     def on_w(uc_, access, address, size, value, user):
@@ -75,25 +75,25 @@ def run(frame_hex, state=0, off=0, slot_a=0, slot_b=0, max_insn=300000):
         pc = uc.reg_read(UC_ARM_REG_PC)
         print(f"[agg] UcError {e} @pc=0x{pc:05x}")
 
-    # итог
+    # summary
     st = struct.unpack("<B", uc.mem_read(CTX + (STATE_OFF - 0x170), 1))[0]
     of = struct.unpack("<B", uc.mem_read(CTX + (OFF_OFF - 0x170), 1))[0]
-    print(f"[agg] frame={frame.hex(' ') if frame else '(пусто)'} state_in={state} off_in={off}")
-    print(f"[agg] инструкций: {emu.insn}, останов: {emu.stopped or 'нормально'}")
+    print(f"[agg] frame={frame.hex(' ') if frame else '(empty)'} state_in={state} off_in={off}")
+    print(f"[agg] instructions: {emu.insn}, stop: {emu.stopped or 'normal'}")
     print(f"[agg] state_out={st} off_out={of}")
-    # записи, сгруппированные по адресу (только RAM-поля, не стек)
+    # writes grouped by address (RAM fields only, not stack)
     ram_w = [w for w in writes if not (0x7000 <= w[1] < 0x8000)]
-    # стек = 0x2001xxxx → смещение 0x1xxxx..0x17fff; отфильтруем
+    # stack = 0x2001xxxx -> offset 0x1xxxx..0x17fff; filter out
     ram_w = [w for w in writes if w[1] < 0x10000]
-    print(f"[agg] записей в RAM: {len(ram_w)}")
-    # показываем уникальные адреса с последним значением
+    print(f"[agg] writes to RAM: {len(ram_w)}")
+    # show unique addresses with last value
     byaddr = {}
     for pc, a, sz, v in ram_w:
         byaddr.setdefault(a, []).append((pc, sz, v))
     for a in sorted(byaddr):
         recs = byaddr[a]
         vals = " ".join(f"0x{v:0{sz*2}x}" for _, sz, v in recs[:6])
-        print(f"      [0x{a:05x}] {len(recs)} запис.: {vals}")
+        print(f"      [0x{a:05x}] {len(recs)} writes: {vals}")
     if emu.usart_out:
         print(f"[agg] USART3: {bytes(emu.usart_out).hex(' ')}")
     return emu, byaddr

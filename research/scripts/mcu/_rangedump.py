@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Дизассемблер произвольного диапазона mcu_0007.bin с резолвом literal-пулов."""
+"""Arbitrary range disassembler of mcu_0007.bin with literal-pool resolution."""
 import os, struct, sys
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 
@@ -11,7 +11,7 @@ md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
 md.skipdata = True
 
 def lit_at(ins):
-    """Если инструкция ldr rX,[pc,#k] — вернуть значение из пула."""
+    """If instruction is ldr rX,[pc,#k] — return value from pool."""
     if ins.mnemonic in ("ldr", "ldr.w") and "[pc" in ins.op_str:
         try:
             k = int(ins.op_str.split("#")[1].split("]")[0], 16)

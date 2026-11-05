@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Динамический поиск писателей u16@0x32e / u16@0x330 (get 0x36).
+"""Dynamic search for writers of u16@0x32e / u16@0x330 (get 0x36).
 
-Свип всех функций + целевые функции с разными сидами;
-хук записей в 0x2000032C..0x20000334 (ловим и u32-str на 0x32C).
+Sweep of all functions + target functions with various seeds;
+write hook on 0x2000032C..0x20000334 (also catch u32-str at 0x32C).
 """
 import os, sys, struct
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emulator"))
@@ -26,11 +26,11 @@ def main():
 
     def on_w(uc, access, address, size, value, user):
         if TGT_LO <= address < TGT_HI:
-            pc = uc.reg_read(UC_ARM_REG_LR)  # LR не подходит; берём PC ниже
+            pc = uc.reg_read(UC_ARM_REG_LR)  # LR not suitable; take PC below
             hits.append((address, size, value))
 
-    # правильный PC: хук вызывается ПОСЛЕ инструкции? нет — до/после?
-    # Unicorn: hook mem_write получает address/value; PC читаем как r15.
+    # correct PC: hook called AFTER instruction? no - before/after?
+    # Unicorn: hook mem_write gets address/value; read PC as r15.
     from unicorn.arm_const import UC_ARM_REG_PC
     def on_w2(uc, access, address, size, value, user):
         if TGT_LO <= address < TGT_HI:
@@ -40,7 +40,7 @@ def main():
     emu.uc.hook_add(UC_HOOK_MEM_WRITE, on_w2, None, TGT_LO, TGT_HI - TGT_LO)
 
     starts = find_func_starts()
-    # расширенные регионы (не в REGIONS gen_functions_mcu.py): 0x17a00..0x18e00 (98% код),
+    # extended regions (not in REGIONS gen_functions_mcu.py): 0x17a00..0x18e00 (98% code),
     # 0x12400..0x12800 (93%), 0x10200..0x10400 (79%)
     import struct as _s
     extra = []
@@ -49,7 +49,7 @@ def main():
             if (_s.unpack_from("<H", d_bytes, o)[0] & 0xFF00) == 0xB500:
                 extra.append(o)
     starts = list(dict.fromkeys(starts + extra))
-    print(f"функций: {len(starts)} (в т.ч. {len(extra)} из расширенных регионов)")
+    print(f"functions: {len(starts)} (including {len(extra)} from extended regions)")
 
     seeds = [
         ("base", {}),
@@ -83,19 +83,19 @@ def main():
                 emu.uc.emu_start(f | 1, 0, count=40005)
             except UcError:
                 pass
-        print(f"seed {sname}: +{len(hits)-before} записей")
+        print(f"seed {sname}: +{len(hits)-before} writes")
 
     if hits:
         seen = {}
         for pc, addr, size, val in hits:
             seen.setdefault(pc, []).append((addr, size, val))
-        print(f"\n=== ПИСАТЕЛИ в 0x32C..0x334: {len(hits)} записей, {len(seen)} уникальных PC ===")
+        print(f"\n=== WRITERS to 0x32C..0x334: {len(hits)} writes, {len(seen)} unique PCs ===")
         for pc in sorted(seen):
             samples = seen[pc][:6]
-            print(f"  pc=0x{pc:05x}: {len(seen[pc])}x напр. "
+            print(f"  pc=0x{pc:05x}: {len(seen[pc])}x e.g. "
                   f"{[(hex(a), s, hex(v)) for a, s, v in samples]}")
     else:
-        print("\n=== записей в 0x32C..0x334 НЕ найдено ===")
+        print("\n=== NO writes to 0x32C..0x334 found ===")
 
 
 if __name__ == "__main__":

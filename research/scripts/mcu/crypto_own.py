@@ -1,42 +1,42 @@
 # -*- coding: utf-8 -*-
-"""Модель криптографии MCU: конфиг #3 (expand) + шифроблок «own» (0x1a7ac).
+"""MCU cryptography model: config #3 (expand) + "own" cipher block (0x1a7ac).
 
-Статический разбор (2026-08-23), сверено исполнением (Unicorn):
+Static analysis (2026-08-23), verified by execution (Unicorn):
 
-  0x1bfa0(dst, src)   — расшифровщик/экспандер конфига #3:
-                        dst[0..15] = src[0..15]; далее 160 байт генерации:
-                        B_r2 = B_{r2-4} ^ S(B_{r2-1}), r2=4..43 (итого 176 Б),
-                        где S — тождество, кроме r2%4==0:
+  0x1bfa0(dst, src)   - config #3 decryptor/expander:
+                        dst[0..15] = src[0..15]; then 160 bytes generated:
+                        B_r2 = B_{r2-4} ^ S(B_{r2-1}), r2=4..43 (total 176 B),
+                        where S is identity except when r2%4==0:
                         S(st) = [S1[st1]^S2[r2/4], S1[st2], S1[st3], S1[st0]]
                         (S1 = S-box @0xa907, S2 = @0xab07).
-  0x1a5fa(win, buf, ctx) — buf ^= ctx[16*win .. 16*win+15] (16 Б).
-  0x1dd8c(buf)        — T: по каждому 4-байтовому блоку b:
+  0x1a5fa(win, buf, ctx) - buf ^= ctx[16*win .. 16*win+15] (16 B).
+  0x1dd8c(buf)        - T: for each 4-byte block b:
                         P = b0^b1^b2^b3; new[i] = b[i] ^ L(b[i]^b[i+1]) ^ P,
-                        индексы циклически; L(x) = ((x<<1)&0xFF) ^ (0x1B*(x>>7)).
-  0x1a7ac(buf, ctx)   — шифроблок «own»: buf ^= C_0; for r in 1..10:
+                        cyclic indices; L(x) = ((x<<1)&0xFF) ^ (0x1B*(x>>7)).
+  0x1a7ac(buf, ctx)   - "own" cipher block: buf ^= C_0; for r in 1..10:
                         buf = S1[buf]; buf = permute(buf);
                         if r < 10: buf = T(buf);  buf ^= C_r.
-                        C_r = ctx[16r..16r+15]; ctx = таблица @0x16aa (176 Б).
+                        C_r = ctx[16r..16r+15]; ctx = table @0x16aa (176 B).
 
-Ключевые выводы (сверено исполнением, 2026-08-23):
-  * «S-box'ы» @0xa907/@0xab07 — НЕ перестановки: это 256-байтные срезы КОДА
-    образа (func_0x0a910 и соседние функции/пулы). Подстановка необратима.
-  * T (0x1dd8c) обратим (ранг 32/32), НО весь own_cipher — ОДНОНАПРАВЛЕННАЯ
-    функция (lossy на каждом раунде): 65536 входов -> ~11k уникальных выходов.
-    Это keyed-hash/MAC, не блочный шифр: расшифровать ответ нельзя,
-    но при известном сееде можно ВЫЧИСЛИТЬ любой ответ MCU офлайн.
-  * Ключ = первые 176 Б таблицы @0x16aa (расшифровка конфига #3). Сид (16 Б)
-    приходит из Mi Home при бинде (кадр 0x1a), хранится в NVRAM
-    (flash @0x0801F400-регион, RAM @0x871), восстанавливается и
-    пере-расшифровывается при старте (0x1ca08).
-  * Используется ровно в двух местах (оба статические):
-      'b'  (0x200e4): ответ = "ok " + f(полученный блок) + "\r";
-      'm'+'k' (0x20212): после совпадения с маской @0x1565 — f(маска)
-      (ротация/сжигание маски; ответ содержит маску ДО шифра).
+Key conclusions (verified by execution, 2026-08-23):
+  * "S-boxes" @0xa907/@0xab07 are NOT permutations: these are 256-byte slices of image CODE
+    (func_0x0a910 and neighboring functions/pools). Substitution is irreversible.
+  * T (0x1dd8c) is invertible (rank 32/32), BUT full own_cipher is a ONE-WAY
+    function (lossy at each round): 65536 inputs -> ~11k unique outputs.
+    This is a keyed-hash/MAC, not a block cipher: response cannot be decrypted,
+    but with known seed one can COMPUTE any MCU response offline.
+  * Key = first 176 B of table @0x16aa (decrypted config #3). Seed (16 B)
+    comes from Mi Home upon bind (frame 0x1a), stored in NVRAM
+    (flash @0x0801F400-region, RAM @0x871), restored and
+    re-decrypted at boot (0x1ca08).
+  * Used in exactly two places (both static):
+      'b'  (0x200e4): response = "ok " + f(received block) + "\r";
+      'm'+'k' (0x20212): after matching mask @0x1565 - f(mask)
+      (mask rotation/burning; response contains mask BEFORE cipher).
 
-Запуск:
-  python crypto_own.py model      # модель: ранг T, коллизии, sanity
-  python crypto_own.py verify     # сверка с исполнением реального кода (Unicorn)
+Usage:
+  python crypto_own.py model      # model: rank T, collisions, sanity
+  python crypto_own.py verify     # verification against real code execution (Unicorn)
 """
 import os
 import sys
@@ -59,7 +59,7 @@ def L(x):
 
 
 def T_block(b):
-    """0x1dd8c на одном 4-байтовом блоке."""
+    """0x1dd8c on a single 4-byte block."""
     P = b[0] ^ b[1] ^ b[2] ^ b[3]
     out = []
     for i in range(4):
@@ -69,12 +69,12 @@ def T_block(b):
 
 
 def T(buf16):
-    """0x1dd8c на 16-байтовом буфере (4 независимых блока)."""
+    """0x1dd8c on a 16-byte buffer (4 independent blocks)."""
     return b"".join(T_block(buf16[i:i + 4]) for i in (0, 4, 8, 12))
 
 
-# перестановка из 0x1a7de..0x1a80c:
-#   цикл [1->5->9->D], swap [2,A], swap [6,E], цикл [3->F->B->7]
+# permutation from 0x1a7de..0x1a80c:
+#   cycle [1->5->9->D], swap [2,A], swap [6,E], cycle [3->F->B->7]
 def permute(buf16):
     o = bytearray(buf16)
     # [1,5,9,D]: tmp=o[1]; o[1]=o[5]; o[5]=o[9]; o[9]=o[0xD]; o[0xD]=tmp
@@ -89,14 +89,14 @@ def permute(buf16):
 
 
 def own_cipher(buf16, ctx):
-    """0x1a7ac: 10-раундовый блочный шифр, ключ = окна ctx C_0..C_10."""
+    """0x1a7ac: 10-round block cipher, key = ctx windows C_0..C_10."""
     assert len(ctx) >= 176
     buf = bytearray(buf16)
     for i in range(16):
-        buf[i] ^= ctx[i]                       # C_0 (через 0x1a5fa win=0)
+        buf[i] ^= ctx[i]                       # C_0 (via 0x1a5fa win=0)
     for r in range(1, 11):
-        buf = bytearray(S1[x] for x in buf)    # S-box по всем 16 Б
-        buf = bytearray(permute(bytes(buf)))   # фиксированная перестановка
+        buf = bytearray(S1[x] for x in buf)    # S-box across all 16 B
+        buf = bytearray(permute(bytes(buf)))   # fixed permutation
         if r < 10:
             buf = bytearray(T(bytes(buf)))     # 0x1dd8c
         base = 16 * r
@@ -106,11 +106,11 @@ def own_cipher(buf16, ctx):
 
 
 def expand(seed16):
-    """0x1bfa0: 16-байтовый сид -> 176-байтовая таблица.
+    """0x1bfa0: 16-byte seed -> 176-byte table.
 
-    ВАЖНО: «S-box'ы» @0xa907/@0xab07 — НЕ перестановки, а произвольные 256 Б
-    среза кода образа (включая func_0x0a910 и пулы) -> подстановка необратима,
-    шифр — однонаправленный (lossy)."""
+    IMPORTANT: "S-boxes" @0xa907/@0xab07 are NOT permutations, but arbitrary 256 B
+    slices of image code (including func_0x0a910 and pools) -> substitution is irreversible,
+    cipher is one-way (lossy)."""
     B = [bytearray(4) for _ in range(44)]
     for k in range(4):
         B[k] = bytearray(seed16[4 * k:4 * k + 4])
@@ -123,10 +123,10 @@ def expand(seed16):
     return b"".join(bytes(b) for b in B)
 
 
-# ---------------------------------------------------------------- инверсии
+# ---------------------------------------------------------------- inversions
 
 def gf2_matrix_of_T():
-    """Матрица T (32x32) над GF(2): M[r][c] = бит r образа T(e_c)."""
+    """Matrix T (32x32) over GF(2): M[r][c] = bit r of image T(e_c)."""
     M = [[0] * 32 for _ in range(32)]
     for c in range(32):
         blk = bytearray(4)
@@ -138,7 +138,7 @@ def gf2_matrix_of_T():
 
 
 def gf2_invert(M):
-    """Инверсия квадратной матрицы над GF(2) (Gauss). None, если вырождена."""
+    """Inversion of square matrix over GF(2) (Gauss). None if singular."""
     n = len(M)
     A = [row[:] + [1 if i == j else 0 for j in range(n)] for i, row in enumerate(M)]
     for c in range(n):
@@ -169,7 +169,7 @@ def gf2_rank(M):
 
 
 def T_block_inv(out4, Minv):
-    """Обратное применение T к блоку через инверсную матрицу."""
+    """Inverse application of T to block via inverse matrix."""
     col_in = [ (out4[i] >> j) & 1 for i in range(4) for j in range(8) ]
     out = bytearray(4)
     for r in range(32):
@@ -187,12 +187,12 @@ def build_T_inv():
     return M, rank, Minv
 
 
-# прямая перестановка: out[j] = in[PI(j)]
+# forward permutation: out[j] = in[PI(j)]
 PI = [0, 5, 0xA, 0xF, 4, 9, 0xE, 3, 8, 0xD, 2, 7, 0xC, 1, 6, 0xB]
 
 
 def permute_inv(out16):
-    """in[i] = out[PI^{-1}(i)] — обратная перестановка."""
+    """in[i] = out[PI^{-1}(i)] - inverse permutation."""
     pinv = [0] * 16
     for i, j in enumerate(PI):
         pinv[j] = i
@@ -200,9 +200,9 @@ def permute_inv(out16):
 
 
 def own_cipher_inv(ct16, ctx, Tinv):
-    """Обратный шифр «own» (если T обратим)."""
-    # S1 — не перестановка: берём произвольный предобраз; корректность
-    # проверяется повторным шифрованием (round-trip через own_cipher).
+    """Inverse "own" cipher (if T is invertible)."""
+    # S1 is not a permutation: take an arbitrary preimage; correctness
+    # is verified by re-encrypting (round-trip via own_cipher).
     S1inv = bytearray(256)
     for i, v in enumerate(S1):
         S1inv[v] = i
@@ -221,19 +221,19 @@ def own_cipher_inv(ct16, ctx, Tinv):
 
 
 def model():
-    print(f"S1(@0xa907) перестановка: {is_perm(S1)}")
-    print(f"S2(@0xab07) перестановка: {is_perm(S2)}")
+    print(f"S1(@0xa907) permutation: {is_perm(S1)}")
+    print(f"S2(@0xab07) permutation: {is_perm(S2)}")
     seed = bytes(range(16))
     tbl = expand(seed)
-    print(f"expand: 16 -> {len(tbl)} Б")
+    print(f"expand: 16 -> {len(tbl)} B")
     print(f"  seed  : {seed.hex()}")
     print(f"  tbl[0:16] == seed: {tbl[:16] == seed}")
     print(f"  tbl[16:48]: {tbl[16:48].hex()}")
 
     M, rank, Minv = build_T_inv()
-    print(f"T (0x1dd8c): ранг над GF(2) = {rank}/32 -> {'ОБРАТИМ' if Minv else 'НЕОБРАТИМ'}")
-    # проверка T_inv(T(x)) == x на всём пространстве блоков (4^4*... — перебор 256^4 невозможен;
-    # линейность: достаточно базиса)
+    print(f"T (0x1dd8c): rank over GF(2) = {rank}/32 -> {'INVERTIBLE' if Minv else 'NOT INVERTIBLE'}")
+    # check T_inv(T(x)) == x across entire block space (256^4 brute force impossible;
+    # linearity: basis is sufficient)
     if Minv:
         ok = True
         for col in range(32):
@@ -244,8 +244,8 @@ def model():
                 ok = False
         print(f"  T_inv(T(basis)) == basis: {ok}")
 
-    # Однонаправленность: S1 не биективна -> функция не инъективна.
-    # Доказательство: коллизии в 2-байтном подпространстве (65536 входов).
+    # One-way property: S1 is not bijective -> function is not injective.
+    # Proof: collisions in 2-byte subspace (65536 inputs).
     ctx = expand(bytes(range(16)))
     base = bytes(16)
     seen = {}
@@ -259,8 +259,8 @@ def model():
                 coll += 1
             else:
                 seen[ct] = (hi, lo)
-    print(f"own_cipher: коллизий в 2-Б подпространстве: {coll} "
-          f"(уникальных выходов {len(seen)}/65536) -> ОДНОНАПРАВЛЕННАЯ функция")
+    print(f"own_cipher: collisions in 2-B subspace: {coll} "
+          f"(unique outputs {len(seen)}/65536) -> ONE-WAY function")
 
 
 def verify():
@@ -270,9 +270,9 @@ def verify():
     seed = bytes([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
                   0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x0F])
     SRC = RAM + 0x4000
-    DST = RAM + 0x4100          # 176 Б
-    BUF = RAM + 0x4200          # 16 Б
-    CTX = RAM + 0x4300          # 176 Б
+    DST = RAM + 0x4100          # 176 B
+    BUF = RAM + 0x4200          # 16 B
+    CTX = RAM + 0x4300          # 176 B
 
     emu = McuEmu(max_insn=200000)
     emu.uc.mem_write(SRC, seed)
@@ -282,11 +282,11 @@ def verify():
     emu.run_func(0x1bfa0, args=(DST, SRC))
     got = bytes(emu.uc.mem_read(DST, 176))
     exp = expand(seed)
-    print(f"[verify] expand (0x1bfa0): модель == исполнение: {got == exp}")
+    print(f"[verify] expand (0x1bfa0): model == execution: {got == exp}")
     if got != exp:
         for i in range(176):
             if got[i] != exp[i]:
-                print(f"  первый расхождение @{i}: got={got[i]:02x} exp={exp[i]:02x}")
+                print(f"  first mismatch @{i}: got={got[i]:02x} exp={exp[i]:02x}")
                 break
 
     # --- 0x1dd8c: T
@@ -295,7 +295,7 @@ def verify():
     emu.run_func(0x1dd8c, args=(BUF,))
     got = bytes(emu.uc.mem_read(BUF, 16))
     exp = T(blk)
-    print(f"[verify] T (0x1dd8c):      модель == исполнение: {got == exp}")
+    print(f"[verify] T (0x1dd8c):      model == execution: {got == exp}")
     if got != exp:
         print(f"  got: {got.hex()}")
         print(f"  exp: {exp.hex()}")
@@ -310,14 +310,14 @@ def verify():
         got = bytes(emu.uc.mem_read(BUF, 16))
         exp = bytes(blk[i] ^ ctx[16 * win + i] for i in range(16))
         if got != exp:
-            print(f"[verify] xor win={win}: РАСХОЖДЕНИЕ")
+            print(f"[verify] xor win={win}: MISMATCH")
 
     # --- 0x1a7ac: own_cipher
     emu.uc.mem_write(BUF, blk)
     emu.run_func(0x1a7ac, args=(BUF, CTX))
     got = bytes(emu.uc.mem_read(BUF, 16))
     exp = own_cipher(blk, ctx)
-    print(f"[verify] own (0x1a7ac):    модель == исполнение: {got == exp}")
+    print(f"[verify] own (0x1a7ac):    model == execution: {got == exp}")
     if got != exp:
         print(f"  got: {got.hex()}")
         print(f"  exp: {exp.hex()}")

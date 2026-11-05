@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCU ч.5: декодирование протокола 55AA — sync-слово, TX-сборка, checksum, дескрипторы."""
+"""MCU part 5: decoding 55AA protocol - sync word, TX assembly, checksum, descriptors."""
 import os, struct, re, bisect
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
 IMG = os.path.join(os.path.dirname(__file__), "..", "..", "images", "mcu_0007.bin")
@@ -14,8 +14,8 @@ fstarts=sorted(o for a,b in CODE for o in range(a,b,2) if (u16(o)&0xFF00)==0xB50
 def func_of(o):
     i=bisect.bisect_right(fstarts,o)-1; return fstarts[i] if i>=0 else None
 
-# 1) поиск immediate 0x55/0xAA/0x55AA/0xAA55 в cmp/movw/movs
-print("=== immediate 0x55/0xAA/0x55AA/0xAA55 в коде ===")
+# 1) search for immediate 0x55/0xAA/0x55AA/0xAA55 in cmp/movw/movs
+print("=== immediate 0x55/0xAA/0x55AA/0xAA55 in code ===")
 targets={0x55:'0x55',0xAA:'0xAA',0x55AA:'0x55AA',0xAA55:'0xAA55'}
 for a,b in CODE:
     for ins in md.disasm(d[a:b],a):
@@ -25,8 +25,8 @@ for a,b in CODE:
         if v in targets and ins.mnemonic in ("cmp","cmp.w","movs","mov.w","movw","subs"):
             print(f"  func_0x{func_of(ins.address):05x} 0x{ins.address:05x}: {ins.mnemonic} {ins.op_str}")
 
-# 2) кто ссылается на TX-шаблон/таблицы 0x17d3a (55 aa ...)
-print("\n=== ссылки на блок 0x17d20-0x17d80 (конфиг+55AA+коммутация) ===")
+# 2) who references TX template/tables 0x17d3a (55 aa ...)
+print("\n=== references to block 0x17d20-0x17d80 (config+55AA+commutation) ===")
 lo,hi=0x17d20,0x17d80
 for a,b in CODE:
     for ins in md.disasm(d[a:b],a):
@@ -38,13 +38,13 @@ for a,b in CODE:
                 if pool+4<=N and lo<=u32(pool)<hi:
                     print(f"  func_0x{func_of(ins.address):05x} @0x{ins.address:05x} -> 0x{u32(pool):05x}")
 
-# 3) поиск checksum-паттернов: сумма байт (add в цикле) или CRC-таблицы рядом с USART3
-print("\n=== таблицы CRC16 (0x1021/0xA001 poly) ===")
+# 3) search for checksum patterns: byte sum (add in loop) or CRC tables near USART3
+print("\n=== CRC16 tables (0x1021/0xA001 poly) ===")
 for poly_name,first in [("CRC16-CCITT",b"\x00\x00\x21\x10"),("CRC16-MODBUS",b"\x00\x00\x01\xc0")]:
-    i=d.find(first); print(f"  {poly_name}: {'@0x%x'%i if i>=0 else 'нет'}")
+    i=d.find(first); print(f"  {poly_name}: {'@0x%x'%i if i>=0 else 'none'}")
 
-# 4) дизасм TX-сборки 0x1f6b4 подробнее (какие байты кладёт в кадр)
-print("\n=== TX-сборка func_0x1f6b4 (какие поля пишет) ===")
+# 4) disassemble TX assembly 0x1f6b4 in detail (which bytes placed in frame)
+print("\n=== TX assembly func_0x1f6b4 (which fields written) ===")
 n=0
 for ins in md.disasm(d[0x1f6b4:0x1f6b4+120],0x1f6b4):
     print(f"   0x{ins.address:05x}: {ins.mnemonic:8} {ins.op_str}")

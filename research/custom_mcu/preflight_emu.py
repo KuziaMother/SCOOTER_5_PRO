@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Префлайт patched_mi5pro_firmware.bin в эмуляторе (Unicorn, реальный код).
+Preflight patched_mi5pro_firmware.bin in emulator (Unicorn, real code).
 
-Запускает ТОЧНО патченные базовые блоки в официальном и патченном бинарниках
-с одинаковым синтетическим состоянием и сравнивает:
-  - не падает ли патченный блок (fault на самом патче);
-  - значение [r4+0x14] — поведение clamp-логики.
+Executes EXACT patched basic blocks in official and patched binaries
+with identical synthetic state and compares:
+  - whether the patched block faults (fault in the patch itself);
+  - value [r4+0x14] — clamp logic behavior.
 
-Блоки:
-  A) 0x1d0e4 (default-case): off: [r4+0x14]=min(0xD0,*r0); pat: всегда 0xD0.
-  B) 0x1d140 (case 3):       off: ldrh r1,[r0]; pat: ldrb r1,[r0] (младший байт).
+Blocks:
+  A) 0x1d0e4 (default-case): off: [r4+0x14]=min(0xD0,*r0); pat: always 0xD0.
+  B) 0x1d140 (case 3):       off: ldrh r1,[r0]; pat: ldrb r1,[r0] (low byte).
 
-Это НЕ полная проверка прошивки (нет boot/векторов), но ловит грубые поломки
-патча и показывает семантику. Запуск: python custom_mcu/preflight_emu.py
+This is NOT a full firmware verification (no boot/vectors), but catches gross
+patch breakage and verifies semantics. Usage: python custom_mcu/preflight_emu.py
 """
 import os
 import struct
@@ -29,8 +29,8 @@ OFF = os.path.join(ROOT, "firmware_ota",
                    "c0f78c49f322bd3d71fea19c90241882_mcu_xiaomi.scooter.5pro_v0007.bin")
 PAT = os.path.join(HERE, "patched_mi5pro_firmware.bin")
 
-CTX = 0x20001000      # r4: контекст
-PTR = 0x20001100      # r0: указатель на u16
+CTX = 0x20001000      # r4: context
+PTR = 0x20001100      # r0: pointer to u16
 
 
 def run_case(fw, start, u16_val, label):
@@ -39,7 +39,7 @@ def run_case(fw, start, u16_val, label):
     e.uc.mem_write(CTX, b"\x00" * 0x100)
     e.uc.mem_write(PTR, struct.pack("<H", u16_val))
     e.uc.reg_write(UC_ARM_REG_SP, mcu_emu.STACK_TOP)
-    e.uc.reg_write(UC_ARM_REG_LR, 1)          # bx lr -> стоп
+    e.uc.reg_write(UC_ARM_REG_LR, 1)          # bx lr -> stop
     e.uc.reg_write(UC_ARM_REG_R0, PTR)
     e.uc.reg_write(UC_ARM_REG_R1, 0)
     e.uc.reg_write(UC_ARM_REG_R4, CTX)
@@ -58,9 +58,9 @@ def mcuc_pc():
 
 
 CASES = [
-    # (start, u16_val, описание)
-    (0x1d0e4, 80,   "A1: default, *r0=80  (<208): off должен дать 80, pat — 208"),
-    (0x1d0e4, 300,  "A2: default, *r0=300 (>208): оба — 208"),
+    # (start, u16_val, description)
+    (0x1d0e4, 80,   "A1: default, *r0=80  (<208): off must yield 80, pat — 208"),
+    (0x1d0e4, 300,  "A2: default, *r0=300 (>208): both — 208"),
     (0x1d140, 464,  "B1: case3,  *r0=464 (0x01D0): off — 464, pat — 208 (ldrb)"),
 ]
 

@@ -59,7 +59,7 @@ export class Transport {
 
   /** Подключиться к уже выбранному через requestDevice() устройству. */
   async connect() {
-    if (!this.device) throw new TransportError("сначала requestDevice()");
+    if (!this.device) throw new TransportError("call requestDevice() first");
     this.server = await this.device.gatt.connect();
     const service = await this.server.getPrimaryService(FE95_UUID);
     const chars = await service.getCharacteristics();
@@ -93,7 +93,7 @@ export class Transport {
 
   async write(sidVal, data, { response = false } = {}) {
     const char = this.chars.get(sidVal);
-    if (!char) throw new TransportError(`нет характеристики 0x${sidVal.toString(16)}`);
+    if (!char) throw new TransportError(`missing characteristic 0x${sidVal.toString(16)}`);
     if (response) {
       if (char.writeValueWithResponse) await char.writeValueWithResponse(data);
       else await char.writeValue(data);
@@ -106,7 +106,7 @@ export class Transport {
   /** Читать GATT-характеристику напрямую (для 0x0004 версии и т.п.). */
   async readGatt(sidVal) {
     const char = this.chars.get(sidVal);
-    if (!char) throw new TransportError(`нет характеристики 0x${sidVal.toString(16)}`);
+    if (!char) throw new TransportError(`missing characteristic 0x${sidVal.toString(16)}`);
     const dv = await char.readValue();
     return new Uint8Array(dv.buffer);
   }
@@ -136,7 +136,7 @@ export class Transport {
         return true;
       }
     }
-    this._log("    [!] MNG не получен");
+    this._log("    [!] MNG not received");
     return false;
   }
 
@@ -176,7 +176,7 @@ export class Transport {
     await this.write(charSid, ctr);
     const st0 = await this.waitAckStatus(timeoutMs, charSid);
     if (st0 === null) {
-      this._log("    [!] нет start-ACK на CTR");
+      this._log("    [!] no start-ACK on CTR");
       return false;
     }
 
@@ -195,13 +195,13 @@ export class Transport {
     for (let attempt = 0; attempt < 40; attempt++) {
       const [st, seqs] = await this.waitAckFull(timeoutMs, charSid);
       if (st === null) {
-        this._log("    [!] нет ACK после DATA");
+        this._log("    [!] no ACK after DATA");
         return false;
       }
       if (st === 0x00) return true;
       if (st === 0x05 && seqs.length) await sendFrames(seqs);
     }
-    this._log("    [!] reliable-цикл не завершился (много resend)");
+    this._log("    [!] reliable loop did not finish (too many resends)");
     return false;
   }
 

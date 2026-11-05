@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""A3 (SPI-flash/NVM): эмпирика NVRAM-save 0x21a08. Ловим RAM-чтения (NVM-source
-буфер) + SPI1 (0x40013000) записи, чтобы понять layout NVM и механику SPI."""
+"""A3 (SPI-flash/NVM): empirical study of NVRAM-save 0x21a08. Catch RAM-reads (NVM-source
+buffer) + SPI1 (0x40013000) writes to understand NVM layout and SPI mechanics."""
 import sys, os, struct, collections
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "emulator"))
 from mcu_emu import McuEmu, RAM, FLASH0, FLASH1, STACK_TOP
@@ -13,7 +13,7 @@ def run_save():
     emu = McuEmu(max_insn=200_000)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
-    # distinctive pattern в RAM, чтобы увидеть какой буфер уходит в NVM
+    # distinctive pattern in RAM to see which buffer goes to NVM
     for off in range(0, 0x400, 1):
         pass
     # seed gate byte@0x170 = 1
@@ -40,19 +40,19 @@ def run_save():
     finally:
         uc.hook_del(sh); uc.hook_del(rh)
 
-    # SPI1-записи
+    # SPI1 writes
     spi = [(a - SPI1, s, v) for pc, a, s, v in emu.periph_writes if SPI1 <= a < SPI1 + 0x40]
-    print(f"   SPI1 (0x{SPI1:08x}) записей: {len(spi)}")
+    print(f"   SPI1 (0x{SPI1:08x}) writes: {len(spi)}")
     by = collections.defaultdict(list)
     for off, s, v in spi:
         by[off].append(v)
     for off in sorted(by):
         vals = by[off]
         print(f"     +0x{off:02x}: W×{len(vals)} last={vals[-1]:#x} seq={vals[:8]}")
-    # RAM-чтения (NVM-source буфер) — сгруппируем по близости
+    # RAM reads (NVM source buffer) — group by proximity
     addrs = sorted(set(a for a, s in ram_reads))
-    print(f"   RAM-чтений: {len(ram_reads)}, уникальных адресов: {len(addrs)}")
-    # покажем кластеры (последовательные адреса)
+    print(f"   RAM reads: {len(ram_reads)}, unique addresses: {len(addrs)}")
+    # show clusters (consecutive addresses)
     if addrs:
         clusters = []
         cur = [addrs[0]]
@@ -61,7 +61,7 @@ def run_save():
             else: clusters.append(cur); cur = [a]
         clusters.append(cur)
         for c in clusters[:20]:
-            print(f"     кластер 0x{c[0]:03x}..0x{c[-1]:03x} ({len(c)} адр)")
+            print(f"     cluster 0x{c[0]:03x}..0x{c[-1]:03x} ({len(c)} addrs)")
 
 if __name__ == "__main__":
     run_save()

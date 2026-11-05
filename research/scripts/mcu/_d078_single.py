@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single-case trace Phase B 0x1d078: чистые входы, write-trace structB-полей."""
+"""Single-case trace Phase B 0x1d078: clean inputs, write-trace of structB fields."""
 import struct
 import sys
 
@@ -9,7 +9,7 @@ from func_verify import Run, RAM
 
 def main():
     run = Run(max_insn=500000)
-    # Чистые входы: F=0 (val=0), out1_new=out2_new=0, target=150, old_int=8000
+    # Clean inputs: F=0 (val=0), out1_new=out2_new=0, target=150, old_int=8000
     V, F = 60000, 0
     mode, f339, c326, m2t = 2, 0, 200, 150
     acc1 = out1 = acc2 = out2 = 0
@@ -47,13 +47,13 @@ def main():
     run.call(0x1D078, (), max_insn=400000)
     after = {o: rd(o, 2 if o in (0x2E,) else 4) for o in (0x2c, 0x58, 0x5c, 0x60, 0x64)}
 
-    print("входы: V=%d F=%d mode=%d c326=%d m2t=%d old_int=%d s2e=%d u1760=%d u224=%d"
+    print("inputs: V=%d F=%d mode=%d c326=%d m2t=%d old_int=%d s2e=%d u1760=%d u224=%d"
           % (V, F, mode, c326, m2t, old_int, s2e_old, u1760, u224))
-    print("ожидание модели: o1n=0,o2n=0,tgt=150 → INCREASE")
+    print("model expectation: o1n=0,o2n=0,tgt=150 -> INCREASE")
     print("  err=150, interim=5*150+8000=8750, adj=0, integral=8750")
     print("  clamp[8000,131040]: keep 8750 → S58=8750; S60=asr(8750,2)=2187")
     print("  output=P+S60=19200+2187=21387 → clamp→21387; tail(u1760=0): S58=0,S64=0,S2e=0")
-    print("\nполе   before  after")
+    print("\nfield   before  after")
     for o in (0x2c, 0x58, 0x5c, 0x60, 0x64, 0x2e):
         b = rd(o, 2 if o in (0x2E, 0x2C) else 4)
         a = after.get(o, rd(o, 2 if o in (0x2E,) else 4))

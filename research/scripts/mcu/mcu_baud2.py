@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Целенаправленный разбор кандидатов на UART/clock init (из mcu_baud.py sweep).
+"""Targeted analysis of UART/clock init candidates (from mcu_baud.py sweep).
 
-Для каждой функции печатаем ПОЛНУЮ последовательность записей в периферию
-(USART3/UART4/RCC) с pc — чтобы увидеть: куда реально пишут BRR, есть ли
-read-modify-write RCC, и не зависит ли BRR от прочитанного PCLK.
+For each function print FULL sequence of peripheral writes
+(USART3/UART4/RCC) with pc - to see where BRR is actually written, if there is
+read-modify-write on RCC, and if BRR depends on read PCLK.
 """
 import sys
 from pathlib import Path
@@ -27,7 +27,7 @@ CANDIDATES = [0x1e2f8, 0x11cb4, 0x016d4, 0x05bc4, 0x110fc, 0x0175c,
 
 def run_one(addr):
     emu = McuEmu(trace=False, max_insn=50000)
-    emu.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)   # все ready-биты = 1
+    emu.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)   # all ready bits = 1
     emu.uc.mem_write(SYS, bytes(SYS_SIZE))
     seq = []
     last_read = None
@@ -45,7 +45,7 @@ def run_one(addr):
             if lo <= address < lo + 0x40:
                 pc = uc.reg_read(UC_ARM_REG_PC)
                 key = (pc, nm, address - lo)
-                if key != last_read:          # дедупликация poll-циклов
+                if key != last_read:          # deduplicate poll loops
                     seq.append((pc, nm, address - lo, size, None))
                 last_read = key
                 break
@@ -65,7 +65,7 @@ def run_one(addr):
         else:
             print(f"  [pc=0x{pc:05x}] W {nm}.{NAMES.get(off, f'+0x{off:x}')} <- 0x{val:08x}")
     if not seq:
-        print("  (записей/чтений в USART3/UART4/RCC нет)")
+        print("  (no writes/reads in USART3/UART4/RCC)")
     del emu
 
 

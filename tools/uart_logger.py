@@ -1,12 +1,9 @@
 #!/usr/bin/env python
-"""Фоновый логгер активности UART-линии (USB-TTL): «были ли данные и когда».
+"""Background activity logger for UART line (USB-TTL).
 
-Циклически слушает порт по всем бод-рейтам (по --slot с на каждый) и пишет в
-JSONL-лог: HEARTBEAT (логгер жив) и DATA (пойманы байты: время, бод, hex).
-
-Запуск (в фоне):  python tools/uart_logger.py --port COM5          # лог: logs/uart_activity.log
-Остановка:        попросить ассистента убить процесс или Ctrl-C в его терминале.
-Анализ:           python tools/uart_logger.py --show logs/uart_activity.log
+Usage:
+  python tools/uart_logger.py --port COM5          # log: logs/uart_activity.log
+  python tools/uart_logger.py --show logs/uart_activity.log
 """
 import argparse
 import json
@@ -21,7 +18,7 @@ DEFAULT_OUT = os.path.join(ROOT, "logs", "uart_activity.log")
 try:
     import serial
 except ImportError:
-    sys.exit("нужен pyserial: pip install pyserial")
+    sys.exit("pyserial required: pip install pyserial")
 
 BAUDS = [115200, 9600, 19200, 38400, 57600, 230400, 460800, 921600, 4800, 2400]
 
@@ -59,7 +56,7 @@ def run(port, out_path, slot, minutes, sound=True):
     try:
         s = serial.Serial(port, BAUDS[0], timeout=1)
     except Exception as e:
-        w({"t": ts(), "ev": "ERROR", "msg": f"порт не открылся: {e}"})
+        w({"t": ts(), "ev": "ERROR", "msg": f"port failed to open: {e}"})
         return
     while time.time() < end:
         for b in BAUDS:
@@ -80,7 +77,7 @@ def run(port, out_path, slot, minutes, sound=True):
                 o = {"t": ts(), "ev": "DATA", "baud": b, "n": len(buf),
                      "raw": raw_name, "hex": bytes(buf[:64]).hex(" ")}
                 w(o)
-                print(f"*** ДАННЫЕ {o['t']}  baud={b}  n={len(buf)}  {o['hex'][:48]}  -> {raw_name}", flush=True)
+                print(f"*** DATA {o['t']}  baud={b}  n={len(buf)}  {o['hex'][:48]}  -> {raw_name}", flush=True)
         w({"t": ts(), "ev": "HEARTBEAT"})
         print(f"... {ts()}", flush=True)
     s.close()
@@ -104,26 +101,26 @@ def show(out_path):
                 data_lines += 1
                 first_data = first_data or o
                 last_data = o
-    print(f"лог: {out_path}")
-    print(f"heartbeats: {hb}, событий DATA: {data_lines}")
+    print(f"log: {out_path}")
+    print(f"heartbeats: {hb}, DATA events: {data_lines}")
     if first_data:
-        print(f"первое DATA : {first_data['t']}  baud={first_data['baud']} n={first_data['n']}")
+        print(f"first DATA : {first_data['t']}  baud={first_data['baud']} n={first_data['n']}")
         print(f"  {first_data['hex'][:80]}")
         if last_data is not first_data:
-            print(f"последнее DATA: {last_data['t']}  baud={last_data['baud']} n={last_data['n']}")
+            print(f"last DATA: {last_data['t']}  baud={last_data['baud']} n={last_data['n']}")
     else:
-        print("данных НЕ БЫЛО (линия молчала всё время логирования)")
+        print("NO DATA (line was silent throughout logging)")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM5")
     ap.add_argument("--out", default=DEFAULT_OUT)
-    ap.add_argument("--slot", type=float, default=3.0, help="секунд на бод-рейт")
-    ap.add_argument("--minutes", type=float, default=0, help="авто-стоп через N мин (0 = пока не убьют)")
-    ap.add_argument("--no-sound", action="store_true", help="без звукового сигнала")
-    ap.add_argument("--baud", type=int, default=0, help="один бод-рейт вместо sweep (напр. 19200)")
-    ap.add_argument("--show", metavar="LOG", help="показать сводку по лог-файлу и выйти")
+    ap.add_argument("--slot", type=float, default=3.0, help="seconds per baud rate")
+    ap.add_argument("--minutes", type=float, default=0, help="auto-stop after N min (0 = run until killed)")
+    ap.add_argument("--no-sound", action="store_true", help="disable audible beep")
+    ap.add_argument("--baud", type=int, default=0, help="single baud rate instead of sweep (e.g. 19200)")
+    ap.add_argument("--show", metavar="LOG", help="show summary of log file and exit")
     a = ap.parse_args()
     if a.show:
         show(a.show)

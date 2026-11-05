@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""A2 (USART TX): эмпирика — прогоняем сборщик 0x211f8 (без аргументов, читает
-фикс. RAM-поля) с seeded-RAM и ищем собранные кадры 61..9E в usart_out / TX-кольце."""
+"""A2 (USART TX): empirics — run builder 0x211f8 (no arguments, reads
+fixed RAM fields) with seeded-RAM and search for assembled frames 61..9E in usart_out / TX ring."""
 import sys, os, struct
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "emulator"))
 from mcu_emu import McuEmu, RAM, FLASH0, FLASH1, STACK_TOP
@@ -26,7 +26,7 @@ def find_frames(data):
 def run_and_scan(seed):
     emu = McuEmu(max_insn=400_000)
     uc = emu.uc
-    uc.mem_write(RAM, bytes(0x20000))     # чистая RAM
+    uc.mem_write(RAM, bytes(0x20000))     # clean RAM
     for off, val in seed.items():
         sz = (val.bit_length() + 7) // 8 or 1
         uc.mem_write(RAM + off, struct.pack('<%dI' % (sz//4 or 1), *([val] + [0]*(sz//4-1)))[:sz])
@@ -45,17 +45,17 @@ def run_and_scan(seed):
         except Exception as ex: print("   stop:", emu.stopped or ex)
     finally:
         uc.hook_del(sh)
-    print(f"   usart_out ({len(emu.usart_out)} Б): {bytes(emu.usart_out).hex(' ')[:120]}")
+    print(f"   usart_out ({len(emu.usart_out)} B): {bytes(emu.usart_out).hex(' ')[:120]}")
     uf = find_frames(bytes(emu.usart_out))
-    print(f"   кадров в usart_out: {len(uf)}")
-    # TX-кольцо @0x10b5 + окрестности
+    print(f"   frames in usart_out: {len(uf)}")
+    # TX ring @0x10b5 + surroundings
     ring = bytes(uc.mem_read(RAM + 0x1080, 0x120))
     rf = find_frames(ring)
-    print(f"   кадров в районе кольца @0x1080..+0x120: {len(rf)}")
+    print(f"   frames around ring @0x1080..+0x120: {len(rf)}")
     for f in (uf or rf)[:6]:
         print(f"     {f.hex(' ')}  sub=0x{f[1]:02x} len={f[2]}")
     return uf, rf
 
 if __name__ == "__main__":
-    print("=== seed: батарея 89% (@0x306), mode @0x229=2, u16@0x236=50 ===")
+    print("=== seed: battery 89% (@0x306), mode @0x229=2, u16@0x236=50 ===")
     run_and_scan({0x306: 89, 0x229: 2, 0x236: 50})

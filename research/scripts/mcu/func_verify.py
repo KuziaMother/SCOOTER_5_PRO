@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Эмуляторная верификация записей каталога ANALYZED_MCU (gen_maps.py).
+Emulator verification of ANALYZED_MCU catalog entries (gen_maps.py).
 
-Для каждой разобранной функции — свой тест: исполняем РЕАЛЬНЫЙ код на Unicorn
-случайными входами и сверяем результат с независимым Python-референсом
-(задокументированное поведение из REPORT.md/каталога).
+For each analyzed function — a dedicated test: execute REAL code on Unicorn
+with random inputs and compare result against an independent Python reference
+(documented behavior from REPORT.md/catalog).
 
-Запуск:  python -X utf8 research/scripts/mcu/func_verify.py [--only 0x126c] [--seed N]
-         python -X utf8 research/scripts/mcu/func_verify.py --list   # покрытые функции
+Run:     python -X utf8 research/scripts/mcu/func_verify.py [--only 0x126c] [--seed N]
+         python -X utf8 research/scripts/mcu/func_verify.py --list   # covered functions
 
-Добавление теста — функция в TESTS (декоратор @t(off, desc)):
+Adding a test — function in TESTS (decorator @t(off, desc)):
     @t(0x126C, 'u64 LSR')
     def _(run, rng):
         lo, hi, n = ...
@@ -43,32 +43,32 @@ M64 = 0xFFFFFFFFFFFFFFFF
 
 
 class Run:
-    """один экземпляр эмулятора на все тесты (чистые функции не портят состояние)"""
+    """Single emulator instance for all tests (pure functions do not corrupt state)"""
 
     def __init__(self, max_insn=500000):
-        # 500K — запас под wait-циклы с таймаутом (0xC8A4: до ~240K инстр.)
+        # 500K — margin for wait-loops with timeout (0xC8A4: up to ~240K insns)
         self.emu = McuEmu(max_insn=max_insn)
         self.uc = self.emu.uc
-        # периферия/SYS — нули (чистые функции к ним не обращаются;
-        # если обращение и есть — стоп по лимиту, тест упадёт с ошибкой)
+        # peripherals/SYS — zeros (pure functions do not access them;
+        # if an access occurs — stop on limit, test fails with error)
         self._stop_hook = None
-        # §57: последняя ошибка исполнения (None = чистый возврат).
-        # ВАЖНО: call() раньше молча глотал UcError — fault выглядел как
-        # «чистый возврат» со мусором в r0 (ловушка для верификации).
+        # Section 57: last execution error (None = clean return).
+        # IMPORTANT: call() previously silently swallowed UcError — fault looked like
+        # "clean return" with garbage in r0 (verification trap).
         self.last_error = None
 
     def call(self, off, args=(), max_insn=50000):
-        """вызвать функцию (Thumb), вернуть (r0, r1) на момент возврата"""
+        """Call function (Thumb), return (r0, r1) at the moment of return"""
         uc = self.uc
-        # ВАЖНО: сброс кумулятивного счётчика инструкций McuEmu —
-        # иначе после ~max_insn суммарных инструкций хук _h_code
-        # останавливает каждый новый вызов ДО первой инструкции
+        # IMPORTANT: reset cumulative instruction counter of McuEmu —
+        # otherwise after ~max_insn total instructions the _h_code hook
+        # stops each new call BEFORE the first instruction
         self.emu.insn = 0
         for r, v in zip((UC_ARM_REG_R0, UC_ARM_REG_R1,
                          UC_ARM_REG_R2, UC_ARM_REG_R3), args):
             uc.reg_write(r, v & M32)
         uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
-        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)   # возврат в незамапленное
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)   # return to unmapped memory
 
         def stop(uc_, addr, size, user):
             if not (FLASH0 <= addr < FLASH0 + FW_LEN or
@@ -84,8 +84,8 @@ class Run:
         return (uc.reg_read(UC_ARM_REG_R0) & M32, uc.reg_read(UC_ARM_REG_R1) & M32)
 
     def flags(self):
-        """CPSR-флаги после последнего вызова: (N, Z, C, V)
-        Архитектурное расположение битов ARM CPSR: N=31, Z=30, C=29, V=28"""
+        """CPSR flags after last call: (N, Z, C, V)
+        Architectural bit layout of ARM CPSR: N=31, Z=30, C=29, V=28"""
         cpsr = self.uc.reg_read(UC_ARM_REG_CPSR)
         return ((cpsr >> 31) & 1, (cpsr >> 30) & 1,
                 (cpsr >> 29) & 1, (cpsr >> 28) & 1)
@@ -96,7 +96,7 @@ class Run:
     def ram_read(self, off, size):
         return bytes(self.uc.mem_read(RAM + off, size))
 
-    # --- периферия (McuEmu мапит PERIPH/SYS как обычную память) ---
+    # --- peripherals (McuEmu maps PERIPH/SYS as normal memory) ---
     def periph_write(self, addr, val):
         self.uc.mem_write(addr, struct.pack('<I', val & M32))
 
@@ -105,7 +105,7 @@ class Run:
 
 
 # ---------------------------------------------------------------------------
-# референсы (независимые Python-модели задокументированного поведения)
+# references (independent Python models of documented behavior)
 # ---------------------------------------------------------------------------
 
 def ref_u64lsr(lo, hi, n):
@@ -122,32 +122,32 @@ def ref_u64asr(lo, hi, n):
     v = (hi << 32) | lo
     if v >= 1 << 63:
         v -= 1 << 64
-    q = v >> n                      # арифметический (floor для отриц.)
+    q = v >> n                      # arithmetic (floor for negative)
     return q & M32, (q >> 32) & M32
 
 
 def ref_scale_123e(lo, hi, r2):
-    """0x123e: r1' = (r1&0xFFFFF)|0x100000; масштаб u64 {r1':lo} на 2^(r2-0x433)"""
+    """0x123e: r1' = (r1&0xFFFFF)|0x100000; scale u64 {r1':lo} by 2^(r2-0x433)"""
     hp = ((hi & 0xFFFFF) | 0x100000) & M32
-    V = (hp << 32) | lo             # верхнее слово уже замаскировано!
+    V = (hp << 32) | lo             # high word is already masked!
     if r2 < 0x3FF:
-        return 0, hp                # сентинел {r1', 0}
+        return 0, hp                # sentinel {r1', 0}
     if r2 <= 0x433:
         P = V >> (0x433 - r2)
         return P & M32, P >> 32
     P = (V << (r2 - 0x433)) & M64
-    return P & M32, hp              # верхнее слово не меняется
+    return P & M32, hp              # high word does not change
 
 
 def ref_161ea(num, den, n):
-    """0x161ea(num, den, n) = floor((num/den) × 2^n) — точное фикс-деление (§52.1 эмуляторно)."""
+    """0x161ea(num, den, n) = floor((num/den) * 2^n) — exact fixed-division (§52.1 emulated)."""
     if den == 0:
         return 0
     return (num * (1 << n)) // den & M32
 
 
 def ref_seg_interp_unsigned(A, B, slope):
-    """сегмент 0x16938: ветка по UNSIGNED сравнению A vs B (bhi)"""
+    """segment 0x16938: branch on UNSIGNED comparison A vs B (bhi)"""
     if A > B:
         d = (A - B) & M32
         return (A - ((d * slope) >> 31)) & M32
@@ -156,7 +156,7 @@ def ref_seg_interp_unsigned(A, B, slope):
 
 
 def ref_seg_interp(A, B, slope):
-    """сегмент 0x16880/0x16938: ветка по SIGNED сравнению A=ys[r4], B=ys[r4+1] (bgt);
+    """segment 0x16880/0x16938: branch on SIGNED comparison A=ys[r4], B=ys[r4+1] (bgt);
     delta — wrapped u32; result = A ± (delta*slope)>>31"""
     sA = A - 0x100000000 if A >= 0x80000000 else A
     sB = B - 0x100000000 if B >= 0x80000000 else B
@@ -168,17 +168,17 @@ def ref_seg_interp(A, B, slope):
 
 
 def ref_scale_1a052(lo, hi, r2, r3):
-    """0x1a052: n = r2>>21; масштаб u64 на 2^(n-0x433), нижняя граница r3.
-    Внимание: в lsl-ветке r1 перезаписывается смещением (n-0x433)."""
+    """0x1a052: n = r2>>21; scale u64 by 2^(n-0x433), lower bound r3.
+    Note: in lsl branch r1 is overwritten with offset (n-0x433)."""
     n = (r2 & M32) >> 21
     V = (hi << 32) | lo
     if n < r3:
-        return 0, hi                # сентинел {0, r1} — r1 не меняется
+        return 0, hi                # sentinel {0, r1} — r1 does not change
     if n <= 0x433:
         P = V >> (0x433 - n)
         return P & M32, P >> 32
     P = (V << (n - 0x433)) & M64
-    return P & M32, (n - 0x433)     # r1 = смещение, не верхнее слово
+    return P & M32, (n - 0x433)     # r1 = offset, not high word
 
 
 def ref_mul64(a, b):
@@ -187,18 +187,18 @@ def ref_mul64(a, b):
 
 
 def ref_trunc_mul(a, b, n):
-    """0x1712c: низкие 32 бита (A*B >> n) — фиксированная точка"""
+    """0x1712c: low 32 bits (A*B >> n) — fixed point"""
     return ((a * b) >> n) & M32
 
 
 def ref_prod_check(a, b):
-    """0x17150: (P_hi==0) ? P_lo : -1 — «умещается ли произведение в 32 бита»"""
+    """0x17150: (P_hi==0) ? P_lo : -1 — "does product fit in 32 bits" """
     P = a * b
     return (P & M32) if (P >> 32) == 0 else M32
 
 
 def ref_u64add_round(a_lo, a_hi, b_lo, b_hi):
-    """0x128c/0x1a16a: A += 1; B <<= 1 (если B<0); если B стало 0 → A &= ~1"""
+    """0x128c/0x1a16a: A += 1; B <<= 1 (if B<0); if B became 0 -> A &= ~1"""
     A = ((a_hi << 32) | a_lo) & M64
     B = ((b_hi << 32) | b_lo) & M64
     if B >= 1 << 63:                # signed < 0
@@ -210,7 +210,7 @@ def ref_u64add_round(a_lo, a_hi, b_lo, b_hi):
 
 
 def ref_sdiv32(a, b):
-    """0x16222: signed div u32 с округлением до ближайшего (ties up)"""
+    """0x16222: signed div u32 with rounding to nearest (ties up)"""
     if b == 0:
         return None
     q = abs(a) // abs(b)
@@ -239,13 +239,13 @@ def ref_sdiv64(d_lo, d_hi, s_lo, s_hi):
 
 
 def ref_avg16(buf, start, cnt):
-    """0x5044: среднее u16-массива (целочисленное)"""
+    """0x5044: average of u16 array (integer)"""
     s = sum(struct.unpack_from('<%dH' % cnt, buf, start * 2))
     return s // cnt & M32
 
 
 def ref_grid_snap(minv, step, maxq, val):
-    """0xdd2c: clamp + снап на сетку min+step*q (округление до ближайшего)"""
+    """0xdd2c: clamp + grid snap min+step*q (rounding to nearest)"""
     mx = minv + step * maxq
     if val < minv:
         return minv
@@ -253,14 +253,14 @@ def ref_grid_snap(minv, step, maxq, val):
         return mx
     d = val - minv
     q, rem = divmod(d, step)
-    if 2 * rem > step:              # bhi — строгое
+    if 2 * rem > step:              # bhi — strict
         q += 1
     q = min(q, maxq)
     return minv + step * q
 
 
 def ref_crc32_step(byte, state):
-    """0x1a838: crc = (state<<24)^byte; 8 бит MSB-first, poly 0x04C11DB7"""
+    """0x1a838: crc = (state<<24)^byte; 8-bit MSB-first, poly 0x04C11DB7"""
     crc = ((state << 24) ^ byte) & M32
     for _ in range(8):
         crc = (((crc << 1) ^ 0x04C11DB7) if crc & 0x80000000 else (crc << 1)) & M32
@@ -268,8 +268,8 @@ def ref_crc32_step(byte, state):
 
 
 def ref_crc16(buf, poly=0x1021):
-    """CRC-16/CCITT-FALSE: poly 0x1021, init 0, MSB-first, без xorout
-    (корректировка §50.7: в каталоге ошибочно было «poly 0xA001»)"""
+    """CRC-16/CCITT-FALSE: poly 0x1021, init 0, MSB-first, no xorout
+    (correction §50.7: catalog erroneously had "poly 0xA001")"""
     crc = 0
     for b in buf:
         crc ^= b << 8
@@ -290,7 +290,7 @@ def ref_crc8(buf, poly=0x2F):
 
 
 def ref_crc7_port(byte, state):
-    """точный порт ассемблера 0x3c7c: r0 ^= byte; 8×: (r0<<1)&0xFF ^ (msb?7:0)"""
+    """exact port of assembly 0x3c7c: r0 ^= byte; 8x: (r0<<1)&0xFF ^ (msb?7:0)"""
     r0 = (state ^ byte) & 0xFF
     for _ in range(8):
         if r0 & 0x80:
@@ -301,7 +301,7 @@ def ref_crc7_port(byte, state):
 
 
 def ref_bcd2bin(b):
-    """0xc9a8: hi*10 + lo — десятичное значение BCD-байта"""
+    """0xc9a8: hi*10 + lo — decimal value of BCD byte"""
     hi, lo = b >> 4, b & 0xF
     return hi * 10 + lo
 
@@ -316,7 +316,7 @@ def ref_bin2bcd(v):
 
 
 # ---------------------------------------------------------------------------
-# тесты
+# tests
 # ---------------------------------------------------------------------------
 
 TESTS = []
@@ -329,9 +329,9 @@ def t(off, desc):
     return deco
 
 
-# --- u64-сдвиги (кластер, скорректирован в §50.6) ---
+# --- u64 shifts (cluster, corrected in §50.6) ---
 
-@t(0x161EA, 'фикс-деление: floor((r0/r1) × 2^r2)')
+@t(0x161EA, 'fixed-division: floor((r0/r1) * 2^r2)')
 def _(run, rng):
     num = rng.getrandbits(32)
     den = rng.getrandbits(32) or 1
@@ -349,7 +349,7 @@ def _(run, rng):
         f'({lo:#x},{hi:#x},{n}) → ({r0:#x},{r1:#x})'
 
 
-@t(0x1A0A0, 'u64 LSR — копия 0x126c')
+@t(0x1A0A0, 'u64 LSR — copy of 0x126c')
 def _(run, rng):
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([0, 1, 31, 32, 63])
@@ -376,9 +376,9 @@ def _(run, rng):
         f'({lo:#x},{hi:#x},{n}) → ({r0:#x},{r1:#x})'
 
 
-# --- u64-масштабирование 2^(n-0x433) ---
+# --- u64 scaling 2^(n-0x433) ---
 
-@t(0x123E, 'u64 масштаб 2^(r2-0x433), окно [0x3FF..]')
+@t(0x123E, 'u64 scale 2^(r2-0x433), window [0x3FF..]')
 def _(run, rng):
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     r2 = rng.choice([0x300, 0x3FE, 0x3FF, 0x400, 0x432, 0x433, 0x434, 0x450, 0x500])
@@ -387,11 +387,11 @@ def _(run, rng):
         f'({lo:#x},{hi:#x},{r2:#x}) → ({r0:#x},{r1:#x})'
 
 
-@t(0x1A052, 'u64 масштаб 2^(n-0x433), n = r2>>21, floor r3')
+@t(0x1A052, 'u64 scale 2^(n-0x433), n = r2>>21, floor r3')
 def _(run, rng):
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
-    # безопасные n: сырой сдвиг в u64lsr = (0x433-n)-32 должен быть < 256
-    # или ((s&0xFF)>28) — иначе баг Unicorn со сдвигами по регистру (см. §50.7)
+    # safe n: raw shift in u64lsr = (0x433-n)-32 must be < 256
+    # or ((s&0xFF)>28) — otherwise Unicorn bug with register shifts (see §50.7)
     n = rng.choice([0x314, 0x3FF, 0x400, 0x433, 0x434, 0x500])
     r3 = rng.choice([0, 1, 0x3FF, 0x433])
     r2 = (n << 21) | rng.getrandbits(21)
@@ -400,9 +400,9 @@ def _(run, rng):
         f'({lo:#x},{hi:#x},{r2:#x},{r3:#x}) → ({r0:#x},{r1:#x})'
 
 
-# --- умножение u32×u32→u64 и производные ---
+# --- multiplication u32*u32->u64 and derivatives ---
 
-@t(0x172B8, 'u32×u32 → u64: [r2]=HIGH, [r3]=LOW (указатели перепутаны!)')
+@t(0x172B8, 'u32*u32 -> u64: [r2]=HIGH, [r3]=LOW (pointers swapped!)')
 def _(run, rng):
     a, b = rng.getrandbits(32), rng.getrandbits(32)
     p_lo, p_hi = RAM + 0x19000, RAM + 0x19004
@@ -410,10 +410,10 @@ def _(run, rng):
     got = struct.unpack_from('<II', run.ram_read(0x19000, 8))
     exp_lo, exp_hi = ref_mul64(a, b)
     assert got == (exp_hi, exp_lo), \
-        f'({a:#x},{b:#x}) → {[hex(x) for x in got]}, ждали hi/lo {(hex(exp_hi), hex(exp_lo))}'
+        f'({a:#x},{b:#x}) -> {[hex(x) for x in got]}, expected hi/lo {(hex(exp_hi), hex(exp_lo))}'
 
 
-@t(0x1712C, 'урезанное умножение: верх/низ (32-n) бит P')
+@t(0x1712C, 'truncated multiplication: high/low (32-n) bits of P')
 def _(run, rng):
     a, b = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([1, 4, 8, 16, 24, 31])
@@ -421,16 +421,16 @@ def _(run, rng):
     assert r0 == ref_trunc_mul(a, b, n), f'({a:#x},{b:#x},{n}) → {r0:#x}'
 
 
-@t(0x17150, 'проверка произведения: (P_hi==0)? P_lo : -1')
+@t(0x17150, 'product check: (P_hi==0)? P_lo : -1')
 def _(run, rng):
-    # микс: большие (переполнение) и малые (умещается)
+    # mix: large (overflow) and small (fits)
     a = rng.choice([rng.getrandbits(32), rng.getrandbits(12)])
     b = rng.choice([rng.getrandbits(32), rng.getrandbits(12)])
     r0, _ = run.call(0x17150, (a, b))
     assert r0 == ref_prod_check(a, b), f'({a:#x},{b:#x}) → {r0:#x}'
 
 
-# --- сравнение signed u64 (флаги) ---
+# --- signed u64 comparison (flags) ---
 
 @t(0x1494, 'cmp g(a) vs g(b): g(x)=x if x≥2^63 else 2^63-x (float 0x16040: bhs ⇔ a≤b)')
 def _(run, rng):
@@ -439,7 +439,7 @@ def _(run, rng):
     run.call(0x1494, (a & M32, a >> 32, b & M32, b >> 32))
     n, z, c, v = run.flags()
     def g(x):
-        # отрицательные (bit63=1) — без изменения; неотрицательные — 2^63-x
+        # negative (bit63=1) — unchanged; non-negative — 2^63-x
         return x if x >= (1 << 63) else ((1 << 63) - x) & M64
     ga, gb = g(a), g(b)
     def cmpf(x, y):
@@ -450,10 +450,10 @@ def _(run, rng):
     hi_b, lo_b = gb >> 32, gb & M32
     exp = cmpf(lo_a, lo_b) if hi_a == hi_b else cmpf(hi_a, hi_b)
     assert (n, z, c, v) == exp, \
-        f'a={a:#x} b={b:#x} → flags {(n,z,c,v)}, ждали {exp}'
+        f'a={a:#x} b={b:#x} -> flags {(n,z,c,v)}, expected {exp}'
 
 
-# --- u64 add с округлением ---
+# --- u64 add with rounding ---
 
 @t(0x128C, 'u64 add-round (B<0: A+=1, B<<=1; B==0: A&=~1)')
 def _(run, rng):
@@ -463,7 +463,7 @@ def _(run, rng):
         f'({alo:#x},{ahi:#x},{blo:#x},{bhi:#x}) → ({r0:#x},{r1:#x})'
 
 
-@t(0x1A16A, 'u64 add-round — копия 0x128c')
+@t(0x1A16A, 'u64 add-round — copy of 0x128c')
 def _(run, rng):
     alo, ahi, blo, bhi = (rng.getrandbits(32) for _ in range(4))
     r0, r1 = run.call(0x1A16A, (alo, ahi, blo, bhi))
@@ -471,31 +471,31 @@ def _(run, rng):
         f'({alo:#x},{ahi:#x},{blo:#x},{bhi:#x}) → ({r0:#x},{r1:#x})'
 
 
-# --- деление ---
+# --- division ---
 
-@t(0x16222, 'sdiv u32, округление до ближайшего (ties up)')
+@t(0x16222, 'sdiv u32, round to nearest (ties up)')
 def _(run, rng):
     a = rng.randint(-(1 << 31), (1 << 31) - 1)
     b = rng.choice([1, -1, 2, -2, 3, 7, -7])
     r0, _ = run.call(0x16222, (a & M32, b & M32))
     exp = ref_sdiv32(a, b)
-    assert r0 == exp, f'({a},{b}) → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'({a},{b}) -> {r0:#x}, expected {exp:#x}'
 
 
-@t(0x19A1C, 'sdiv u64 → (q {r1:r0}, rem {r3:r2}), trunc к нулю')
+@t(0x19A1C, 'sdiv u64 -> (q {r1:r0}, rem {r3:r2}), trunc toward zero')
 def _(run, rng):
     d = rng.randint(-(1 << 63), (1 << 63) - 1)
     s = rng.choice([1, -1, 2, -2, 3, 5, -5, 1000, -1000])
     r0, r1 = run.call(0x19A1C, (d & M32, d >> 32, s & M32, s >> 32))
-    # остаток читаем из r2/r3 — допишем в Run.call позже если нужно;
-    # пока сверяем только частное
+    # remainder is read from r2/r3 — will add to Run.call later if needed;
+    # for now comparing only quotient
     exp_q, _ = ref_sdiv64(d & M32, d >> 32, s & M32, s >> 32)
-    assert (r0, r1) == exp_q, f'({d},{s}) → ({r0:#x},{r1:#x}), ждали {exp_q}'
+    assert (r0, r1) == exp_q, f'({d},{s}) -> ({r0:#x},{r1:#x}), expected {exp_q}'
 
 
-# --- среднее u16 ---
+# --- average u16 ---
 
-@t(0x5044, 'среднее u16-массива (целое)')
+@t(0x5044, 'average of u16 array (integer)')
 def _(run, rng):
     start = rng.randint(0, 8)
     cnt = rng.randint(1, 16)
@@ -504,12 +504,12 @@ def _(run, rng):
     run.ram_write(0x19100, buf)
     r0, _ = run.call(0x5044, (RAM + 0x19100, start, cnt))
     exp = ref_avg16(buf, start, cnt)
-    assert r0 == exp, f'start={start} cnt={cnt} buf={buf.hex()} → {r0}, ждали {exp}'
+    assert r0 == exp, f'start={start} cnt={cnt} buf={buf.hex()} -> {r0}, expected {exp}'
 
 
-# --- снап на сетку ---
+# --- grid snap ---
 
-@t(0xDD2C, 'clamp + снап на сетку min+step*q')
+@t(0xDD2C, 'clamp + grid snap min+step*q')
 def _(run, rng):
     minv = rng.getrandbits(20)
     step = rng.randint(1, 0xFFF)
@@ -517,10 +517,10 @@ def _(run, rng):
     val = rng.randint(minv - 0x100, minv + step * maxq + 0x100)
     r0, _ = run.call(0xDD2C, (minv, step, maxq, val))
     exp = ref_grid_snap(minv, step, maxq, val)
-    assert r0 == exp, f'(min={minv},step={step},maxq={maxq},val={val}) → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'(min={minv},step={step},maxq={maxq},val={val}) -> {r0:#x}, expected {exp:#x}'
 
 
-# --- CRC-семья ---
+# --- CRC family ---
 
 @t(0x1A838, 'CRC-32 byte-step: (state<<24)^byte, MSB-first, poly 0x04C11DB7')
 def _(run, rng):
@@ -528,60 +528,60 @@ def _(run, rng):
     state = rng.getrandbits(32)
     r0, _ = run.call(0x1A838, (byte, state))
     exp = ref_crc32_step(byte, state)
-    assert r0 == exp, f'(byte={byte:#x},state={state:#x}) → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'(byte={byte:#x},state={state:#x}) -> {r0:#x}, expected {exp:#x}'
 
 
-@t(0xAAD0, 'CRC-16/CCITT-FALSE буфер (poly 0x1021, init 0)')
+@t(0xAAD0, 'CRC-16/CCITT-FALSE buffer (poly 0x1021, init 0)')
 def _(run, rng):
     buf = bytes(rng.getrandbits(8) for _ in range(rng.randint(1, 32)))
     run.ram_write(0x19200, buf)
     r0, _ = run.call(0xAAD0, (RAM + 0x19200, len(buf)))
     exp = ref_crc16(buf)
-    assert r0 == exp, f'buf={buf.hex()} → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'buf={buf.hex()} -> {r0:#x}, expected {exp:#x}'
 
 
-@t(0x87F8, 'CRC-8 буфер: poly 0x2F, MSB-first, init 0')
+@t(0x87F8, 'CRC-8 buffer: poly 0x2F, MSB-first, init 0')
 def _(run, rng):
     buf = bytes(rng.getrandbits(8) for _ in range(rng.randint(1, 32)))
     run.ram_write(0x19200, buf)
     r0, _ = run.call(0x87F8, (RAM + 0x19200, len(buf)))
     exp = ref_crc8(buf)
-    assert r0 == exp, f'buf={buf.hex()} → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'buf={buf.hex()} -> {r0:#x}, expected {exp:#x}'
 
 
-@t(0x3C7C, 'CRC-7 byte-step (порт ассемблера; сверка с poly 0x09)')
+@t(0x3C7C, 'CRC-7 byte-step (assembly port; verification with poly 0x09)')
 def _(run, rng):
     byte = rng.getrandbits(8)
     state = rng.getrandbits(8)
     r0, _ = run.call(0x3C7C, (byte, state))
     exp = ref_crc7_port(byte, state)
-    assert r0 == exp, f'(byte={byte:#x},state={state:#x}) → {r0:#x}, ждали {exp:#x}'
+    assert r0 == exp, f'(byte={byte:#x},state={state:#x}) -> {r0:#x}, expected {exp:#x}'
 
 
-# --- BCD-пара ---
+# --- BCD pair ---
 
-@t(0xC9A8, 'BCD→binary (один байт: hi*5+lo)')
+@t(0xC9A8, 'BCD->binary (single byte: hi*5+lo)')
 def _(run, rng):
     b = rng.getrandbits(8)
     r0, _ = run.call(0xC9A8, (b,))
-    assert r0 == ref_bcd2bin(b), f'({b:#x}) → {r0}, ждали {ref_bcd2bin(b)}'
+    assert r0 == ref_bcd2bin(b), f'({b:#x}) -> {r0}, expected {ref_bcd2bin(b)}'
 
 
-@t(0xC9BE, 'binary→BCD (0..99 → BCD-байт)')
+@t(0xC9BE, 'binary->BCD (0..99 -> BCD byte)')
 def _(run, rng):
     v = rng.randint(0, 99)
     r0, _ = run.call(0xC9BE, (v,))
-    assert r0 == ref_bin2bcd(v), f'({v}) → {r0:#x}, ждали {ref_bin2bcd(v):#x}'
+    assert r0 == ref_bin2bcd(v), f'({v}) -> {r0:#x}, expected {ref_bin2bcd(v):#x}'
 
 
 # ===========================================================================
-# БАТЧ 2: RAM-accessors, set/clear-биты, структуры, memset, периферия RCC/FLASH
+# BATCH 2: RAM accessors, set/clear bits, structs, memset, RCC/FLASH peripherals
 # ===========================================================================
 
-RCC = 0x40021000      # база RCC (CFGR0=+4, CTLR=+0, ext=+0x60)
-FLASH = 0x40022000    # база FLASH (CTLR=+0, SR=+0xC, SCBR=+0x10)
+RCC = 0x40021000      # RCC base (CFGR0=+4, CTLR=+0, ext=+0x60)
+FLASH = 0x40022000    # FLASH base (CTLR=+0, SR=+0xC, SCBR=+0x10)
 
-# --- простые getter'ы/setter'ы по указателю ---
+# --- simple pointer getters/setters ---
 
 @t(0x7FD4, 'getter byte: r0 = u8@r0')
 def _(run, rng):
@@ -606,7 +606,7 @@ def _(run, rng):
     assert r0 == v, f'({v:#x}) → {r0:#x}'
 
 
-@t(0x99B4, 'getter byte из u16@+0x10')
+@t(0x99B4, 'getter byte from u16@+0x10')
 def _(run, rng):
     v = rng.getrandbits(16)
     buf = bytearray(0x12)
@@ -651,7 +651,7 @@ def _(run, rng):
     assert struct.unpack_from('<I', run.ram_read(0x19470, 0x20), 0x10)[0] == (v if mode else 0)
 
 
-# --- проверка масок (return 0/1) ---
+# --- mask check (return 0/1) ---
 
 @t(0x87C8, 'mask check: (*(u32*[r0+0x10]) & r1) != 0')
 def _(run, rng):
@@ -671,9 +671,9 @@ def _(run, rng):
     assert r0 == (1 if (val & mask) else 0), f'val={val:#x} mask={mask:#x} → {r0}'
 
 
-# --- set/clear битов/масок ---
+# --- set/clear bits/masks ---
 
-# таблица set/clear-функций: адрес → маска (hardcoded; аргументы: r0=ptr, r1=mode)
+# table of set/clear functions: address -> mask (hardcoded; args: r0=ptr, r1=mode)
 _SETCLR = {
     0x97CA: 0x400,
     0x982C: 0x001,
@@ -689,14 +689,14 @@ def _mk_setclear(off, mask):
         run.call(off, (RAM + 0x194A0, mode))
         exp = (init | mask) if mode else (init & ~mask & 0xFFFF)
         got = struct.unpack_from('<H', run.ram_read(0x194A0, 2))[0]
-        assert got == exp, f'init={init:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+        assert got == exp, f'init={init:#x} mode={mode} -> {got:#x}, expected {exp:#x}'
     return _
 
 for _off, _mask in _SETCLR.items():
-    globals()['_t_' + format(_off, 'x')] = t(_off, f'set/clear {_mask:#x} в u16@r0 (mode=r1)')(_mk_setclear(_off, _mask))
+    globals()['_t_' + format(_off, 'x')] = t(_off, f'set/clear {_mask:#x} in u16@r0 (mode=r1)')(_mk_setclear(_off, _mask))
 
 
-@t(0x97E2, 'set/clear mask в u16@+4 (mask=r1, mode=r2)')
+@t(0x97E2, 'set/clear mask in u16@+4 (mask=r1, mode=r2)')
 def _(run, rng):
     init = rng.getrandbits(16)
     mask = rng.getrandbits(16)
@@ -708,7 +708,7 @@ def _(run, rng):
     assert got == (exp & 0xFFFF), f'init={init:#x} mask={mask:#x} mode={mode} → {got:#x}'
 
 
-@t(0x99BC, 'u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = ВХОДНОЕ значение!')
+@t(0x99BC, 'u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = INPUT value!')
 def _(run, rng):
     val = rng.getrandbits(16)
     mode = rng.getrandbits(1)
@@ -716,22 +716,22 @@ def _(run, rng):
     run.call(0x99BC, (RAM + 0x194C0, val, mode))
     exp = (val | 1) if mode else (val & ~1 & 0xFFFF)
     got = struct.unpack_from('<H', run.ram_read(0x194C0, 0x12), 0x10)[0]
-    assert got == exp, f'val={val:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+    assert got == exp, f'val={val:#x} mode={mode} -> {got:#x}, expected {exp:#x}'
 
 
-@t(0x4F38, 'set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (ТРУНКИРОВАНИЕ до u16!)')
+@t(0x4F38, 'set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (TRUNCATION to u16!)')
 def _(run, rng):
     init = rng.getrandbits(32)
     mode = rng.getrandbits(1)
     run.ram_write(0x194D0, struct.pack('<I', init))
     run.call(0x4F38, (RAM + 0x194D0, mode))
-    # асимметрия: set — полное u32, clear — маска 0xFFFE (старшие 16 бит сбрасываются)
+    # asymmetry: set — full u32, clear — mask 0xFFFE (high 16 bits cleared)
     exp = (init | 1) if mode else (init & 0xFFFE)
     got = struct.unpack_from('<I', run.ram_read(0x194D0, 4))[0]
-    assert got == (exp & M32), f'init={init:#x} mode={mode} → {got:#x}, ждали {exp:#x}'
+    assert got == (exp & M32), f'init={init:#x} mode={mode} -> {got:#x}, expected {exp:#x}'
 
 
-# --- структуры ---
+# --- structs ---
 
 @t(0xC464, 'struct write {u32=r1,+4=0,+5=0,+6=r2,+7=r3} → 1')
 def _(run, rng):
@@ -781,7 +781,7 @@ def _(run, rng):
     assert buf[:n] == bytes([v]) * n
 
 
-# --- былые пути (без периферийных циклов) ---
+# --- early paths (without peripheral loops) ---
 
 @t(0x6304, 'fast path: (r0&3)!=0 → 9')
 def _(run, rng):
@@ -791,7 +791,7 @@ def _(run, rng):
     assert r0 == 9, f'({v:#x}) → {r0}'
 
 
-@t(0x2E0C, 'arg0==0 или arg1==0 → 1')
+@t(0x2E0C, 'arg0==0 or arg1==0 -> 1')
 def _(run, rng):
     r0, _ = run.call(0x2E0C, (0, rng.getrandbits(32)))
     assert r0 == 1, f'(0, *) → {r0}'
@@ -799,9 +799,9 @@ def _(run, rng):
     assert r0 == 1, f'(*, 0) → {r0}'
 
 
-# --- RCC (предзапись значений в PERIPH) ---
+# --- RCC (pre-writing values to PERIPH) ---
 
-@t(0xC894, 'RCC_CFGR0 & 0xC (AHB-прескалер)')
+@t(0xC894, 'RCC_CFGR0 & 0xC (AHB prescaler)')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.periph_write(RCC + 4, v)
@@ -849,7 +849,7 @@ def _(run, rng):
     assert run.periph_read(RCC + 4) == exp
 
 
-@t(0x225C4, 'set/clear mask в RCC_CTLR (mode=r1)')
+@t(0x225C4, 'set/clear mask in RCC_CTLR (mode=r1)')
 def _(run, rng):
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
@@ -860,7 +860,7 @@ def _(run, rng):
     assert run.periph_read(RCC + 0) == (exp & M32)
 
 
-@t(0x225DC, 'set/clear mask в RCC+0x60 (mode=r1)')
+@t(0x225DC, 'set/clear mask in RCC+0x60 (mode=r1)')
 def _(run, rng):
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
@@ -871,7 +871,7 @@ def _(run, rng):
     assert run.periph_read(RCC + 0x60) == (exp & M32)
 
 
-# --- FLASH (предзапись значений в PERIPH) ---
+# --- FLASH (pre-writing values to PERIPH) ---
 
 @t(0x62D4, 'FLASH_SCBR |= 0x80')
 def _(run, rng):
@@ -923,13 +923,13 @@ def _(run, rng):
 
 
 # ===========================================================================
-# БАТЧ 3: fixed-address getter'ы, RCC-семья, wait-циклы, драйвер @0x40003000
+# BATCH 3: fixed-address getters, RCC family, wait-loops, driver @0x40003000
 # ===========================================================================
 
-DRV = 0x40003000      # таинственный драйвер (§48/§49)
-AFIO_EXTI = 0x40010414  # AFIO-зона (0x5970)
+DRV = 0x40003000      # mystery driver (§48/§49)
+AFIO_EXTI = 0x40010414  # AFIO zone (0x5970)
 
-# --- fixed-address getter'ы (пул = константа RAM, НЕ двойная индирекция) ---
+# --- fixed-address getters (pool = RAM constant, NOT double indirection) ---
 
 @t(0x8878, 'getter byte@RAM[0x128]')
 def _(run, rng):
@@ -955,7 +955,7 @@ def _(run, rng):
     assert r0 == v, f'({v:#x}) → {r0:#x}'
 
 
-@t(0x8E14, 'getter byte@RAM[0x1378] (пул 0x20001359 + 0x1F)')
+@t(0x8E14, 'getter byte@RAM[0x1378] (pool 0x20001359 + 0x1F)')
 def _(run, rng):
     b = rng.getrandbits(8)
     run.ram_write(0x1378, bytes([b]))
@@ -971,7 +971,7 @@ def _(run, rng):
     assert r0 == b, f'({b:#x}) → {r0:#x}'
 
 
-@t(0x833C, 'getter byte@RAM[0xC8D] (флаг 0x8xxx-драйвера)')
+@t(0x833C, 'getter byte@RAM[0xC8D] (0x8xxx driver flag)')
 def _(run, rng):
     b = rng.getrandbits(8)
     run.ram_write(0xC8D, bytes([b]))
@@ -979,7 +979,7 @@ def _(run, rng):
     assert r0 == b, f'({b:#x}) → {r0:#x}'
 
 
-@t(0x21C0C, 'getter u32@RAM[0x2C] (пул 0x20000028 + 4; НЕ двойная индирекция!)')
+@t(0x21C0C, 'getter u32@RAM[0x2C] (pool 0x20000028 + 4; NOT double indirection!)')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.ram_write(0x2C, struct.pack('<I', v))
@@ -987,7 +987,7 @@ def _(run, rng):
     assert r0 == v, f'({v:#x}) → {r0:#x}'
 
 
-@t(0x8A44, 'getter u32@RAM[0xF6A] (пул 0x20000F64 + 6; НЕ *(u32)+6!)')
+@t(0x8A44, 'getter u32@RAM[0xF6A] (pool 0x20000F64 + 6; NOT *(u32)+6!)')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.ram_write(0xF6A, struct.pack('<I', v))
@@ -995,7 +995,7 @@ def _(run, rng):
     assert r0 == v, f'({v:#x}) → {r0:#x}'
 
 
-# --- u16-accessors по указателю ---
+# --- u16 accessors by pointer ---
 
 @t(0x1072A, 'getter u16 @+0xC')
 def _(run, rng):
@@ -1037,10 +1037,10 @@ def _mk_rcc_setclear(off, reg_off):
 
 for _off, _ro in ((0xC6C4, 0xC), (0xC684, 0x10), (0xC624, 0x14), (0xC6A4, 0x18)):
     globals()['_t_rcc_' + format(_off, 'x')] = t(
-        _off, f'set/clear mask в RCC+{_ro:#x} (mode=r1)')(_mk_rcc_setclear(_off, _ro))
+        _off, f'set/clear mask in RCC+{_ro:#x} (mode=r1)')(_mk_rcc_setclear(_off, _ro))
 
 
-@t(0xC518, 'RCC_CTLR bit0 (HSI/HSE-ON) := (r0==1) — сначала always-clear')
+@t(0xC518, 'RCC_CTLR bit0 (HSI/HSE-ON) := (r0==1) — initially always-clear')
 def _(run, rng):
     init = rng.getrandbits(32)
     mode = rng.getrandbits(1)
@@ -1050,7 +1050,7 @@ def _(run, rng):
     assert run.periph_read(RCC + 0) == exp, f'init={init:#x} mode={mode}'
 
 
-# --- RCC flag check: group=r0>>5 (1=CTLR, 2=+0x20, иначе +0x24), bit=r0&0x1F ---
+# --- RCC flag check: group=r0>>5 (1=CTLR, 2=+0x20, else +0x24), bit=r0&0x1F ---
 
 @t(0xC858, 'RCC flag check: group/bit decode')
 def _(run, rng):
@@ -1064,21 +1064,21 @@ def _(run, rng):
     roff = {1: 0, 2: 0x20}.get(group, 0x24)
     exp = 1 if (regs[roff] >> bit) & 1 else 0
     r0, _ = run.call(0xC858, (arg,))
-    assert r0 == exp, f'group={group} bit={bit} arg={arg:#x} → {r0}, ждали {exp}'
+    assert r0 == exp, f'group={group} bit={bit} arg={arg:#x} -> {r0}, expected {exp}'
 
 
-# --- wait-циклы с таймаутом (флаг предзаписан или нет) ---
+# --- wait-loops with timeout (flag pre-written or not) ---
 
-# Аргумент 0xc858: (group<<5 | bit), group: 1=CTLR(+0), 2=+0x20, иначе +0x24.
+# Argument 0xc858: (group<<5 | bit), group: 1=CTLR(+0), 2=+0x20, else +0x24.
 # 0xC8A4: arg 0x31 = 49 → group 49>>5 = 1 (CTLR), bit 49&0x1F = 17
-# 0xC8DC: arg 0x21 = 33 → group 33>>5 = 1 (CTLR!), bit 1 — это HSERDY, НЕ +0x24!
+# 0xC8DC: arg 0x21 = 33 -> group 33>>5 = 1 (CTLR!), bit 1 is HSERDY, NOT +0x24!
 # 0xC914: arg 0x63 = 99 → group 99>>5 = 3 (+0x24), bit 3
 
 @t(0xC8A4, 'wait CTLR bit17 (arg 0x31), timeout 0x2000 → 0/1')
 def _(run, rng):
     flag = rng.getrandbits(1)
     run.periph_write(RCC + 0, (rng.getrandbits(32) & ~0x20000) | (flag << 17))
-    # таймаут-ветка: 8192 итерации × ~29 инстр ≈ 240K — нужен большой бюджет
+    # timeout branch: 8192 iterations * ~29 insns ≈ 240K — large budget needed
     r0, _ = run.call(0xC8A4, (), max_insn=300000)
     assert r0 == flag, f'flag={flag} → {r0}'
 
@@ -1099,20 +1099,20 @@ def _(run, rng):
     assert r0 == flag, f'flag={flag} → {r0}'
 
 
-# --- HSE enable: failure path (HSERDY не появился за 0x500) ---
+# --- HSE enable: failure path (HSERDY did not appear within 0x500) ---
 
-@t(0x10ABC, 'HSE on + wait; timeout → fallback 0x003D0900 в RAM[0xB88], return константа')
+@t(0x10ABC, 'HSE on + wait; timeout -> fallback 0x003D0900 in RAM[0xB88], return constant')
 def _(run, rng):
-    run.periph_write(RCC + 0, rng.getrandbits(32) & ~2)  # без HSERDY (bit1)
+    run.periph_write(RCC + 0, rng.getrandbits(32) & ~2)  # without HSERDY (bit1)
     run.ram_write(0xB88, struct.pack('<I', 0))
     r0, _ = run.call(0x10ABC, ())
-    assert run.periph_read(RCC + 0) & 1, 'CTLR bit0 (HSEON) должен быть установлен'
+    assert run.periph_read(RCC + 0) & 1, 'CTLR bit0 (HSEON) must be set'
     assert run.ram_read(0xB88, 4) == struct.pack('<I', 0x003D0900), \
         f'fallback: {run.ram_read(0xB88, 4).hex()}'
     assert r0 == 0x003D0900, f'return {r0:#x}'
 
 
-# --- RCC-сеттеры ---
+# --- RCC setters ---
 
 @t(0xC5B0, 'combined setter: CFGR0=(CFGR0&0xF7C0FFFF)|X; +0x40=((+0x40)&~3)|Y')
 def _(run, rng):
@@ -1149,23 +1149,23 @@ def _(run, rng):
     assert run.periph_read(RCC + 0x24) == exp, f'init={init:#x} a1={a1:#x} mode={mode}'
 
 
-# --- драйвер @0x40003000 (магические записи) ---
+# --- driver @0x40003000 (magic writes) ---
 
-@t(0x99F0, 'запись 0xAAAA в @0x40003000')
+@t(0x99F0, 'write 0xAAAA to @0x40003000')
 def _(run, rng):
     run.periph_write(DRV + 0, 0)
     run.call(0x99F0, ())
     assert run.periph_read(DRV + 0) == 0xAAAA
 
 
-@t(0x99E0, 'запись 0xCCCC в @0x40003000')
+@t(0x99E0, 'write 0xCCCC to @0x40003000')
 def _(run, rng):
     run.periph_write(DRV + 0, 0)
     run.call(0x99E0, ())
     assert run.periph_read(DRV + 0) == 0xCCCC
 
 
-@t(0x9A0C, 'запись r0 в @0x40003000')
+@t(0x9A0C, 'write r0 to @0x40003000')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.periph_write(DRV + 0, 0)
@@ -1173,7 +1173,7 @@ def _(run, rng):
     assert run.periph_read(DRV + 0) == v
 
 
-@t(0x9A00, 'запись r0 в @0x40003000+4')
+@t(0x9A00, 'write r0 to @0x40003000+4')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.periph_write(DRV + 4, 0)
@@ -1181,7 +1181,7 @@ def _(run, rng):
     assert run.periph_read(DRV + 4) == v
 
 
-@t(0x99D4, 'запись r0 в @0x40003000+8')
+@t(0x99D4, 'write r0 to @0x40003000+8')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.periph_write(DRV + 8, 0)
@@ -1191,7 +1191,7 @@ def _(run, rng):
 
 # --- AFIO + struct ---
 
-@t(0x5970, 'запись r0 в @0x40010414 (AFIO/EXTI-зона)')
+@t(0x5970, 'write r0 to @0x40010414 (AFIO/EXTI zone)')
 def _(run, rng):
     v = rng.getrandbits(32)
     run.periph_write(AFIO_EXTI, 0)
@@ -1207,11 +1207,11 @@ def _(run, rng):
 
 
 # ===========================================================================
-# БАТЧ 4: FLASH unlock/wait, SysTick/NVIC/SCB, busy-delay, AFIO, GPIO, reset
+# BATCH 4: FLASH unlock/wait, SysTick/NVIC/SCB, busy-delay, AFIO, GPIO, reset
 # ===========================================================================
 
-SYS = 0xE0000000        # SYS-регион (NVIC 0xE000E400, SCB 0xE000ED00, SysTick)
-AFIO_MAPR = 0x40010004  # AFIO_MAPR (таблица remap)
+SYS = 0xE0000000        # SYS region (NVIC 0xE000E400, SCB 0xE000ED00, SysTick)
+AFIO_MAPR = 0x40010004  # AFIO_MAPR (remap table)
 
 # --- FLASH unlock / wait-BSY ---
 
@@ -1223,25 +1223,25 @@ def _(run, rng):
         f'KEYR = {run.periph_read(FLASH+4):#x}'
 
 
-@t(0x6390, 'wait не-BSY (code!=1); timeout → 0xA')
+@t(0x6390, 'wait non-BSY (code!=1); timeout -> 0xA')
 def _(run, rng):
-    # A: SR без bit0 → сразу возвращает code
+    # A: SR without bit0 -> returns code immediately
     sr = rng.getrandbits(32) & ~1
     run.periph_write(FLASH + 0xC, sr)
     r0, _ = run.call(0x6390, (rng.randint(1, 5),))
     assert r0 == ref_flash_sr_code(sr), f'sr={sr:#x} → {r0}'
-    # B: SR с bit0 (busy) → N+1 проверок → 0xA
+    # B: SR with bit0 (busy) -> N+1 checks -> 0xA
     run.periph_write(FLASH + 0xC, 1 | (rng.getrandbits(32) & ~1))
     n = rng.randint(1, 5)
     r0, _ = run.call(0x6390, (n,))
     assert r0 == 0xA, f'n={n} → {r0:#x}'
 
 
-# --- I2C/DMA clock: set-then-clear (проверка net-эффекта) ---
+# --- I2C/DMA clock: set-then-clear (net effect check) ---
 
-# set-then-clear = ВЫНУЖДЕННЫЙ CLEAR бита (x |= m; x &= ~m → бит всегда 0)
+# set-then-clear = FORCED CLEAR of bit (x |= m; x &= ~m -> bit always 0)
 
-@t(0x97F4, 'I2C clock OFF: base==I2C1 → RCC+0x10 &= ~(1<<21); иначе &= ~(1<<22)')
+@t(0x97F4, 'I2C clock OFF: base==I2C1 -> RCC+0x10 &= ~(1<<21); else &= ~(1<<22)')
 def _(run, rng):
     init = rng.getrandbits(32)
     base = rng.choice([0x40005400, 0x40005800, rng.getrandbits(32)])
@@ -1249,10 +1249,10 @@ def _(run, rng):
     run.call(0x97F4, (base,))
     exp = init & ~(1 << 21) if base == 0x40005400 else init & ~(1 << 22)
     got = run.periph_read(RCC + 0x10)
-    assert got == (exp & M32), f'base={base:#x}: {init:#x} → {got:#x}, ждали {exp:#x}'
+    assert got == (exp & M32), f'base={base:#x}: {init:#x} -> {got:#x}, expected {exp:#x}'
 
 
-@t(0x17F4, 'DMA clock OFF: base==0x40020800 → RCC+0x28 &= ~0x1000 (base>>18 = бит12); иначе нетто')
+@t(0x17F4, 'DMA clock OFF: base==0x40020800 -> RCC+0x28 &= ~0x1000 (base>>18 = bit12); else no-op')
 def _(run, rng):
     init = rng.getrandbits(32)
     base = rng.choice([0x40020800, rng.getrandbits(32)])
@@ -1260,10 +1260,10 @@ def _(run, rng):
     run.call(0x17F4, (base,))
     exp = (init & ~0x1000) if base == 0x40020800 else init
     got = run.periph_read(RCC + 0x28)
-    assert got == (exp & M32), f'base={base:#x}: {init:#x} → {got:#x}, ждали {exp:#x}'
+    assert got == (exp & M32), f'base={base:#x}: {init:#x} -> {got:#x}, expected {exp:#x}'
 
 
-@t(0xC644, 'set/clear mask в RCC+0x28 (mode=r1)')
+@t(0xC644, 'set/clear mask in RCC+0x28 (mode=r1)')
 def _(run, rng):
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
@@ -1289,14 +1289,14 @@ def ref_sign_ext8(v):
     return v - 0x100 if v & 0x80 else v
 
 
-# 0x21b84 (подтверждено тресом):
-#   p0 = r0&3, shift = p0*8: mask = 0xFF<<shift (байт), value = (r1&3) << (6+shift)
-#   r0>=0: addr = 0xE000E400 + (r0&~3)          (NVIC-блок, байт r0>>2)
-#   r0<0:  addr = 0xE000ED00 + (s32(r0)&~3) + 0x24  (SCB-блок, байты 0..5 = 0xE000ED00..ED1C)
+# 0x21b84 (confirmed by trace):
+#   p0 = r0&3, shift = p0*8: mask = 0xFF<<shift (byte), value = (r1&3) << (6+shift)
+#   r0>=0: addr = 0xE000E400 + (r0&~3)          (NVIC block, byte r0>>2)
+#   r0<0:  addr = 0xE000ED00 + (s32(r0)&~3) + 0x24  (SCB block, bytes 0..5 = 0xE000ED00..ED1C)
 #   reg[addr] = (v & ~mask) | value
-#   (lsrs #0x1b/#0x18 — ЛОГИЧЕСКИЕ трёхоперандные; пул 0x21BC0=0xE000E400, 0x21BC4=0xE000ED00)
+#   (lsrs #0x1b/#0x18 — LOGICAL three-operand; pool 0x21BC0=0xE000E400, 0x21BC4=0xE000ED00)
 
-@t(0x21B84, 'NVIC/SCB: поле [7:6] байта (r0>>2): r0>=0 → 0xE000E400+(r0&~3); r0<0 → 0xE000ED00+(s32&~3)+0x24;'
+@t(0x21B84, 'NVIC/SCB: field [7:6] of byte (r0>>2): r0>=0 -> 0xE000E400+(r0&~3); r0<0 -> 0xE000ED00+(s32&~3)+0x24;'
             ' reg = (v & ~(0xFF<<(8*(r0&3)))) | ((r1&3) << (6+8*(r0&3)))')
 def _(run, rng):
     from unicorn import UC_HOOK_MEM_WRITE
@@ -1305,9 +1305,9 @@ def _(run, rng):
         r0 = rng.randint(0, 63)
         exp_addr = 0xE000E400 + (r0 & ~3)
     else:
-        sb = rng.randint(-28, -1)               # s32; адрес останется в SYS-регионе
+        sb = rng.randint(-28, -1)               # s32; address remains in SYS region
         r0 = sb & M32
-        # firmware: t = r0&0xF (только младший ниббл! <<28/>>28); off = ((t-8)>>2)*4
+        # firmware: t = r0&0xF (low nibble only! <<28/>>28); off = ((t-8)>>2)*4
         t = r0 & 0xF
         exp_addr = 0xE000ED00 + (((t - 8) >> 2) * 4) + 0x1C
     r1 = rng.getrandbits(32)
@@ -1320,20 +1320,20 @@ def _(run, rng):
     run.periph_write(exp_addr, init)
     run.call(0x21B84, (r0, r1))
     run.uc.hook_del(h)
-    assert len(writes) == 1, f'writes={writes}, ожидали адрес {exp_addr:#x}'
+    assert len(writes) == 1, f'writes={writes}, expected address {exp_addr:#x}'
     waddr, _ = writes[0]
-    assert waddr == exp_addr, f'r0={r0:#x} → запись {waddr:#x}, ждали {exp_addr:#x}'
+    assert waddr == exp_addr, f'r0={r0:#x} -> write {waddr:#x}, expected {exp_addr:#x}'
     shift = (r0 & 3) * 8
     mask = (0xFF << shift) & M32
     setv = ((r1 & 3) << (6 + shift)) & M32
     exp_val = (init & ~mask | setv) & M32
     got = run.periph_read(exp_addr)
-    assert got == exp_val, f'({init:#x}, r0={r0:#x}, r1={r1:#x}) → {got:#x}, ждали {exp_val:#x}'
+    assert got == exp_val, f'({init:#x}, r0={r0:#x}, r1={r1:#x}) -> {got:#x}, expected {exp_val:#x}'
 
 
-# --- busy-delay: проверка порога через hook на CMP ---
+# --- busy-delay: threshold check via CMP hook ---
 
-@t(0x22A0C, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF')
+@t(0x22A0C, 'busy-delay: threshold = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE
     coeff = rng.randint(1, 1000)
@@ -1350,17 +1350,17 @@ def _(run, rng):
     run.uc.hook_del(h)
     exp_thr = (0x1000000 - coeff * n) & M32
     assert captured.get('thr') == exp_thr, \
-        f'coeff={coeff} N={n}: порог {captured.get("thr"):#x}, ждали {exp_thr:#x}'
-    assert run.periph_read(SYS + 0xE018) == 0xFFFFFF, 'CVR должен стать 0xFFFFFF'
+        f'coeff={coeff} N={n}: threshold {captured.get("thr"):#x}, expected {exp_thr:#x}'
+    assert run.periph_read(SYS + 0xE018) == 0xFFFFFF, 'CVR must become 0xFFFFFF'
 
 
-@t(0x229D4, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF')
+@t(0x229D4, 'busy-delay: threshold = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE
     coeff = rng.randint(1, 1000)
     n = rng.randint(1, 50)
     iters = rng.randint(1, 5)
-    run.ram_write(0x24, struct.pack('<I', coeff))   # пул 0x2000001C + 8!
+    run.ram_write(0x24, struct.pack('<I', coeff))   # pool 0x2000001C + 8!
     run.periph_write(SYS + 0xE018, rng.getrandbits(32))
     captured = {}
     def hc(uc, address, size, user):
@@ -1371,17 +1371,17 @@ def _(run, rng):
     run.uc.hook_del(h)
     exp_thr = (0x1000000 - coeff * n) & M32
     assert captured.get('thr') == exp_thr, \
-        f'coeff={coeff} N={n}: порог {captured.get("thr"):#x}, ждали {exp_thr:#x}'
+        f'coeff={coeff} N={n}: threshold {captured.get("thr"):#x}, expected {exp_thr:#x}'
     assert run.periph_read(SYS + 0xE018) & 0xFFFFFF == 0xFFFFFF
 
 
 # --- AFIO remap ---
 
-# 0x8588: idx = arg1>>2 (арифм.), pair = arg1&3, shift = pair*4:
+# 0x8588: idx = arg1>>2 (arithmetic), pair = arg1&3, shift = pair*4:
 #   MAPR[idx] = (MAPR & ~(3<<shift)) | ((val<<shift) & M32)
-#   (lsrs r5,r4,#0x1c — ЛОГИЧЕСКИЙ: b1→bit3, b0→bit2 → r5 = pair*4; val не маскируется!)
+#   (lsrs r5,r4,#0x1c — LOGICAL: b1->bit3, b0->bit2 -> r5 = pair*4; val is not masked!)
 
-@t(0x8588, 'AFIO remap: поле [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2')
+@t(0x8588, 'AFIO remap: field [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2')
 def _(run, rng):
     val = rng.getrandbits(8)
     arg1_s = rng.randint(-127, 63) if rng.getrandbits(1) else rng.randint(0, 63)
@@ -1397,9 +1397,9 @@ def _(run, rng):
     assert got == (exp & M32), f'idx={idx} pair={pair} val={val:#x} arg1={arg1_s}: {got:#x} ≠ {exp:#x}'
 
 
-# --- номер порта по GPIO-базе (PC-трассировка) ---
+# --- port number by GPIO base (PC tracing) ---
 
-@t(0x2BBC, 'порт по GPIO-базе: A=0,B=1,C=2,D=3 (проверка точки детекции)')
+@t(0x2BBC, 'port by GPIO base: A=0,B=1,C=2,D=3 (detection point check)')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE
     cases = [(0x40010800, 0x2BCC), (0x40010C00, 0x2BD6),
@@ -1411,36 +1411,36 @@ def _(run, rng):
         if a in (0x2BCC, 0x2BD6, 0x2BE0, 0x2BEA, 0x2BEE):
             hits.append(a)
     h = run.uc.hook_add(UC_HOOK_CODE, hc)
-    # mode=0x100 — длинный путь; dispatch завершается общим return через 0x2BEE
+    # mode=0x100 — long path; dispatch completes with common return via 0x2BEE
     run.call(0x2BBC, (base, 0x100, 0), max_insn=20000)
     run.uc.hook_del(h)
     assert expect_pc in hits, \
-        f'base={base:#x}: детекция {expect_pc:#x} не найдена, hits={[hex(h) for h in hits]}'
+        f'base={base:#x}: detection {expect_pc:#x} not found, hits={[hex(h) for h in hits]}'
 
 
-# --- программный сброс (бюджетный вызов: функция зацикливается) ---
+# --- software reset (budgeted call: function loops infinitely) ---
 
 @t(0x1E3A4, 'soft reset: [0x40021400] &= ~0xC; &= ~0x1F0; |= 1; AIRCR=0x5FA0004; b .')
 def _(run, rng):
     init = rng.getrandbits(32)
     run.periph_write(0x40021400, init)
     run.periph_write(0xE000ED0C, 0)
-    run.call(0x1E3A4, (), max_insn=500)   # остановится в цикле b .
+    run.call(0x1E3A4, (), max_insn=500)   # stops in loop b .
     exp_rcc = ((init & ~0xC) & ~0x1F0) | 1
     got = run.periph_read(0x40021400)
-    assert got == (exp_rcc & M32), f'{init:#x} → {got:#x}, ждали {exp_rcc:#x}'
+    assert got == (exp_rcc & M32), f'{init:#x} -> {got:#x}, expected {exp_rcc:#x}'
     assert run.periph_read(0xE000ED0C) == 0x5FA0004, \
         f'AIRCR = {run.periph_read(0xE000ED0C):#x}'
 
 
 # ===========================================================================
-# Батч 5 (§51): полка 132–256 B
+# Batch 5 (§51): size tier 132–256 B
 # ===========================================================================
 
-# --- MSB-normalization shift (gap-функция, артефакт детектора) ---
-# трассировка: шаги 16/8/4/2 бита; финал: r0∈{1,2} → r1−r0; x=1<<p → 0x1F−p
+# --- MSB-normalization shift (gap-function, detector artifact) ---
+# trace: steps 16/8/4/2 bits; final: r0 in {1,2} -> r1-r0; x=1<<p -> 0x1F-p
 
-@t(0x21B24, 'MSB-normalization: x==0 → 0x20; иначе 0x1F − msb_pos(x)')
+@t(0x21B24, 'MSB-normalization: x==0 -> 0x20; else 0x1F - msb_pos(x)')
 def _(run, rng):
     for _ in range(30):
         if rng.getrandbits(2) == 0:
@@ -1452,7 +1452,7 @@ def _(run, rng):
         assert r0 == exp, f'x={x:#x}: {r0:#x} ≠ {exp:#x}'
 
 
-# --- i16 × i16 → u32 (запись в *out_lo/*out_hi) ---
+# --- i16 * i16 -> u32 (write to *out_lo/*out_hi) ---
 
 @t(0x17170, 'i16×i16→u64 (sign-extended): *out_hi = 0/0xFFFFFFFF, *out_lo = a*b')
 def _(run, rng):
@@ -1478,9 +1478,9 @@ def _(run, rng):
     assert lo == exp_lo and hi == exp_hi, f'{a}×{b}: {hi:#x}:{lo:#x} ≠ {exp_hi:#x}:{exp_lo:#x}'
 
 
-# --- u16-массив: статистика + in-place clamp ---
+# --- u16 array: statistics + in-place clamp ---
 
-@t(0x5134, 'u16 статистика: s16≤0 → 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based)')
+@t(0x5134, 'u16 statistics: s16<=0 -> 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based)')
 def _(run, rng):
     n = rng.randint(1, 24)
     vals = []
@@ -1504,8 +1504,8 @@ def _(run, rng):
     total = sum(cl) & M32
     avg = (total // n) & 0xFFFF
     mn, mx = min(cl), max(cl)
-    idx_min = cl.index(mn) + 1          # первое вхождение (обновление строго <)
-    idx_max = cl.index(mx) + 1          # первое вхождение (обновление строго >: равные не обновляют)
+    idx_min = cl.index(mn) + 1          # first occurrence (update strictly <)
+    idx_max = cl.index(mx) + 1          # first occurrence (update strictly >: equals do not update)
     out = struct.unpack('<IHHHBB', run.ram_read(0x300, 12))
     assert out[0] == total, f'sum: {out[0]:#x} ≠ {total:#x}'
     assert out[1] == avg, f'avg: {out[1]} ≠ {avg}'
@@ -1514,31 +1514,31 @@ def _(run, rng):
         f'idx: {out[4]}/{out[5]} ≠ {idx_min}/{idx_max}'
 
 
-# --- интерполяция Q31 (u32 y-таблица, доп. слот) ---
+# --- Q31 interpolation (u32 y-table, extra slot) ---
 
-@t(0x16880, 'Q31-интерполяция: args (v, xtab_u16, ytab_u32, last_idx=n−1); slope=((v−x0)<<16)/dx через 0x161ea(…,15); y=y0+(y1−y0)*slope>>31; v≥xs[last] → mid-экстраполяция с последнего сегмента')
+@t(0x16880, 'Q31 interpolation: args (v, xtab_u16, ytab_u32, last_idx=n-1); slope=((v-x0)<<16)/dx via 0x161ea(...,15); y=y0+(y1-y0)*slope>>31; v>=xs[last] -> mid-extrapolation from last segment')
 def _(run, rng):
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
-    ys = [rng.getrandbits(32) for _ in range(n)]     # без доп. слота
+    ys = [rng.getrandbits(32) for _ in range(n)]     # without extra slot
     base = 0x400
     case = rng.getrandbits(2)
     if case == 0:
-        value = xs[0] - rng.randint(0, 50)          # до начала: r4=0, slope=0
+        value = xs[0] - rng.randint(0, 50)          # before start: r4=0, slope=0
         exp = ys[0]
     elif case == 1:
-        value = xs[-1] + rng.randint(0, 50)         # за конец: sentinel=Q31 1.0 → полный шаг к ys[n−1]
+        value = xs[-1] + rng.randint(0, 50)         # past end: sentinel=Q31 1.0 -> full step to ys[n-1]
         exp = ys[n - 1]
     elif case == 2:
         k = rng.randint(0, n - 2)
-        while (xs[k + 1] - xs[k]) % 2:               # чётный dx → точная середина
+        while (xs[k + 1] - xs[k]) % 2:               # even dx -> exact midpoint
             xs = sorted(rng.sample(range(-400, 400), n))
             k = rng.randint(0, n - 2)
-        value = (xs[k] + xs[k + 1]) // 2             # slope = 0x40000000 точный
+        value = (xs[k] + xs[k + 1]) // 2             # slope = 0x40000000 exact
         exp = ref_seg_interp(ys[k], ys[k + 1], 0x40000000)
     else:
         k = rng.randint(0, n - 2)
-        value = xs[k]                                # точно на узле: slope=0
+        value = xs[k]                                # exactly on knot: slope=0
         exp = ys[k]
     run.ram_write(base, struct.pack(f'<{n}h', *xs))
     run.ram_write(base + 0x100, struct.pack(f'<{n}I', *ys))
@@ -1547,27 +1547,27 @@ def _(run, rng):
     assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
 
 
-# --- интерполяция Q8 (u8 y-таблица, доп. слот) ---
+# --- Q8 interpolation (u8 y-table, extra slot) ---
 
-@t(0x167B6, 'Q8-интерполяция: args (v, xtab_u16, ytab_u8, last_idx=n−1); slope=((v−x0)<<8)/dx (udiv); y=(y0 ± dy*slope>>8)&0xFF; v≥xs[last] → slope=1.0 с последнего сегмента')
+@t(0x167B6, 'Q8 interpolation: args (v, xtab_u16, ytab_u8, last_idx=n-1); slope=((v-x0)<<8)/dx (udiv); y=(y0 +/- dy*slope>>8)&0xFF; v>=xs[last] -> slope=1.0 from last segment')
 def _(run, rng):
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
-    ys = [rng.getrandbits(8) for _ in range(n)]      # без доп. слота
+    ys = [rng.getrandbits(8) for _ in range(n)]      # without extra slot
     base = 0x600
     case = rng.getrandbits(2)
     if case == 0:
         value = xs[0] - rng.randint(0, 50)
         exp = ys[0]
     elif case == 1:
-        value = xs[-1] + rng.randint(0, 50)         # r1=n−2, slope = 0x100 (1.0) → полный шаг к ys[n−1]
+        value = xs[-1] + rng.randint(0, 50)         # r1=n-2, slope = 0x100 (1.0) -> full step to ys[n-1]
         exp = ys[n - 1]
     elif case == 2:
         k = rng.randint(0, n - 2)
         while (xs[k + 1] - xs[k]) % 2:
             xs = sorted(rng.sample(range(-400, 400), n))
             k = rng.randint(0, n - 2)
-        value = (xs[k] + xs[k + 1]) // 2             # slope = 128 точный
+        value = (xs[k] + xs[k + 1]) // 2             # slope = 128 exact
         dy = (ys[k + 1] - ys[k]) & 0xFF if ys[k + 1] >= ys[k] else (ys[k] - ys[k + 1]) & 0xFF
         exp = (ys[k] + dy // 2) & 0xFF if ys[k + 1] >= ys[k] else (ys[k] - dy // 2) & 0xFF
     else:
@@ -1581,11 +1581,11 @@ def _(run, rng):
     assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
 
 
-@t(0x16938, 'Q31-интерполяция #2: twin 0x16880, но ветка по UNSIGNED cmp (bhi)')
+@t(0x16938, 'Q31 interpolation #2: twin 0x16880, but branch on UNSIGNED cmp (bhi)')
 def _(run, rng):
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
-    # y: иногда с битом31 (разница signed/unsigned веток)
+    # y: sometimes with bit31 (difference between signed/unsigned branches)
     ys = [rng.getrandbits(32) if rng.getrandbits(2) else
           (0x80000000 + rng.getrandbits(31)) for _ in range(n)]
     base = 0x500
@@ -1594,7 +1594,7 @@ def _(run, rng):
         value = xs[0] - rng.randint(0, 50)
         exp = ys[0]
     elif case == 1:
-        value = xs[-1] + rng.randint(0, 50)         # полный шаг к ys[n−1]
+        value = xs[-1] + rng.randint(0, 50)         # full step to ys[n-1]
         exp = ys[n - 1]
     elif case == 2:
         k = rng.randint(0, n - 2)
@@ -1614,12 +1614,12 @@ def _(run, rng):
     assert r0 == exp, f'case={case} v={value}: {r0:#x} ≠ {exp:#x}'
 
 
-@t(0x16BD4, '2D-билинейная интерполяция u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride)')
+@t(0x16BD4, '2D bilinear interpolation u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride)')
 def _(run, rng):
     n1 = rng.randint(2, 6)
     n2 = rng.randint(2, 5)
     xtab1 = sorted(rng.sample(range(-300, 300), n1))
-    ystruct = sorted(rng.getrandbits(31) for _ in range(n2))   # u32, без бит31
+    ystruct = sorted(rng.getrandbits(31) for _ in range(n2))   # u32, without bit31
     stride = rng.randint(4, 8)
     grid = [rng.getrandbits(16) for _ in range((n2 + 1) * stride + 1)]
     base = 0x700
@@ -1630,7 +1630,7 @@ def _(run, rng):
     run.ram_write(hdr, struct.pack('<II', n1 - 1, n2 - 1))       # {count1, count2}
     grd = base + 0x200
     run.ram_write(grd, struct.pack(f'<{len(grid)}H', *grid))     # ygrid
-    # caller-стек: SP call = STACK_TOP − 0x200; слоты [SP+0]=ygrid, +4=hdr, +8=stride
+    # caller stack: SP call = STACK_TOP - 0x200; slots [SP+0]=ygrid, +4=hdr, +8=stride
     csp = STACK_TOP - 0x200
     run.ram_write(csp - RAM, struct.pack('<3I',
                    RAM + grd, RAM + hdr, stride))
@@ -1651,7 +1651,7 @@ def _(run, rng):
             k2 = rng.randint(0, n2 - 2)
             run.ram_write(yst, struct.pack(f'<{n2}I', *ystruct))
         v2 = (ystruct[k2] + ystruct[k2 + 1]) // 2
-    # референс
+    # reference
     def seg(u16_a, u16_b, slope):
         if u16_a > u16_b:                       # unsigned bgt → descending
             return (u16_a - (((u16_a - u16_b) * slope) >> 16)) & 0xFFFF
@@ -1672,7 +1672,7 @@ def _(run, rng):
         idx2 = max(i for i in range(n2) if ystruct[i] <= v2)
         s2 = ref_161ea((v2 - ystruct[idx2]) & M32,
                        (ystruct[idx2 + 1] - ystruct[idx2]) & M32, 16)
-    # примечание: s2 — unsigned udiv-результат (0x161ea с положительными аргументами)
+    # note: s2 is unsigned udiv result (0x161ea with positive arguments)
     iA = idx2 * stride + idx1
     yA = seg(grid[iA], grid[iA + 1], s1)
     yB = seg(grid[iA + stride], grid[iA + stride + 1], s1)
@@ -1680,7 +1680,7 @@ def _(run, rng):
         exp = (yA + (((yB - yA) * s2) >> 16)) & 0xFFFF
     else:
         exp = (yA - (((yA - yB) * s2) >> 16)) & 0xFFFF
-    # ручной call (Run.call ставит SP=STACK_TOP — не хватает места на caller-слоты)
+    # manual call (Run.call sets SP=STACK_TOP — not enough room for caller slots)
     uc = run.uc
     from unicorn import UC_HOOK_CODE, UcError
     from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
@@ -1705,7 +1705,7 @@ def _(run, rng):
 
 
 def _interp16(a, b, slope):
-    """один шаг интерполяции 0x16588/0x16bd4: unsigned cmp, Q16-наклон, u16"""
+    """Single interpolation step of 0x16588/0x16bd4: unsigned cmp, Q16 slope, u16"""
     if a > b:
         d = (a - b) & 0xFFFF
         return (a - ((d * slope) >> 16)) & 0xFFFF
@@ -1714,8 +1714,8 @@ def _interp16(a, b, slope):
 
 
 def ref_16588(ix, iy, iz, sx, sy, sz, grid, syy, szz):
-    """3D-трилинейная интерполяция на плоской u16-сетке (§52.1 эмуляторно).
-    base = ix + syy*iy + szz*iz; x-шаг — соседний элемент (stride 1)."""
+    """3D trilinear interpolation on a flat u16 grid (§52.1 emulated).
+    base = ix + syy*iy + szz*iz; x-step is adjacent element (stride 1)."""
     b = ix + syy * iy + szz * iz
     a0 = _interp16(grid[b], grid[b + 1], sx)
     a1 = _interp16(grid[b + syy], grid[b + syy + 1], sx)
@@ -1727,7 +1727,7 @@ def ref_16588(ix, iy, iz, sx, sy, sz, grid, syy, szz):
     return _interp16(c0, e0, sz)
 
 
-@t(0x16588, '3D-трилинейная интерполяция u16: (idx{3}, slope{3}Q16, grid_u16, stride{3})')
+@t(0x16588, '3D trilinear interpolation u16: (idx{3}, slope{3}Q16, grid_u16, stride{3})')
 def _(run, rng):
     nx, ny, nz = rng.randint(2, 4), rng.randint(2, 3), rng.randint(2, 3)
     syy, szz = rng.randint(1, nx + 1), rng.randint(ny, ny * nx + 1)
@@ -1740,7 +1740,7 @@ def _(run, rng):
     run.ram_write(base + 0x40, struct.pack('<3I', sx, sy, sz))
     gbase = base + 0x80
     run.ram_write(gbase, struct.pack(f'<{len(grid)}H', *grid))
-    stride_p = base + 0x400   # НЕ в gbase — иначе перетрёт начало сетки!
+    stride_p = base + 0x400   # NOT in gbase — otherwise overwrites start of grid!
     run.ram_write(stride_p, struct.pack('<3I', 1, syy, szz))
     r0, _ = run.call(0x16588, (RAM + base, RAM + base + 0x40,
                                RAM + gbase, RAM + stride_p), max_insn=20000)
@@ -1748,7 +1748,7 @@ def _(run, rng):
     assert r0 == exp, f'ix={ix} iy={iy} iz={iz}: {r0:#x} ≠ {exp:#x}'
 
 
-# --- duty/throttle shaping (чистый RAM) ---
+# --- duty/throttle shaping (pure RAM) ---
 
 @t(0x1D330, 'duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4')
 def _(run, rng):
@@ -1762,7 +1762,7 @@ def _(run, rng):
     run.call(0x1D330, (), max_insn=5000)
     f2 = struct.unpack('<H', run.ram_read(0x220, 2))[0]
     st = struct.unpack('<h', run.ram_read(0x1794 + 0xA, 2))[0]
-    # референс (внимание: все сравнения v — UNSIGNED u16!)
+    # reference (note: all comparisons of v are UNSIGNED u16!)
     vu = v & 0xFFFF
     if vu > 580:
         f2e, ste = flags | 2, 0
@@ -1785,9 +1785,9 @@ def _(run, rng):
     assert run.ram_read(0x3C8 + 0x10, 1)[0] == 4
 
 
-# --- drift detector (адаптивный базлайн) ---
+# --- drift detector (adaptive baseline) ---
 
-@t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]−s16[RAM+0x1302]|,0x7fff) (абсолютное!); devA≥500||devB>500 → flag + refs:=текущие')
+@t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]-u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]-s16[RAM+0x1302]|,0x7fff) (absolute!); devA>=500||devB>500 -> flag + refs:=current')
 def _(run, rng):
     A = rng.getrandbits(16)
     B = rng.randint(-32768, 32767)
@@ -1800,24 +1800,24 @@ def _(run, rng):
     run.ram_write(0x500, b'\x7F')
     run.call(0xE740, (RAM + 0x500,), max_insn=5000)
     devA = abs(A - refA)
-    devB = min(abs(B - refB), 0x7FFF)   # firmware: |B−refB| (абсолютное), clamp 32767
+    devB = min(abs(B - refB), 0x7FFF)   # firmware: |B-refB| (absolute), clamp 32767
     flag = 1 if (devA >= 500 or devB > 500) else 0
     got = run.ram_read(0x500, 1)[0]
     assert got == flag, f'A={A} refA={refA} B={B} refB={refB}: flag {got} ≠ {flag}'
     gA = struct.unpack('<H', run.ram_read(0x130A, 2))[0]
     gB = struct.unpack('<h', run.ram_read(0x1302, 2))[0]
     if flag:
-        assert gA == A and gB == B, f'refs не обновлены: {gA}/{gB} ≠ {A}/{B}'
+        assert gA == A and gB == B, f'refs not updated: {gA}/{gB} != {A}/{B}'
     else:
-        assert gA == refA and gB == refB, 'refs должны остаться нетронутыми'
+        assert gA == refA and gB == refB, 'refs must remain untouched'
 
 
-# --- PB15 latch с гистерезисом (flash-калибровка @0x19E1C) ---
+# --- PB15 latch with hysteresis (flash calibration @0x19E1C) ---
 # 0xfdac: lo=i8@+0=1, N=u16@+1=5264, hi=i8@+3=70, M=u16@+4=17936
 #         gate: mode@RAM[0x80]==0 && !bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]
 #         ON:  v≥lo && (cnt++≤N) → ODR|=0x8000, bit0=1, cnt=0
 #         OFF: bit0 && v≤hi && (cnt2++>M) → BRR|=0x8000, bit0=0, cnt2=0
-# 0xfe74: то же с bit1, v=i8[RAM+0xFC7+1], пороги @+6..+0xA (lo=5,N=224,hi=32,M=17921)
+# 0xfe74: same with bit1, v=i8[RAM+0xFC7+1], thresholds @+6..+0xA (lo=5,N=224,hi=32,M=17921)
 
 @t(0xFDAC, 'PB15 latch #1: gate mode==0&&!bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]; flash @0x19E1C {lo=1,N=5264,hi=70,M=17936}')
 def _(run, rng):
@@ -1834,10 +1834,10 @@ def _(run, rng):
     run.periph_write(0x40010C18, rng.getrandbits(32) & ~0x8000)
     run.periph_write(0x40010C28, 0)
     run.call(0xFDAC, (), max_insn=5000)
-    # часть 1 (ON): mode==0 && !bit0 && v≥lo(1) && cnt++≤N(5264) → ODR|=
-    # часть 2 (OFF): bit0 (любой mode) && v≤hi(70) && cnt2++≤M(17936) → BRR|
-    exp_odr = 0x8000 if (mode == 0 and not bit0 and v >= 1 and cnt + 1 >= 5264) else 0   # cmp N,cnt; bgt=skip → ON при cnt_new≥N
-    exp_brr = 0x8000 if (bit0 and v <= 70 and cnt2 + 1 >= 17936) else 0   # cmp M,cnt; bgt=skip → OFF при cnt_new≥M
+    # part 1 (ON): mode==0 && !bit0 && v>=lo(1) && cnt++<=N(5264) -> ODR|=
+    # part 2 (OFF): bit0 (any mode) && v<=hi(70) && cnt2++<=M(17936) -> BRR|
+    exp_odr = 0x8000 if (mode == 0 and not bit0 and v >= 1 and cnt + 1 >= 5264) else 0   # cmp N,cnt; bgt=skip -> ON when cnt_new>=N
+    exp_brr = 0x8000 if (bit0 and v <= 70 and cnt2 + 1 >= 17936) else 0   # cmp M,cnt; bgt=skip -> OFF when cnt_new>=M
     got_odr = run.periph_read(0x40010C18) & 0x8000
     got_brr = run.periph_read(0x40010C28) & 0x8000
     assert got_odr == exp_odr, f'mode={mode} bit0={bit0} v={v}: ODR {got_odr:#x} ≠ {exp_odr:#x}'
@@ -1848,7 +1848,7 @@ def _(run, rng):
         on = (v >= 1 and cnt + 1 >= 5264)
         exp_bit, exp_cnt = (1, 0) if on else (0, (cnt + 1 if v >= 1 else 0))
     else:
-        # часть 2 может снять bit0 (OFF при v≤70 && cnt2_new≥M)
+        # part 2 can clear bit0 (OFF when v<=70 && cnt2_new>=M)
         off = (bit0 and v <= 70 and cnt2 + 1 >= 17936)
         exp_bit, exp_cnt = (0 if off else bit0), cnt
     assert gbit == exp_bit and gc == exp_cnt, \
@@ -1870,10 +1870,10 @@ def _(run, rng):
     run.periph_write(0x40010C18, rng.getrandbits(32) & ~0x8000)
     run.periph_write(0x40010C28, 0)
     run.call(0xFE74, (), max_insn=5000)
-    # часть 1 (ON): mode==0 && !bit1 && v≤lo(5) && cnt++≤N(224) → ODR|
-    # часть 2 (OFF): bit1 (любой mode) && v≥hi(32) && cnt2++≤M(17921) → BRR|
-    exp_odr = 0x8000 if (mode == 0 and not bit1 and v <= 5 and cnt + 1 >= 224) else 0   # cmp N,cnt; bgt=skip → ON при cnt_new≥N
-    exp_brr = 0x8000 if (bit1 and v >= 32 and cnt2 + 1 >= 17921) else 0   # cmp M,cnt; bgt=skip → OFF при cnt_new≥M
+    # part 1 (ON): mode==0 && !bit1 && v<=lo(5) && cnt++<=N(224) -> ODR|
+    # part 2 (OFF): bit1 (any mode) && v>=hi(32) && cnt2++<=M(17921) -> BRR|
+    exp_odr = 0x8000 if (mode == 0 and not bit1 and v <= 5 and cnt + 1 >= 224) else 0   # cmp N,cnt; bgt=skip -> ON when cnt_new>=N
+    exp_brr = 0x8000 if (bit1 and v >= 32 and cnt2 + 1 >= 17921) else 0   # cmp M,cnt; bgt=skip -> OFF when cnt_new>=M
     got_odr = run.periph_read(0x40010C18) & 0x8000
     got_brr = run.periph_read(0x40010C28) & 0x8000
     assert got_odr == exp_odr, f'mode={mode} bit1={bit1} v={v}: ODR {got_odr:#x} ≠ {exp_odr:#x}'
@@ -1881,23 +1881,23 @@ def _(run, rng):
     gbit = (run.ram_read(0xFC7 + 6, 1)[0] >> 1) & 1
     gc = struct.unpack('<H', run.ram_read(0x9F0, 2))[0]
     if mode == 0 and not bit1:
-        on = (v <= 5 and cnt + 1 >= 224)      # v≤lo! и debounce N=224
+        on = (v <= 5 and cnt + 1 >= 224)      # v<=lo! and debounce N=224
         exp_bit, exp_cnt = (1, 0) if on else (0, (cnt + 1 if v <= 5 else 0))
     else:
-        # часть 2 может снять bit1 (OFF при v≥32 && cnt2_new≥M)
+        # part 2 can clear bit1 (OFF when v>=32 && cnt2_new>=M)
         off = (bit1 and v >= 32 and cnt2 + 1 >= 17921)
         exp_bit, exp_cnt = (0 if off else bit1), cnt
     assert gbit == exp_bit and gc == exp_cnt, \
         f'bit {gbit}≠{exp_bit}, cnt {gc}≠{exp_cnt}'
 
 
-@t(0x19968, 'u32/u32 floor-деление (restore, 32 ит.): (num=r0, den=r1) → r0=num//den')
+@t(0x19968, 'u32/u32 floor division (restore, 32 iter): (num=r0, den=r1) -> r0=num//den')
 def _(run, rng):
-    # фиксированные краевые
+    # fixed boundary cases
     for n, d in [(10, 2), (5, 2), (7, 3), (0xFFFFFFFF, 2), (0xFFFFFFFF, 3), (1, 1), (0x12345678, 0x100)]:
         r0, _ = run.call(0x19968, [n, d])
         assert r0 == n // d, f'{n:#x}/{d}: {r0:#x} ≠ {n // d:#x}'
-    # случайные (den ≥ 1)
+    # random (den >= 1)
     for _ in range(40):
         n = rng.getrandbits(32)
         d = rng.getrandbits(24) + 1
@@ -1905,10 +1905,10 @@ def _(run, rng):
         assert r0 == n // d, f'{n:#x}/{d:#x}: {r0:#x} ≠ {n // d:#x}'
 
 
-@t(0x19994, 'signed-деление C-style (truncation toward zero): (a=r0, b=r1) → r0')
+@t(0x19994, 'signed division C-style (truncation toward zero): (a=r0, b=r1) -> r0')
 def _(run, rng):
     for a, b in [(10, 2), (-10, 2), (10, -2), (-10, -2), (-7, 3), (7, -3), (-1, 2), (-1 << 31, -3)]:
-        a32 = a if a > -(1 << 31) else a  # уже в i32
+        a32 = a if a > -(1 << 31) else a  # already in i32
         r0, _ = run.call(0x19994, [a & 0xFFFFFFFF, b & 0xFFFFFFFF])
         got = r0 if r0 < (1 << 31) else r0 - (1 << 32)
         exp = abs(a32) // abs(b) * (-1 if (a32 < 0) != (b < 0) else 1)
@@ -1922,9 +1922,9 @@ def _(run, rng):
         assert got == exp, f'{a}/{b}: {got} ≠ {exp}'
 
 
-@t(0x199BC, 'u64/u64 → u64 unsigned-деление (64 ит., 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) → r1:r0')
+@t(0x199BC, 'u64/u64 -> u64 unsigned division (64 iter, 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) -> r1:r0')
 def _(run, rng):
-    # ВАЖНО: 4 аргумента — den_hi обязателен (иначе мусор в R3 из прошлого вызова)
+    # IMPORTANT: 4 arguments — den_hi is mandatory (otherwise garbage in R3 from previous call)
     for nlo, nhi, dlo, dhi in [(1000, 0, 3, 0), (0xFFFFFFFF, 1, 2, 0), (5, 0, 2, 0), (0, 1, 7, 0)]:
         r0, r1 = run.call(0x199BC, [nlo, nhi, dlo, dhi], max_insn=300000)
         num = (nhi << 32) | nlo
@@ -1942,12 +1942,12 @@ def _(run, rng):
             f'{num:#x}/{den}: {r1:#x}:{r0:#x} ≠ {q:#x}'
 
 
-# --- батч 9 (§56): window-gate 0xF010/0xF024 (motor, caller 0x7494) ----------
-# Чистые функции: (a=r0, b=r1, out_u16_ptr=r2) → strh result,[r2], bx lr.
-# Сравнения БЕСЗНАКОВЫЕ (cmp). Истинные таблицы:
-#   0xF010: a≥b → a;  b<a+8 → b;  иначе → a
-#   0xF024: a≤b → a;  a<b+8 → b;  иначе → a
-_OUT = 0x100  # RAM-относительный слот вывода
+# --- batch 9 (§56): window-gate 0xF010/0xF024 (motor, caller 0x7494) ----------
+# Pure functions: (a=r0, b=r1, out_u16_ptr=r2) -> strh result,[r2], bx lr.
+# Comparisons are UNSIGNED (cmp). True truth tables:
+#   0xF010: a>=b -> a;  b<a+8 -> b;  else -> a
+#   0xF024: a<=b -> a;  a<b+8 -> b;  else -> a
+_OUT = 0x100  # RAM-relative output slot
 
 
 def _gate(run, off, a, b):
@@ -1956,7 +1956,7 @@ def _gate(run, off, a, b):
     return struct.unpack('<H', run.ram_read(_OUT, 2))[0]
 
 
-@t(0xF010, 'window-gate «up» (motor 0x7494): a≥b→a; b<a+8→b; иначе→a (u32-cmp)')
+@t(0xF010, 'window-gate "up" (motor 0x7494): a>=b->a; b<a+8->b; else->a (u32-cmp)')
 def _(run, rng):
     for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
         for b in range(0, 24):
@@ -1972,7 +1972,7 @@ def _(run, rng):
         assert got == (exp & 0xFFFF), f'0xf010({a},{b}): {got} ≠ {exp}'
 
 
-@t(0xF024, 'window-gate «down» (motor 0x7494): a≤b→a; a<b+8→b; иначе→a (u32-cmp)')
+@t(0xF024, 'window-gate "down" (motor 0x7494): a<=b->a; a<b+8->b; else->a (u32-cmp)')
 def _(run, rng):
     for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
         for b in range(0, 24):
@@ -1988,46 +1988,46 @@ def _(run, rng):
         assert got == (exp & 0xFFFF), f'0xf024({a},{b}): {got} ≠ {exp}'
 
 
-# cfg-байты @RAM+0xFC7: +1 → 0x8e70, +2 → 0x8e50; out-пул @RAM+0x300F (+0 / +2)
-@t(0x8E50, 'cfg×10 (motor): r1=s8[RAM+0xFC9] → u16[RAM+0x300F]=r1*10, return s16; аргумент игнорируется')
+# cfg bytes @RAM+0xFC7: +1 -> 0x8e70, +2 -> 0x8e50; out pool @RAM+0x300F (+0 / +2)
+@t(0x8E50, 'cfg*10 (motor): r1=s8[RAM+0xFC9] -> u16[RAM+0x300F]=r1*10, return s16; argument ignored')
 def _(run, rng):
     for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
         run.ram_write(0xFC9, struct.pack('<B', v))
-        r0, _ = run.call(0x8E50, [0xDEAD])  # аргумент не используется
+        r0, _ = run.call(0x8E50, [0xDEAD])  # argument not used
         out = struct.unpack('<h', run.ram_read(0x300F, 2))[0]
         sv = v if v < 128 else v - 256          # s8
         assert r0 == (sv * 10) & M32 and out == sv * 10, \
             f'cfg={v}: r0={r0:#x}, out={out}'
 
 
-@t(0x8E70, 'cfg×10 (motor): r1=s8[RAM+0xFC8] → u16[RAM+0x3011]=r1*10, return s16; аргумент игнорируется')
+@t(0x8E70, 'cfg*10 (motor): r1=s8[RAM+0xFC8] -> u16[RAM+0x3011]=r1*10, return s16; argument ignored')
 def _(run, rng):
     for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
         run.ram_write(0xFC8, struct.pack('<B', v))
-        r0, _ = run.call(0x8E70, [0xDEAD])  # аргумент не используется
+        r0, _ = run.call(0x8E70, [0xDEAD])  # argument not used
         out = struct.unpack('<h', run.ram_read(0x3011, 2))[0]
         sv = v if v < 128 else v - 256          # s8
         assert r0 == (sv * 10) & M32 and out == sv * 10, \
             f'cfg={v}: r0={r0:#x}, out={out}'
 
 
-@t(0xE658, '§57: round-robin диспетчер BLE-задач: гейты byte[0x35]≤2 && byte[0xA49]==1; bl 0x6618; dispatch по counter byte[0xA62] (mod 10) → 6 задач + 4 пустых')
+@t(0xE658, '§57: round-robin dispatcher of BLE tasks: gates byte[0x35]<=2 && byte[0xA49]==1; bl 0x6618; dispatch on counter byte[0xA62] (mod 10) -> 6 tasks + 4 empty')
 def _(run, rng):
     uc = run.uc
     tasks = {0: 0x6E50, 1: 0x63B8, 2: 0x799C, 3: 0x7A30, 4: 0x69E4, 5: 0x6838}
-    # --- гейты закрыты → ранний возврат, counter не тронут
+    # --- gates closed -> early return, counter untouched
     for b35 in (3, 5):
         run.ram_write(0x35, bytes([b35]))
         run.ram_write(0xA49, b'\x01')
         run.ram_write(0xA62, b'\x05')
         run.call(0xE658, [])
-        assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'гейт 0x35 не сработал'
+        assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'gate 0x35 did not trigger'
     run.ram_write(0x35, b'\x00')
     run.ram_write(0xA49, b'\x00')
     run.ram_write(0xA62, b'\x05')
     run.call(0xE658, [])
-    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'гейт 0xA49 не сработал'
-    # --- гейты открыты: dispatch по counter (останавливаемся на входе в task)
+    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 5, 'gate 0xA49 did not trigger'
+    # --- gates open: dispatch on counter (stop on entry to task)
     from unicorn import UC_HOOK_CODE
     for cnt in range(10):
         run.ram_write(0x35, b'\x00')
@@ -2039,52 +2039,52 @@ def _(run, rng):
             if any(t <= a < t + 0x40 for t in tasks.values()):
                 hit.append(a)
                 uc_.emu_stop()
-            elif 0xE6C4 <= a < 0xE6DE:   # хвост (пустой слот) — тоже стоп
+            elif 0xE6C4 <= a < 0xE6DE:   # tail (empty slot) — also stop
                 uc_.emu_stop()
         hook = uc.hook_add(UC_HOOK_CODE, stopper)
         run.emu.insn = 0
-        uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)   # валидный LR: пустые слоты доходят до pop {r4,pc}
+        uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)   # valid LR: empty slots reach pop {r4,pc}
         try:
             uc.emu_start(0xE659, 0, count=200000)
         except UcError as e:
-            raise AssertionError(f'fault при dispatch cnt={cnt}: {e}')
+            raise AssertionError(f'fault during dispatch cnt={cnt}: {e}')
         uc.hook_del(hook)
         exp = tasks.get(cnt)
         if exp is None:
-            assert not hit, f'cnt={cnt}: ожидался пустой слот, вызван task'
+            assert not hit, f'cnt={cnt}: expected empty slot, task was called'
         else:
             assert hit and (exp <= hit[0] < exp + 0x40), \
-                f'cnt={cnt}: ожидался task {exp:#06x}, факт {hit and hex(hit[0])}'
-    # --- counter инкремент + wrap (пустой слот cnt=9 → 0)
+                f'cnt={cnt}: expected task {exp:#06x}, actual {hit and hex(hit[0])}'
+    # --- counter increment + wrap (empty slot cnt=9 -> 0)
     run.ram_write(0xA62, b'\x09')
     run.call(0xE658, [], max_insn=200000)
-    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 0, 'counter не обнулился после 9'
-    # восстановление чистого состояния для следующих тестов
+    assert struct.unpack('<B', run.ram_read(0xA62, 1))[0] == 0, 'counter did not wrap to 0 after 9'
+    # restore clean state for subsequent tests
     run.ram_write(0x35, b'\x00')
     run.ram_write(0xA49, b'\x00')
     run.ram_write(0xA62, b'\x00')
 
-@t(0x16BD4, '§56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash)')
+@t(0x16BD4, '§56: hdr anomaly — early-exit: v1<=xtab[0]=2002 -> always constant grid[0]=0x3A08 (real flash tables)')
 def _(run, rng):
-    # Фрейм: bl НЕ пушит lr → callee SP = caller SP; [SP]={ygrid, hdr, stride}
+    # Frame: bl does NOT push lr -> callee SP = caller SP; [SP]={ygrid, hdr, stride}
     uc = run.uc
     F1 = 0x08000000
     C = STACK_TOP - 0x40
     run.ram_write(C - RAM, struct.pack('<III',
                    F1 + 0x1A4B0, F1 + 0x19F60, 5))
     from unicorn import UC_HOOK_CODE
-    for v1 in (0, 100, 2002, 0xFFFFFFFB):      # s8-диапазон caller'а + граница
+    for v1 in (0, 100, 2002, 0xFFFFFFFB):      # caller s8 range + boundary
         for v2 in (0, 500, 0x7FFF):
             uc.reg_write(UC_ARM_REG_R0, v1)
             uc.reg_write(UC_ARM_REG_R1, v2)
             uc.reg_write(UC_ARM_REG_R2, F1 + 0x1A01C)   # xtab
             uc.reg_write(UC_ARM_REG_R3, F1 + 0x19EB4)   # ystruct
             uc.reg_write(UC_ARM_REG_SP, C)
-            uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)    # lr → flash (как после bl)
+            uc.reg_write(UC_ARM_REG_LR, 0x08006AB1)    # lr -> flash (as after bl)
             run.emu.insn = 0
             ret = []
             def h(u_, a, s, usr):
-                if (a & ~1) == 0x16D8A:      # эпилог: r0 = результат
+                if (a & ~1) == 0x16D8A:      # epilogue: r0 = result
                     ret.append(u_.reg_read(UC_ARM_REG_R0))
                     u_.emu_stop()
             hook = uc.hook_add(UC_HOOK_CODE, h)
@@ -2097,12 +2097,12 @@ def _(run, rng):
                 f'v1={v1:#x} v2={v2:#x}: {ret} ≠ [0x3a08]'
 
 
-# --- ADC1-кластер (§58): 0x21FB8 reset / 0x21CA8 конфигуратор / 0x21E18 секвенсор ---
+# --- ADC1 cluster (§58): 0x21FB8 reset / 0x21CA8 configurator / 0x21E18 sequencer ---
 ADC1 = 0x40012400
 
 
 def _adc_hook(run):
-    """запись в ADC1-блок: (hook, список (off, size, val))"""
+    """Write to ADC1 block: (hook, list of (off, size, val))"""
     from unicorn import UC_HOOK_MEM_WRITE
     uc = run.uc
     writes = []
@@ -2114,13 +2114,13 @@ def _adc_hook(run):
 
 
 def _adc_zero(run):
-    """обнулить ADC1-блок (кроме +0x20 reset-helper НЕ трогает — RMW!)"""
+    """Clear ADC1 block (except +0x20 reset-helper does NOT touch — RMW!)"""
     for off in range(0, 0x80, 4):
         run.periph_write(ADC1 + off, 0)
 
 
 def _adc_struct(run, fields, slot=0):
-    """struct @ (STACK_TOP-0x80-slot*0x40): fields = {off: int}; возвращает адрес (r0/r1-аргумент)"""
+    """struct @ (STACK_TOP-0x80-slot*0x40): fields = {off: int}; returns address (r0/r1 argument)"""
     csp = STACK_TOP - 0x80 - slot * 0x40
     rr = csp - RAM
     buf = bytearray(0x40)
@@ -2133,20 +2133,20 @@ def _adc_struct(run, fields, slot=0):
     return csp
 
 
-@t(0x21FB8, '§58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, блок +0x40..+0x64=0, state-байты struct+0x39/+0x3A=0')
+@t(0x21FB8, '§58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, block +0x40..+0x64=0, state bytes struct+0x39/+0x3A=0')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE
     uc = run.uc
     _adc_zero(run)
     csp = _adc_struct(run, {0: ADC1})
     hook, writes = _adc_hook(run)
-    # ВАЖНО (§58.4): в этом билде Unicorn bx lr с вручную записанным LR
-    # «сквозит» на следующую инструкцию → стоп сразу после bx lr @0x21FF8,
-    # чтобы fall-through в 0x22000 не испачкал состояние
+    # IMPORTANT (§58.4): in this Unicorn build bx lr with manually written LR
+    # "leaks" into next instruction -> stop immediately after bx lr @0x21FF8,
+    # so fall-through into 0x22000 does not taint state
     stop_at = []
 
     def h(u_, a, s, usr):
-        if (a & ~1) == 0x21FFA:   # fall-through точка
+        if (a & ~1) == 0x21FFA:   # fall-through point
             u_.emu_stop()
     hook2 = uc.hook_add(UC_HOOK_CODE, h)
     try:
@@ -2159,14 +2159,14 @@ def _(run, rng):
            (0x58, 4, 0), (0x5C, 4, 0), (0x60, 4, 0), (0x64, 4, 0), (0x54, 4, 0),
            (0x40, 4, 0), (0x44, 4, 0), (0x48, 4, 0), (0x4C, 4, 0)]
     assert writes == exp, f'writes={writes}'
-    # state-байты в struct
+    # state bytes in struct
     st = run.ram_read(csp - RAM + 0x39, 2)
     assert st == b'\x00\x00', f'state={st.hex()}'
 
 
-@t(0x21CA8, '§58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) → cpsid i; нормальный путь: SMPR1/SMPR2/+0x40/+0x7C поля + ADON')
+@t(0x21CA8, '§58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) -> cpsid i; normal path: SMPR1/SMPR2/+0x40/+0x7C fields + ADON')
 def _(run, rng):
-    # --- assert-пути: спин без записей в ADC
+    # --- assert paths: spin without writes to ADC
     bad = ({0: 0xDEADBEEF}, {4: 2}, {0xB: 5}, {0xC: 6}, {0xA: 4}, {6: 0x10}, {9: 8})
     for f in bad:
         d = {k: v for k, v in ((0, ADC1), (4, 0), (0xA, 0), (0xB, 0), (0xC, 0), (6, 0), (9, 0))}
@@ -2177,8 +2177,8 @@ def _(run, rng):
             run.call(0x21CA8, [csp], max_insn=300)
         finally:
             run.uc.hook_del(hook)
-        assert not writes, f'assert {f}: были записи в ADC!'
-    # --- нормальный путь, ветка cfg[8]=0
+        assert not writes, f'assert {f}: there were writes to ADC!'
+    # --- normal path, branch cfg[8]=0
     _adc_zero(run)
     csp = _adc_struct(run, {0: ADC1, 4: 1, 5: 1, 6: 3, 8: 0, 9: 3, 0xA: 2, 0xB: 4, 0xC: 5})
     hook, writes = _adc_hook(run)
@@ -2192,13 +2192,13 @@ def _(run, rng):
         last[off] = val
     cr2_seq = [val for off, sz, val in writes if off == 0x18]
     assert 2 in cr2_seq and last[0x18] == 1, \
-        f'CR2: последовательность {cr2_seq} (ждём ...2...1: SWSTART до reset, ADON в конце)'
+        f'CR2: sequence {cr2_seq} (expect ...2...1: SWSTART before reset, ADON at end)'
     # SMPR1 = cfg[4]<<5 | cfg[0xA]<<3 | bit13(cfg[5])
     assert last[0x1C] == (1 << 5) | (2 << 3) | (1 << 0xD), f'SMPR1={last[0x1C]:#06x}'
     assert last[0x20] == 4, f'SMPR2={last[0x20]:#x}'                          # [2:0]=cfg[0xB]
     assert last[0x40] == 3, f'+0x40={last[0x40]:#x}'                          # [3:0]=cfg[6]
     assert last[0x7C] == 5 << 0x18, f'+0x7C={last[0x7C]:#08x}'               # [20:18]=cfg[0xC]
-    # --- ветка cfg[8]=1: SMPR1 |= bit16, поле [19:17]=cfg[9]
+    # --- branch cfg[8]=1: SMPR1 |= bit16, field [19:17]=cfg[9]
     _adc_zero(run)
     csp = _adc_struct(run, {0: ADC1, 4: 0, 5: 0, 6: 0, 8: 1, 9: 3, 0xA: 0, 0xB: 0, 0xC: 0})
     hook, writes = _adc_hook(run)
@@ -2209,8 +2209,8 @@ def _(run, rng):
     last = {}
     for off, sz, val in writes:
         last[off] = val
-    assert last[0x1C] == 0x10000 | (3 << 17), f'veтка1 SMPR1={last[0x1C]:#06x}'
-    # --- ветка cfg[8]=2: SMPR1 |= bit18, поле [19:17]=cfg[9]
+    assert last[0x1C] == 0x10000 | (3 << 17), f'branch1 SMPR1={last[0x1C]:#06x}'
+    # --- branch cfg[8]=2: SMPR1 |= bit18, field [19:17]=cfg[9]
     _adc_zero(run)
     csp = _adc_struct(run, {0: ADC1, 4: 0, 5: 0, 6: 0, 8: 2, 9: 7, 0xA: 0, 0xB: 0, 0xC: 0})
     hook, writes = _adc_hook(run)
@@ -2221,12 +2221,12 @@ def _(run, rng):
     last = {}
     for off, sz, val in writes:
         last[off] = val
-    assert last[0x1C] == 0x100000 | (7 << 17), f'veтка2 SMPR1={last[0x1C]:#06x}'
+    assert last[0x1C] == 0x100000 | (7 << 17), f'branch2 SMPR1={last[0x1C]:#06x}'
 
 
-@t(0x21E18, '§58: ADC1 validated channel-sequencer: asserts (chan≤18, rank≤4, sqr≤0xFFF, low≤3); sampling-поле по диапазонам каналов; SQR[rank]; SMPR1 bit25')
+@t(0x21E18, '§58: ADC1 validated channel-sequencer: asserts (chan<=18, rank<=4, sqr<=0xFFF, low<=3); sampling field by channel ranges; SQR[rank]; SMPR1 bit25')
 def _(run, rng):
-    # --- assert-пути
+    # --- assert paths
     def mkmain(mode=0):
         return _adc_struct(run, {0: ADC1, 8: mode})
     m = mkmain()
@@ -2240,8 +2240,8 @@ def _(run, rng):
             run.call(0x21E18, [m, cc], max_insn=300)
         finally:
             run.uc.hook_del(hook)
-        assert not writes, f'assert {f}: были записи в ADC!'
-    # --- нормальный путь: все 5 диапазонов каналов
+        assert not writes, f'assert {f}: there were writes to ADC!'
+    # --- normal path: all 5 channel ranges
     cases = [
         (0, 1, 4, 0x111, 3, 0),   # ch0 → +0x20 pos8;  rank1 → +0x58
         (2, 2, 5, 0x222, 2, 1),   # ch2 → +0x20 pos24; rank2 → +0x5C; bit23=1
@@ -2267,7 +2267,7 @@ def _(run, rng):
         last = {}
         for off, sz, val in writes:
             last[off] = val
-        # sampling-поле: реальный сдвиг из кода (chan*8+8 для ch0-2, chan*8-24 остальным)
+        # sampling field: real shift from code (chan*8+8 for ch0-2, chan*8-24 for others)
         if chan <= 2:
             reg, shift = 0x20, chan * 8 + 8
         elif chan <= 6:
@@ -2278,9 +2278,9 @@ def _(run, rng):
             reg, shift = 0x2C, chan * 8 - 24
         else:
             reg, shift = 0x30, chan * 8 - 24
-        # §58.4: RAW-shift (не mod-32!): сдвиг ≥32 → 0. Только ch0..6 достижимы;
-        # ch7..18 — no-op (caller 0x1C0B0 компенсирует ch7..10 финальным
-        # |= 0x04040404 в [+0x28])
+        # §58.4: RAW-shift (not mod-32!): shift >=32 -> 0. Only ch0..6 reachable;
+        # ch7..18 — no-op (caller 0x1C0B0 compensates ch7..10 with final
+        # |= 0x04040404 in [+0x28])
         exp = (smp_val << shift) & 0xFFFFFFFF if shift < 32 else 0
         assert last.get(reg, 0) == exp, \
             f'ch{chan}: [{reg:#04x}]={last.get(reg, 0):#x} ≠ {exp:#x}'
@@ -2296,10 +2296,10 @@ def _(run, rng):
             f'ch{chan} d={d}: SMPR1 bit25 ≠ {exp_bit25}'
 
 
-@t(0x1C0B0, '§58: ADC1 sensor-init (caller): reset → 0x21CA8 → 4×0x21E18 (ch C/B/A/F, rank 1-4, smp=4) → финальные OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) → ADON')
+@t(0x1C0B0, '§58: ADC1 sensor-init (caller): reset -> 0x21CA8 -> 4x0x21E18 (ch C/B/A/F, rank 1-4, smp=4) -> final OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) -> ADON')
 def _(run, rng):
     _adc_zero(run)
-    csp = _adc_struct(run, {0: ADC1})   # struct строит сам 0x1C0B0 (r0 не нужен)
+    csp = _adc_struct(run, {0: ADC1})   # struct is built by 0x1C0B0 itself (r0 not needed)
     hook, writes = _adc_hook(run)
     try:
         ret = run.call(0x1C0B0, [])
@@ -2308,32 +2308,32 @@ def _(run, rng):
     last = {}
     for off, sz, val in writes:
         last[off] = val
-    # финальные OR-константы caller'а (поверх значений из 0x21CA8/0x21E18)
+    # final OR constants of caller (on top of values from 0x21CA8/0x21E18)
     assert last.get(0x24, 0) & 0x04040404 == 0x04040404, f'+0x24={last.get(0x24, 0):#x}'
     assert last.get(0x28, 0) & 0x04040404 == 0x04040404, f'+0x28={last.get(0x28, 0):#x}'
     assert last.get(0x2C, 0) & 0x04040404 == 0x04040404, f'+0x2C={last.get(0x2C, 0):#x}'
     assert last.get(0x40, 0) & 0x0E1C6104 == 0x0E1C6104, f'common+0x0={last.get(0x40, 0):#x}'
     assert last.get(0x44, 0) & 9 == 9, f'common+4={last.get(0x44, 0):#x}'
     assert last.get(0x54, 0) & 0x40 == 0x40, f'common+0x14={last.get(0x54, 0):#x}'
-    # ADON в самом конце
+    # ADON at the very end
     cr2_seq = [val for off, sz, val in writes if off == 0x18]
-    assert cr2_seq and cr2_seq[-1] & 1, f'CR2 последняя={cr2_seq and hex(cr2_seq[-1])}'
-    # SQR rank-регистры: все 4 записаны (value = [sp+0x58] = 0 в caller'е)
+    assert cr2_seq and cr2_seq[-1] & 1, f'CR2 last={cr2_seq and hex(cr2_seq[-1])}'
+    # SQR rank registers: all 4 written (value = [sp+0x58] = 0 in caller)
     for sq in (0x58, 0x5C, 0x60, 0x64):
-        assert sq in last, f'SQR [{sq:#04x}] не записан'
+        assert sq in last, f'SQR [{sq:#04x}] not written'
 
 
 # ---------------------------------------------------------------------------
-# §59: 3-проводная шина (0x23374) + RCC/GPIOC init (0x1E2F8)
+# §59: 3-wire bus (0x23374) + RCC/GPIOC init (0x1E2F8)
 # ---------------------------------------------------------------------------
 
-BUS3_STRUCT = 0xAC   # struct @RAM+0xAC (пул 0x2347C = 0x200000AC)
+BUS3_STRUCT = 0xAC   # struct @RAM+0xAC (pool 0x2347C = 0x200000AC)
 
 
 def _bus3(run, a=0, b=0, c=0, sel=0, cur=0, delta=0, lim=0, old_out=0):
-    """собрать struct @RAM+0xAC: u16[+8]=a, u16[+A]=b, u16[+C]=c,
+    """Build struct @RAM+0xAC: u16[+8]=a, u16[+A]=b, u16[+C]=c,
     u16[+E]=sel, u32[+0x38]=cur, u32[+0x3C]=delta, u32[+0x40]=lim,
-    u16[+0x30]=old_out; вернуть (mid, ...) для ожиданий"""
+    u16[+0x30]=old_out; return (mid, ...) for expectations"""
     buf = bytearray(0x50)
     struct.pack_into('<H', buf, 8, a)
     struct.pack_into('<H', buf, 0xA, b)
@@ -2347,45 +2347,45 @@ def _bus3(run, a=0, b=0, c=0, sel=0, cur=0, delta=0, lim=0, old_out=0):
     return (cur + delta) >> 1
 
 
-@t(0x23374, '§59: 3-проводная шина — полная таблица решений (эмуляторно): C==0 → A=u16[+8] (0/1/2/4), C!=0 → B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur обновляется только на «mid»-ветках; A==0/B==7 → r0 из аргументов; пропущенные ветки → старый out. §59.2: на этом чипе bls/CC = lim≤mid (с равенством!), bhi/HS = lim>mid строго (отклонение от ARM: CC включает Z)')
+@t(0x23374, '§59: 3-wire bus — full decision table (emulated): C==0 -> A=u16[+8] (0/1/2/4), C!=0 -> B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur updated only on "mid" branches; A==0/B==7 -> r0 from args; skipped branches -> old out. §59.2: on this chip bls/CC = lim<=mid (with equality!), bhi/HS = lim>mid strictly (deviation from ARM: CC includes Z)')
 def _(run, rng):
-    # mid=10 везде (cur=10, delta=10); lim: 5(<mid), 10(=mid), 100(>mid)
+    # mid=10 everywhere (cur=10, delta=10); lim: 5(<mid), 10(=mid), 100(>mid)
     cases = [
         # (a, b, c, sel, cur, delta, lim, old_out, arg_r0, exp_out, exp_cur)
-        (0, 0, 0, 0, 0, 0, 0, 7, 0x1234, 0x1234, None),   # A==0 → r0 caller'а
-        (5, 0, 0, 0, 0, 0, 0, 7, 0x1234, 7, None),        # A∉{0,1,2,4} → старый out
+        (0, 0, 0, 0, 0, 0, 0, 7, 0x1234, 0x1234, None),   # A==0 -> caller r0
+        (5, 0, 0, 0, 0, 0, 0, 7, 0x1234, 7, None),        # A not in {0,1,2,4} -> old out
         (3, 0, 0, 4, 0, 0, 0, 9, 0, 9, None),
         # A==1
         (1, 0, 0, 1, 0, 0, 0, 0, 0, 1, None),
         (1, 0, 0, 3, 10, 10, 5, 0, 0, 2, 10),             # lim≤mid → 2
-        (1, 0, 0, 3, 10, 10, 10, 0, 0, 2, 10),            # lim==mid → 2 (CC включает =)
+        (1, 0, 0, 3, 10, 10, 10, 0, 0, 2, 10),            # lim==mid -> 2 (CC includes =)
         (1, 0, 0, 3, 10, 10, 100, 0, 0, 3, 10),           # lim>mid → 3
         (1, 0, 0, 5, 10, 10, 5, 0, 0, 5, 10),             # lim≤mid → 5
         (1, 0, 0, 5, 10, 10, 10, 0, 0, 5, 10),            # lim==mid → 5
         (1, 0, 0, 5, 10, 10, 100, 0, 0, 4, 10),           # lim>mid → 4
-        (1, 0, 0, 7, 1, 1, 1, 0, 0, 6, 1),                # sel 7 → 6, cur не трогает
+        (1, 0, 0, 7, 1, 1, 1, 0, 0, 6, 1),                # sel 7 -> 6, cur untouched
         (1, 0, 0, 2, 0, 0, 0, 0, 0, 2, None),             # else → out=sel
         # A==2
         (2, 0, 0, 2, 0, 0, 0, 0, 0, 2, None),
         (2, 0, 0, 3, 10, 10, 5, 0, 0, 3, 10),             # lim≤mid → 3
         (2, 0, 0, 3, 10, 10, 10, 0, 0, 3, 10),            # lim==mid → 3
         (2, 0, 0, 3, 10, 10, 100, 0, 0, 1, 10),           # lim>mid → 1
-        (2, 0, 0, 6, 10, 10, 100, 0, 0, 6, 10),           # lim>mid строго (bhi) → 6
-        (2, 0, 0, 6, 10, 10, 10, 0, 0, 4, 10),            # lim==mid → 4 (bhi нет)
+        (2, 0, 0, 6, 10, 10, 100, 0, 0, 6, 10),           # lim>mid strict (bhi) -> 6
+        (2, 0, 0, 6, 10, 10, 10, 0, 0, 4, 10),            # lim==mid -> 4 (no bhi)
         (2, 0, 0, 6, 10, 10, 5, 0, 0, 4, 10),             # lim<mid → 4
         (2, 0, 0, 7, 0, 0, 0, 0, 0, 5, None),
         # A==4
         (4, 0, 0, 4, 0, 0, 0, 0, 0, 4, None),
-        (4, 0, 0, 5, 10, 10, 100, 0, 0, 5, 10),           # lim>mid строго → 5
+        (4, 0, 0, 5, 10, 10, 100, 0, 0, 5, 10),           # lim>mid strict -> 5
         (4, 0, 0, 5, 10, 10, 10, 0, 0, 1, 10),            # lim==mid → 1
         (4, 0, 0, 5, 10, 10, 5, 0, 0, 1, 10),
         (4, 0, 0, 6, 10, 10, 5, 0, 0, 6, 10),             # lim≤mid → 6
         (4, 0, 0, 6, 10, 10, 10, 0, 0, 6, 10),            # lim==mid → 6
         (4, 0, 0, 6, 10, 10, 100, 0, 0, 2, 10),           # lim>mid → 2
-        (4, 0, 0, 7, 1, 1, 1, 0, 0, 3, 1),                # sel 7 → 3, cur не трогает
+        (4, 0, 0, 7, 1, 1, 1, 0, 0, 3, 1),                # sel 7 -> 3, cur untouched
         # B==3 (C!=0)
         (0, 3, 1, 0, 0, 0, 0, 0, 0, 4, None),
-        (0, 3, 1, 1, 10, 10, 100, 0, 0, 5, 10),           # lim>mid строго → 5
+        (0, 3, 1, 1, 10, 10, 100, 0, 0, 5, 10),           # lim>mid strict -> 5
         (0, 3, 1, 1, 10, 10, 10, 0, 0, 1, 10),            # lim==mid → 1
         (0, 3, 1, 1, 10, 10, 5, 0, 0, 1, 10),
         (0, 3, 1, 2, 10, 10, 5, 0, 0, 6, 10),             # lim≤mid → 6
@@ -2398,7 +2398,7 @@ def _(run, rng):
         (0, 5, 1, 1, 10, 10, 5, 0, 0, 3, 10),             # lim≤mid → 3
         (0, 5, 1, 1, 10, 10, 10, 0, 0, 3, 10),            # lim==mid → 3
         (0, 5, 1, 1, 10, 10, 100, 0, 0, 1, 10),           # lim>mid → 1
-        (0, 5, 1, 4, 10, 10, 100, 0, 0, 6, 10),           # lim>mid строго → 6
+        (0, 5, 1, 4, 10, 10, 100, 0, 0, 6, 10),           # lim>mid strict -> 6
         (0, 5, 1, 4, 10, 10, 10, 0, 0, 4, 10),            # lim==mid → 4
         (0, 5, 1, 4, 10, 10, 5, 0, 0, 4, 10),
         (0, 5, 1, 5, 0, 0, 0, 0, 0, 5, None),
@@ -2411,9 +2411,9 @@ def _(run, rng):
         (0, 6, 1, 4, 10, 10, 10, 0, 0, 5, 10),            # lim==mid → 5
         (0, 6, 1, 4, 10, 10, 100, 0, 0, 4, 10),           # lim>mid → 4
         (0, 6, 1, 6, 0, 0, 0, 0, 0, 6, None),
-        # B==7 / пропуски
-        (0, 7, 1, 0, 0, 0, 0, 7, 0x77, 0x77, None),       # B==7 → r0 caller'а
-        (0, 9, 1, 0, 0, 0, 0, 8, 0x55, 8, None),          # B∉{3,5,6,7} → старый out
+        # B==7 / skips
+        (0, 7, 1, 0, 0, 0, 0, 7, 0x77, 0x77, None),       # B==7 -> caller r0
+        (0, 9, 1, 0, 0, 0, 0, 8, 0x55, 8, None),          # B not in {3,5,6,7} -> old out
     ]
     for (a, b, c, sel, cur, delta, lim, old, r0arg, exp_out, exp_cur) in cases:
         _bus3(run, a=a, b=b, c=c, sel=sel, cur=cur, delta=delta,
@@ -2426,10 +2426,10 @@ def _(run, rng):
             assert got_cur == exp_cur, f'{tag}: cur={got_cur:#x} ≠ {exp_cur:#x}'
 
 
-@t(0x1E2F8, '§59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (по битам 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC-делители: +0x08 nibble-логика по MODER=0x44AA200, mid-ветка → 1) → +0x08=0x900; финал RCC+0x00 = 0x100000 (bit20 enable)')
+@t(0x1E2F8, '§59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (bits 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC prescalers: +0x08 nibble logic by MODER=0x44AA200, mid branch -> 1) -> +0x08=0x900; final RCC+0x00 = 0x100000 (bit20 enable)')
 def _(run, rng):
     uc = run.uc
-    # RCC-регион обнуляем: OR-записи не идемпотентны (один Run на все тесты)
+    # Clear RCC region: OR writes are not idempotent (one Run for all tests)
     uc.mem_write(0x40021000, b'\x00' * 0x100)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
@@ -2442,7 +2442,7 @@ def _(run, rng):
         uc.hook_del(hook)
     assert r0 == 0x100000, f'r0={r0:#x}'
     seq = [(off, val) for off, val in writes]
-    # RCC+0x3C: по битам 16..19 (0x80000→0xC0000→0xE0000→0xF0000)
+    # RCC+0x3C: across bits 16..19 (0x80000->0xC0000->0xE0000->0xF0000)
     c3c = [v for o, v in seq if o == 0x3C]
     assert c3c[:4] == [0x80000, 0xC0000, 0xE0000, 0xF0000], f'+0x3C={ [hex(v) for v in c3c]}'
     # RCC+0x40: 0x80000 → 0xC0000 → 0xE0000
@@ -2451,19 +2451,19 @@ def _(run, rng):
     # RCC+0x44: 0x4000 → 0x4800 → 0x4A00
     c44 = [v for o, v in seq if o == 0x44]
     assert c44 == [0x4000, 0x4800, 0x4A00], f'+0x44={[hex(v) for v in c44]}'
-    # RCC+0x3C финал: |= 0x8000 → 0xF8000, |= 1 → 0xF8001
-    assert c3c[-2:] == [0xF8000, 0xF8001], f'+0x3C хвост={[hex(v) for v in c3c[-2:]]}'
+    # RCC+0x3C final: |= 0x8000 -> 0xF8000, |= 1 -> 0xF8001
+    assert c3c[-2:] == [0xF8000, 0xF8001], f'+0x3C tail={[hex(v) for v in c3c[-2:]]}'
     # helper 0x19A9A: RCC+0x00=0, +0x04=0 (×2), +0x08=0, +0x08=0x900 (×2)
     c00 = [v for o, v in seq if o == 0x00]
     c04 = [v for o, v in seq if o == 0x04]
     c08 = [v for o, v in seq if o == 0x08]
     assert c00[0] == 0 and c04[:2] == [0, 0], f'+0x00/0x04={c00}/{c04}'
     assert 0 in c08 and 0x900 in c08, f'+0x08={c08}'
-    # финал: RCC+0x00 = 0x100000 (bit20)
-    assert c00[-1] == 0x100000, f'+0x00 последняя={hex(c00[-1])}'
+    # final: RCC+0x00 = 0x100000 (bit20)
+    assert c00[-1] == 0x100000, f'+0x00 last={hex(c00[-1])}'
 
 
-@t(0x1302C, '§59: RCC-пульсатор USART: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность |=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит')
+@t(0x1302C, '§59: RCC pulser USART: base -> (reg, bit): 0x40013800(USART1)->+0x0C/0x4000, 0x40004400(USART2)->+0x10/0x20000, 0x40004800(USART3)->+0x10/0x40000, 0x40015000->+0x0C/0x20000, 0x40015400->+0x0C/0x40000; sequence |=bit then &=~bit (pulse); unknown base -> no writes; r0 = bit')
 def _(run, rng):
     uc = run.uc
     cases = [
@@ -2486,8 +2486,8 @@ def _(run, rng):
             uc.hook_del(hook)
         assert r0 == bit, f'{base:#x}: r0={r0:#x} ≠ {bit:#x}'
         assert writes == [(reg, bit), (reg, 0)], \
-            f'{base:#x}: записи={[(hex(o), hex(v)) for o, v in writes]}'
-    # неизвестная base → без записей
+            f'{base:#x}: writes={[(hex(o), hex(v)) for o, v in writes]}'
+    # unknown base -> no writes
     uc.mem_write(0x40021000, b'\x00' * 0x100)
     writes = []
     def hw2(u_, acc, addr, size, val, usr):
@@ -2498,13 +2498,13 @@ def _(run, rng):
         run.call(0x1302C, [0x40010800])
     finally:
         uc.hook_del(hook)
-    assert writes == [], f'неизвестная base: записей={len(writes)}'
+    assert writes == [], f'unknown base: writes={len(writes)}'
 
 
-@t(0x1E298, '§59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) → validated-write 0x2359C(0x40020000, 0, 0x5D000041) в [0x40020108] c readback-retry → u32[0x40020028]=1 (enable) → ADC1 CR2|=4; возврат pop {r4,pc} (§59.3: на чипе POP всегда восстанавливает pc)')
+@t(0x1E298, '§59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) -> validated-write 0x2359C(0x40020000, 0, 0x5D000041) into [0x40020108] with readback-retry -> u32[0x40020028]=1 (enable) -> ADC1 CR2|=4; return pop {r4,pc} (§59.3: on-chip POP always restores pc)')
 def _(run, rng):
     uc = run.uc
-    # обнуляем ADC1 и блок 0x40020000 (RMW-записи)
+    # clear ADC1 and block 0x40020000 (RMW writes)
     uc.mem_write(0x40012400, b'\x00' * 0x100)
     uc.mem_write(0x40020000, b'\x00' * 0x200)
     writes = []
@@ -2518,23 +2518,23 @@ def _(run, rng):
         r0, _ = run.call(0x1E298, [])
     finally:
         uc.hook_del(hook); uc.hook_del(hook2)
-    # §57/§59: возврат через LR-sentinel даёт FETCH_UNMAPPED — это артефакт
-    # харнесса (pop {pc} → 0x0BADF001), не fault функции: все записи уже сделаны
+    # §57/§59: return via LR-sentinel yields FETCH_UNMAPPED — this is an artifact
+    # of test harness (pop {pc} -> 0x0BADF001), not function fault: all writes already performed
     assert r0 == 0x40012400, f'r0={r0:#x}'
-    # нормализуем: ADC1-смещения как есть, блок 0x40020000 → +0x10000
+    # normalize: ADC1 offsets as is, block 0x40020000 -> +0x10000
     seq = [(a - 0x40012400 if a < 0x40013000 else a - 0x40020000 + 0x10000,
             v) for a, v in writes]
-    # порядок: ADC1 CR2|=0x20 → [0x40020108]=0x5D000041 → [0x40020028]=1 → ADC1 CR2|=4
-    assert seq[0] == (0x18, 0x20), f'1-я запись={seq[0]}'
-    assert (0x10108, 0x5D000041) in seq, f'validated-write нет: {seq}'
-    assert (0x10028, 1) in seq, f'enable нет: {seq}'
-    assert seq[-1] == (0x18, 0x24), f'последняя={seq[-1]}'
+    # order: ADC1 CR2|=0x20 -> [0x40020108]=0x5D000041 -> [0x40020028]=1 -> ADC1 CR2|=4
+    assert seq[0] == (0x18, 0x20), f'1st write={seq[0]}'
+    assert (0x10108, 0x5D000041) in seq, f'validated-write missing: {seq}'
+    assert (0x10028, 1) in seq, f'enable missing: {seq}'
+    assert seq[-1] == (0x18, 0x24), f'last={seq[-1]}'
     i_dma = next(i for i, (o, v) in enumerate(seq) if o == 0x10108)
     i_en = next(i for i, (o, v) in enumerate(seq) if o == 0x10028)
-    assert seq.index((0x18, 0x20)) < i_dma < i_en < len(seq) - 1, f'порядок: {seq}'
+    assert seq.index((0x18, 0x20)) < i_dma < i_en < len(seq) - 1, f'order: {seq}'
 
 
-@t(0x1D640, '§59: мотор-TIM init (TIM @0x40012C00 + channel-блоки @0x48000000/0x48000400): детерминированная последовательность 107 записей; финал TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B→0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — ПОСЛЕДНИЙ; блоки 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41')
+@t(0x1D640, '§59: motor TIM init (TIM @0x40012C00 + channel blocks @0x48000000/0x48000400): deterministic sequence of 107 writes; final TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B->0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — LAST; blocks 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41')
 def _(run, rng):
     import struct as _st
     uc = run.uc
@@ -2551,8 +2551,8 @@ def _(run, rng):
     finally:
         uc.hook_del(h1); uc.hook_del(h2)
     assert r0 == 0x41, f'r0={r0:#x}'
-    assert len(writes) == 107, f'записей={len(writes)} (ожидалось 107)'
-    # финальные состояния
+    assert len(writes) == 107, f'writes={len(writes)} (expected 107)'
+    # final states
     def rd(a):
         return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
     tim = {off: rd(0x40012C00 + off) for off in range(0, 0x60, 4)}
@@ -2560,20 +2560,20 @@ def _(run, rng):
     assert tim[0x24] == 1 and tim[0x28] == 0x6060 and tim[0x2C] == 0x6060
     assert tim[0x30] == 0x1DDD and tim[0x3C] == 0x8CA
     assert tim[0x50] == 0x8C9 and tim[0x54] == 0x1D24
-    assert all(tim[o] == 0 for o in (0x44, 0x48, 0x4C)), 'CCR не очищены'
+    assert all(tim[o] == 0 for o in (0x44, 0x48, 0x4C)), 'CCR not cleared'
     a = {off: rd(0x48000000 + off) for off in range(0, 0x40, 4)}
     b = {off: rd(0x48000400 + off) for off in range(0, 0x40, 4)}
     assert a[0x2C] == 0x666 and a[0x10] == 0x2A0000
     assert b[0x2C] == 0x66660000 and b[0x10] == 0xAA000000
     assert all(a[o] == 0 for o in (0x14, 0x18, 0x1C, 0x20, 0x24))
-    # порядок: CCR-константы 0x45B пишутся ДО их очистки; enable — последняя запись
+    # order: CCR constants 0x45B are written BEFORE being cleared; enable is last write
     i_45b = next(i for i, (ad, v) in enumerate(writes) if ad == 0x40012C44 and v == 0x45B)
     i_clr = next(i for i, (ad, v) in enumerate(writes) if ad == 0x40012C44 and v == 0)
     assert i_45b < i_clr
-    assert writes[-1] == (0x40012C00, 0x41), f'последняя запись={writes[-1]}'
+    assert writes[-1] == (0x40012C00, 0x41), f'last write={writes[-1]}'
 
 
-@t(0x1BF48, '§59: МОТОР-ИНИТ (221 запись, детерминированно): 1) bl 0x1D640 (мотор-TIM @0x40012C00 + channel-блоки 0x48000000/0x48000400; enable TIM — запись #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: финал +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO-блок @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) → +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) → +0x10=5 (bit0+bit2); r0=0x48000C00')
+@t(0x1BF48, '§59: MOTOR INIT (221 writes, deterministic): 1) bl 0x1D640 (motor TIM @0x40012C00 + channel blocks 0x48000000/0x48000400; enable TIM — write #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: final +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO block @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) -> +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) -> +0x10=5 (bit0+bit2); r0=0x48000C00')
 def _(run, rng):
     import struct as _st
     uc = run.uc
@@ -2590,85 +2590,85 @@ def _(run, rng):
     finally:
         uc.hook_del(h1); uc.hook_del(h2)
     assert r0 == 0x48000C00, f'r0={r0:#x}'
-    assert len(writes) == 221, f'записей={len(writes)} (ожидалось 221)'
-    # фаза 1 (0x1D640) кончается enable TIM — запись #106
+    assert len(writes) == 221, f'writes={len(writes)} (expected 221)'
+    # phase 1 (0x1D640) ends with enable TIM — write #106
     assert writes[106] == (0x40012C00, 0x41), f'#106={writes[106]}'
     def rd(a):
         return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
-    # ADC1-финал (§58)
+    # ADC1 final (§58)
     a1 = {off: rd(0x40012400 + off) for off in range(0, 0x80, 4)}
     assert a1[0x00] == 0x40 and a1[0x18] == 1 and a1[0x1C] == 0x19
     assert a1[0x20] == 0x4040403 and a1[0x24] == a1[0x28] == a1[0x2C] == 0x4040404
     assert a1[0x3C] == 0xFFF0000 and a1[0x40] == 0xE1C6104 and a1[0x44] == 9
     assert a1[0x54] == 0x3CA2CC43, f'SQR={a1[0x54]:#x}'
-    # TIM-финал (из 0x1D640)
+    # TIM final (from 0x1D640)
     tim = {off: rd(0x40012C00 + off) for off in range(0, 0x60, 4)}
     assert tim[0x00] == 0x41 and tim[0x3C] == 0x8CA and tim[0x50] == 0x8C9
-    # channel-блоки 0x48
+    # channel blocks 0x48
     assert rd(0x4800002C) == 0x666 and rd(0x48000010) == 0x2A0000
     assert rd(0x4800042C) == 0x66660000 and rd(0x48000410) == 0xAA000000
-    # GPIO-блок @0x48000C00: только +0x10 = 5, CRL очищен
+    # GPIO block @0x48000C00: only +0x10 = 5, CRL cleared
     c = {off: rd(0x48000C00 + off) for off in range(0, 0x40, 4)}
-    assert c[0x10] == 5 and c[0x04] == 0, f'блок C: { {hex(k): hex(v) for k, v in c.items() if v} }'
-    # хвост: последовательность CRL/0x22000 на блоке C
+    assert c[0x10] == 5 and c[0x04] == 0, f'block C: { {hex(k): hex(v) for k, v in c.items() if v} }'
+    # tail: sequence of CRL/0x22000 on block C
     tail = [(a, v) for a, v in writes[107:] if 0x48000C00 <= a < 0x48000C40]
-    assert tail[0] == (0x48000C04, 0), f'хвост[0]={tail[0]}'
+    assert tail[0] == (0x48000C04, 0), f'tail[0]={tail[0]}'
     i_m2 = next(i for i, (a, v) in enumerate(tail) if a == 0x48000C10 and v == 4)
     i_m1 = next(i for i, (a, v) in enumerate(tail) if a == 0x48000C10 and v == 5)
-    assert tail[i_m2 + 1] == (0x48000C04, 0), 'CRL &= ~2 между mode-2 и mode-1'
-    assert tail[-1] == (0x48000C10, 5), f'хвост[-1]={tail[-1]}'
+    assert tail[i_m2 + 1] == (0x48000C04, 0), 'CRL &= ~2 between mode-2 and mode-1'
+    assert tail[-1] == (0x48000C10, 5), f'tail[-1]={tail[-1]}'
 
 
-@t(0x1C1AC, '§59: ADC-DMA transfer setup (блок @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C → [+0x108]=0x5D000041 (ctrl, тот же что в 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ-хвост: [**0xE000E100**]=0x200 (прямая запись bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear биты 8..15); r0=0')
+@t(0x1C1AC, '§59: ADC-DMA transfer setup (block @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C -> [+0x108]=0x5D000041 (ctrl, same as in 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ tail: [**0xE000E100**]=0x200 (direct write bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear bits 8..15); r0=0')
 def _(run, rng):
     uc = run.uc
     uc.mem_write(0x40020000, b'\x00' * 0x200)
-    # SYS-регион обнуляем: [0xE000E408] &= ~0xFF00 — значение зависит от предыдущего
+    # Clear SYS region: [0xE000E408] &= ~0xFF00 — value depends on previous
     uc.mem_write(0xE000E000, b'\x00' * 0x1000)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
-        if addr >= 0x20017F00:   # стек отбрасываем
+        if addr >= 0x20017F00:   # drop stack
             writes.append((addr, val))
-    h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw)   # всё пространство
+    h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw)   # entire space
     try:
         r0, _ = run.call(0x1C1AC, [], max_insn=100000)
     finally:
         uc.hook_del(h1)
     assert r0 == 0, f'r0={r0:#x}'
     seq = [(a, v) for a, v in writes if not (0x20017F00 <= a < 0x20018000)]
-    assert len(seq) == 11, f'записей={len(seq)}: {seq}'
-    # порядок: src → dst → ctrl → enable-группа → ctrl |= 1 → IRQ
+    assert len(seq) == 11, f'writes={len(seq)}: {seq}'
+    # order: src -> dst -> ctrl -> enable group -> ctrl |= 1 -> IRQ
     assert seq[0] == (0x40020004, 1)
     assert seq[1] == (0x40020100, 0x40012450), f'src={seq[1]}'
     assert seq[2] == (0x40020104, 0x20001692), f'dst={seq[2]}'
     assert seq[3] == (0x40020108, 0x5D000041)
     assert seq[4] == (0x40020028, 1) and seq[5] == (0x40020014, 1)
     assert seq[6] == (0x40020070, 0x19) and seq[7] == (0x40020050, 1)
-    assert seq[8] == (0x40020108, 0x5D000041), 'ctrl |= 1 (bit0 уже стоит — значение не меняется)'
-    # IRQ-хвост: ядро + NVIC
+    assert seq[8] == (0x40020108, 0x5D000041), 'ctrl |= 1 (bit0 already set — value does not change)'
+    # IRQ tail: core + NVIC
     assert seq[9] == (0xE000E100, 0x200), f'IRQ enable={seq[9]}'
     assert seq[10] == (0xE000E408, 0), f'NVIC+0x08={seq[10]}'
 
 
 # ---------------------------------------------------------------------------
-# §59.6: RX-парсер USART3 0x1E9E0 (вызывающий — периодический таск 0x1DFD8)
+# §59.6: USART3 RX parser 0x1E9E0 (caller is periodic task 0x1DFD8)
 #
-# Контракт (эмпирически):
-# - state = byte[RAM+0x172]: 0 → только RAM+0x171=0; 1 → обработать 1 сообщение
-# - head = byte[RAM+0x2C0] (кольцо 3 слота × 150 B @RAM+0x881), байт команды = ring[head*150+1]
-# - toggle = byte[RAM+0x2C9] (0..7): индекс context-слота @RAM+0x10B5 + i*0x76
-# - dispatch по ASCII: '@'→только head++; 'G'/'K'/'c'→frame-start (len 20/27/83);
-#   'A'→telemetry-snapshot; 'a' и др. → response-сборщики
-# - context: {6,'e',len,'O','K',crc,0x9A} (frame-start) или {'d'-кадры}
-# - crc = сумма байтов context[1..] mod 256; checksum = 0xFF - context[1]
-# - после обработки: state=0, head++ (wrap при ≥3), toggle++ (wrap при ≥8, frame-start)
+# Contract (empirical):
+# - state = byte[RAM+0x172]: 0 -> only RAM+0x171=0; 1 -> process 1 message
+# - head = byte[RAM+0x2C0] (ring of 3 slots * 150 B @RAM+0x881), cmd byte = ring[head*150+1]
+# - toggle = byte[RAM+0x2C9] (0..7): context slot index @RAM+0x10B5 + i*0x76
+# - dispatch on ASCII: '@' -> head++ only; 'G'/'K'/'c' -> frame-start (len 20/27/83);
+#   'A' -> telemetry-snapshot; 'a' etc. -> response collectors
+# - context: {6,'e',len,'O','K',crc,0x9A} (frame-start) or {'d' frames}
+# - crc = sum of context[1..] bytes mod 256; checksum = 0xFF - context[1]
+# - after processing: state=0, head++ (wrap at >=3), toggle++ (wrap at >=8, frame-start)
 #
-# Методич. (§59.6.3): на этом чипе Bcond-кодировка D0xx = BEQ c imm8 в [7:0]
-# (не стандартный ARM [11:4]); capstone декодирует цели верно, но метки cond — нет.
+# Note (§59.6.3): on this chip Bcond encoding D0xx = BEQ with imm8 in [7:0]
+# (not standard ARM [11:4]); capstone decodes targets correctly, but cond labels do not match.
 # ---------------------------------------------------------------------------
 
 def _parser_probe(run, state=1, head=0, toggle=0, byte=0, slot_data=None):
-    """засеять состояние парсера и прогнать; вернуть список записей (off, val) в RAM"""
+    """Seed parser state and execute; return list of writes (off, val) to RAM"""
     uc = run.uc
     uc.mem_write(RAM + 0x172, bytes([state]))
     uc.mem_write(RAM + 0x2C0, bytes([head]))
@@ -2690,31 +2690,31 @@ def _parser_probe(run, state=1, head=0, toggle=0, byte=0, slot_data=None):
 
 
 def _ctx(run, slot, n=13):
-    """context-слот @RAM+0x10B5 + slot*0x96 (n байтов; stride = размер ring-слота)"""
+    """context slot @RAM+0x10B5 + slot*0x96 (n bytes; stride = size of ring slot)"""
     base = RAM + 0x10B5 + slot * 0x96
     return bytes(run.uc.mem_read(base, n))
 
 
-@t(0x1E9E0, '§59.6: RX-парсер USART3 — dispatch-каркас: state=0 → только RAM+0x171=0; state=1 + неизвестный байт → RAM+0x171=0, state→0, head 0→1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC-структ {idx=5,crc=0x13,sum=0x9A}, флаг RAM+0x310=0, toggle 0→1, head 0→1; "G" (toggle=7): context @0x14CF, toggle 8→0 (wrap)')
+@t(0x1E9E0, '§59.6: USART3 RX parser — dispatch framework: state=0 -> only RAM+0x171=0; state=1 + unknown byte -> RAM+0x171=0, state->0, head 0->1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC struct {idx=5,crc=0x13,sum=0x9A}, flag RAM+0x310=0, toggle 0->1, head 0->1; "G" (toggle=7): context @0x14CF, toggle 8->0 (wrap)')
 def _(run, rng):
-    # state=0: только RAM+0x171=0
+    # state=0: only RAM+0x171=0
     ev = _parser_probe(run, state=0, byte=0x47)
     assert ev == [(0x171, 0)], f'state=0: {ev}'
-    # неизвестный байт (0x00): минимальные записи
+    # unknown byte (0x00): minimal writes
     ev = _parser_probe(run, state=1, head=0, byte=0x00)
-    assert ev == [(0x171, 0), (0x172, 0), (0x2C0, 1)], f'неизв. байт: {ev}'
+    assert ev == [(0x171, 0), (0x172, 0), (0x2C0, 1)], f'unknown byte: {ev}'
     # "G" frame-start, toggle=0
     ev = _parser_probe(run, state=1, head=0, toggle=0, byte=0x47)
     got = dict(ev)
-    assert got.get(0x310) == 0, f'флаг G: {ev}'
+    assert got.get(0x310) == 0, f'flag G: {ev}'
     assert got.get(0x2C9) == 1, f'toggle: {ev}'
     assert got.get(0x2C0) == 1, f'head: {ev}'
     assert got.get(0x172) == 0, f'state: {ev}'
     ctx = _ctx(run, 0)
     assert ctx[:7] == bytes([6, 0x65, 20, 0x4F, 0x4B, 0x13, 0x9A]), f'context G: {ctx.hex(" ")}'
-    # CRC-структ @RAM+0x177: idx=5, crc=0x13, sum=0x9A
-    assert got.get(0x177) == 5 and got.get(0x178) == 0x13 and got.get(0x179) == 0x9A, f'crc-структ: {ev}'
-    # "G" frame-start, toggle=7 → слот 7, wrap toggle 8→0
+    # CRC struct @RAM+0x177: idx=5, crc=0x13, sum=0x9A
+    assert got.get(0x177) == 5 and got.get(0x178) == 0x13 and got.get(0x179) == 0x9A, f'crc struct: {ev}'
+    # "G" frame-start, toggle=7 -> slot 7, wrap toggle 8->0
     ev = _parser_probe(run, state=1, head=0, toggle=7, byte=0x47)
     tw = [v for a, v in ev if a == 0x2C9]
     assert tw == [8, 0], f'toggle wrap: {tw}'
@@ -2722,7 +2722,7 @@ def _(run, rng):
     assert ctx7[:7] == bytes([6, 0x65, 20, 0x4F, 0x4B, 0x13, 0x9A]), f'context G slot7: {ctx7.hex(" ")}'
 
 
-@t(0x1E9E0, '§59.6: RX-парсер — "A" telemetry-snapshot: ring[3..9] → RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (нибблы ring5), 0x2EC=ring6, ring7 → {bit7→0x2ED, bit6→0x2EE, [5:0]→0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF')
+@t(0x1E9E0, '§59.6: RX parser — "A" telemetry snapshot: ring[3..9] -> RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (nibbles of ring5), 0x2EC=ring6, ring7 -> {bit7->0x2ED, bit6->0x2EE, [5:0]->0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF')
 def _(run, rng):
     data = {i: 0x10 + i for i in range(3, 10)}   # ring[3..9] = 0x13..0x19
     ev = _parser_probe(run, state=1, head=0, byte=0x41, slot_data=data)
@@ -2731,36 +2731,36 @@ def _(run, rng):
         return uc.mem_read(RAM + off, 1)[0]
     # rev16: u16 LE @0x2E8 = rev16((ring4<<8)|ring3) = rev16(0x1413) = 0x1314
     assert (rd(0x2E8), rd(0x2E9)) == (0x14, 0x13), f'rev16: {rd(0x2E8):#x},{rd(0x2E9):#x}'
-    assert rd(0x2EA) == 5 and rd(0x2EB) == 1, f'нибблы ring5: {rd(0x2EA):#x},{rd(0x2EB):#x}'
+    assert rd(0x2EA) == 5 and rd(0x2EB) == 1, f'nibbles of ring5: {rd(0x2EA):#x},{rd(0x2EB):#x}'
     assert rd(0x2EC) == 0x16, f'ring6: {rd(0x2EC):#x}'
     # ring7 = 0x17: bit7=0, bit6=0, [5:0]=0x17
-    assert rd(0x2ED) == 0 and rd(0x2EE) == 0 and rd(0x2EF) == 0x17, f'ring7-сплит: {rd(0x2ED):#x},{rd(0x2EE):#x},{rd(0x2EF):#x}'
+    assert rd(0x2ED) == 0 and rd(0x2EE) == 0 and rd(0x2EF) == 0x17, f'ring7 split: {rd(0x2ED):#x},{rd(0x2EE):#x},{rd(0x2EF):#x}'
     assert rd(0x2F0) == 0x18 and rd(0x2F1) == 0x19, f'ring8/9: {rd(0x2F0):#x},{rd(0x2F1):#x}'
     # context: {0xC,'d',0x20,7,data[0..6],crc,checksum}
     ctx = _ctx(run, 0)
     assert ctx[0] == 0x0C and ctx[1] == 0x64 and ctx[2] == 0x20 and ctx[3] == 7
     assert ctx[4:11] == bytes([0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19]), f'data: {ctx.hex(" ")}'
     crc = (0x64 + 0x20 + 7 + sum(range(0x13, 0x1A))) & 0xFF   # = 0x25
-    assert ctx[11] == crc == 0x25, f'crc: {ctx[11]:#x} (ожидалось {crc:#x})'
+    assert ctx[11] == crc == 0x25, f'crc: {ctx[11]:#x} (expected {crc:#x})'
     assert ctx[12] == 0x9B, f'checksum: {ctx[12]:#x}'
-    # toggle и head
+    # toggle and head
     got = dict(ev)
     assert got.get(0x2C9) == 1 and got.get(0x2C0) == 1 and got.get(0x172) == 0
 
 
 # ---------------------------------------------------------------------------
-# §59.7: «own» round 0x1DD8C (128 B, bl из 0x1a814) — один раунд шифра «own»
+# §59.7: "own" round 0x1DD8C (128 B, bl from 0x1a814) — one round of "own" cipher
 #
-# Буфер 16 B = 4 группы × 4 байта; каждая группа [A,B,C,D] смешивается
-# независимо через CRC-8 (полином 0x1B, MSB-first) как Feistel:
+# Buffer 16 B = 4 groups * 4 bytes; each group [A,B,C,D] is mixed
+# independently via CRC-8 (polynomial 0x1B, MSB-first) as Feistel:
 #   X  = A^B^C^D
 #   A' = A ^ crc8(A^B) ^ X
 #   B' = B ^ crc8(B^C) ^ X
 #   C' = C ^ crc8(C^D) ^ X
 #   D' = D ^ crc8(D^A) ^ X
-# где crc8(x) = ((x<<1) ^ (0x1B & -(x>>7))) & 0xFF (один шаг CRC-8).
-# Чистая функция: все обращения к памяти — относительно r0 (буфер),
-# без pool/абсолютных RAM-адресов.
+# where crc8(x) = ((x<<1) ^ (0x1B & -(x>>7))) & 0xFF (one step of CRC-8).
+# Pure function: all memory accesses are relative to r0 (buffer),
+# without pool/absolute RAM addresses.
 # ---------------------------------------------------------------------------
 
 def ref_crc8_step(x):
@@ -2780,7 +2780,7 @@ def ref_own_round(buf16):
     return bytes(b)
 
 
-@t(0x1DD8C, '§59.7: «own» round — 16 B = 4×4 байта; каждая группа [A,B,C,D]: X=A^B^C^D; A''=A^crc8(A^B)^X, B''=B^crc8(B^C)^X, C''=C^crc8(C^D)^X, D''=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); чистая функция от буфера в r0')
+@t(0x1DD8C, '§59.7: "own" round — 16 B = 4x4 bytes; each group [A,B,C,D]: X=A^B^C^D; A''=A^crc8(A^B)^X, B''=B^crc8(B^C)^X, C''=C^crc8(C^D)^X, D''=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); pure function of buffer in r0')
 def _(run, rng):
     buf_off = 0x1F000
     for _ in range(32):
@@ -2790,32 +2790,32 @@ def _(run, rng):
         run.call(0x1DD8C, (RAM + buf_off,), max_insn=20000)
         got = run.ram_read(buf_off, 16)
         assert got == exp, f'own_round:\n in : {data.hex(" ")}\n exp: {exp.hex(" ")}\n got: {got.hex(" ")}'
-    # детерминированный якорь: все нули → все нули (X=0, crc8(0)=0)
+    # deterministic anchor: all zeros -> all zeros (X=0, crc8(0)=0)
     run.ram_write(buf_off, b'\x00' * 16)
     run.call(0x1DD8C, (RAM + buf_off,), max_insn=20000)
-    assert run.ram_read(buf_off, 16) == b'\x00' * 16, 'нули должны остаться нулями'
+    assert run.ram_read(buf_off, 16) == b'\x00' * 16, 'zeros must remain zeros'
 
 
 # ---------------------------------------------------------------------------
-# §59.8: периодический таск USART3 0x1DFD8 (344 B) — inline-логика верифицирована
+# §59.8: USART3 periodic task 0x1DFD8 (344 B) — inline logic verified
 #
-# Тело: u16 tick-счётчик @RAM+0x2BA++ → 3 «утечных интегратора» с обратной
-# связью → расчёт % батареи (линейная карта) → вызовы 0x1E9E0/0x1F1CC/
-# 0x1F71C/0x211F8 (+ 0x1B67C/0x2186C на старте) → главный u32-счётчик @RAM+0x314++.
+# Body: u16 tick counter @RAM+0x2BA++ -> 3 "leaky integrators" with feedback
+# -> battery % calculation (linear map) -> calls to 0x1E9E0/0x1F1CC/
+# 0x1F71C/0x211F8 (+ 0x1B67C/0x2186C at start) -> main u32 counter @RAM+0x314++.
 #
-# Верификация изолирует INLINE-логику: 6 `bl` патчатся в NOP (свежий Run —
-# общий не портится). Подфункции верифицируются отдельно (0x1E9E0 — §59.6).
+# Verification isolates INLINE logic: 6 `bl` instructions are patched to NOP (fresh Run —
+# global instance is not modified). Subfunctions are verified separately (0x1E9E0 — §59.6).
 #
-# Интегратор (3 шт, пары acc/delta/out):
+# Integrators (3 units, acc/delta/out pairs):
 #   new_acc = (acc + delta - old_out) & 0xFFFFFFFF
 #   new_out = asr(new_acc, 5)  (s16)
-#   пары: (0x298/0x278/0x27A), (0x288/0x284/0x286), (0x2A0/0x29C/0x29E)
+#   pairs: (0x298/0x278/0x27A), (0x288/0x284/0x286), (0x2A0/0x29C/0x29E)
 #
-# % батареи: level = s16[RAM+0x1794 + 12] (элемент 6 массива @RAM+0x1794):
-#   level >= 535 → 100;  level < 415 → 0;  иначе (level-415)*100/120 (signed div)
-#   (активный диапазон [415,535] → [0,100]); результат в byte[RAM+0x306].
-#   Гейт: вычисляется если flag byte[RAM+0x321]==1 ИЛИ u16[RAM+0x312] >= 30000
-#   (тогда flag:=1); иначе — только инкремент u16[RAM+0x312].
+# Battery %: level = s16[RAM+0x1794 + 12] (element 6 of array @RAM+0x1794):
+#   level >= 535 -> 100;  level < 415 -> 0;  else (level-415)*100/120 (signed div)
+#   (active range [415,535] -> [0,100]); result in byte[RAM+0x306].
+#   Gate: computed if flag byte[RAM+0x321]==1 OR u16[RAM+0x312] >= 30000
+#   (then flag:=1); else — increment u16[RAM+0x312] only.
 # ---------------------------------------------------------------------------
 
 DFD8_BLS = [0x1dfda, 0x1dfe6, 0x1e0ae, 0x1e0b2, 0x1e0cc, 0x1e0d0]
@@ -2823,7 +2823,7 @@ DFD8_NOP4 = b'\x00\xbf\x00\xbf'
 
 
 def _dfd8_asr(v, n):
-    """арифметический сдвиг u32 вправо на n, результат как signed s16"""
+    """Arithmetic right shift of u32 by n, result as signed s16"""
     v &= 0xFFFFFFFF
     if v & 0x80000000:
         v -= 0x100000000
@@ -2844,12 +2844,12 @@ def ref_dfd8_batpct(level):
     return ((level - 415) * 100) // 120
 
 
-@t(0x1DFD8, '§59.8: периодический таск USART3 — inline-логика (6 bl патч в NOP, save/restore): u16 tick @0x2BA++; 3 интегратора new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (пары 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); % батареи из level=s16[0x1794+12]: >=535→100, <415→0, иначе (level-415)*100//120 в byte[0x306]; главный u32 @0x314++')
+@t(0x1DFD8, '§59.8: USART3 periodic task — inline logic (6 bl patched to NOP, save/restore): u16 tick @0x2BA++; 3 integrators new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (pairs 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); battery % from level=s16[0x1794+12]: >=535->100, <415->0, else (level-415)*100//120 in byte[0x306]; main u32 @0x314++')
 def _(run, rng):
     uc = run.uc
     S16 = {0x278, 0x284, 0x29C, 0x27A, 0x286, 0x29E}
     INTEG = [(0x298, 0x278, 0x27A), (0x288, 0x284, 0x286), (0x2A0, 0x29C, 0x29E)]
-    # сохранить оригинальные байты 6 bl и патчить в NOP (изоляция inline-логики)
+    # save original bytes of 6 bl calls and patch to NOP (isolate inline logic)
     orig = [bytes(uc.mem_read(FLASH0 + b, 4)) for b in DFD8_BLS]
     try:
         for b in DFD8_BLS:
@@ -2858,7 +2858,7 @@ def _(run, rng):
         def seed(off, fmt, v):
             uc.mem_write(RAM + off, struct.pack(fmt, v))
 
-        # --- 20 случайных наборов: интеграторы + счётчики ---
+        # --- 20 random sets: integrators + counters ---
         for _ in range(20):
             seeds = {
                 0x2BA: rng.randrange(0, 0xFFFF),
@@ -2876,7 +2876,7 @@ def _(run, rng):
                     seed(off, '<H', v)
                 else:
                     seed(off, '<I', v)
-            uc.mem_write(RAM + 0x321, b'\x00')   # flag=0 → только инкремент u16[0x312]
+            uc.mem_write(RAM + 0x321, b'\x00')   # flag=0 -> increment u16[0x312] only
             run.call(0x1DFD8, [], max_insn=200000)
             got_tick = struct.unpack_from('<H', uc.mem_read(RAM + 0x2BA, 2), 0)[0]
             assert got_tick == (seeds[0x2BA] + 1) & 0xFFFF, f'tick: {got_tick:#x}'
@@ -2892,7 +2892,7 @@ def _(run, rng):
                     f'integ acc@{acc_o:#x}: exp ({ea},{eo}) got ({ga},{go}) '
                     f'from acc={seeds[acc_o]:#x} d={seeds[del_o]} o={seeds[out_o]}')
 
-        # --- % батареи: принудительный compute (flag=1), линейная карта ---
+        # --- battery %: forced compute (flag=1), linear map ---
         for level in [0, 300, 414, 415, 416, 417, 435, 500, 511, 534, 535, 700, 1000, -50]:
             uc.mem_write(RAM + 0x312, struct.pack('<H', 100))   # < 30000
             uc.mem_write(RAM + 0x321, b'\x01')                    # flag=1 → compute
@@ -2907,25 +2907,25 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60: 0x1be1c — TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938)
+# §60: 0x1be1c — TIM capture -> FOC phase current reconstruction (subfunction 0x1A938)
 #
-# Аргумент: r0 = указатель на struct. Гейт: бит15 низких 16 бит u32[0x40012C54]
-# (= TIMER_A+0x14): ==0 → режим 1, ==1 → режим 2.
+# Argument: r0 = pointer to struct. Gate: bit15 of low 16 bits of u32[0x40012C54]
+# (= TIMER_A+0x14): ==0 -> mode 1, ==1 -> mode 2.
 #
-# Режим 1 (гейт положит.): OUT @RAM+0x838/0x83C/0x840 = clamp(r0[+0xc/+0x10/+0x14]).
+# Mode 1 (positive gate): OUT @RAM+0x838/0x83C/0x840 = clamp(r0[+0xc/+0x10/+0x14]).
 #
-# Режим 2 (гейт отрицат.): dispatch по u16[r0+2] (сектор) через computed-goto
+# Mode 2 (negative gate): dispatch on u16[r0+2] (sector) via computed-goto
 # 0x21b52 (byte jump-table, count=7, idx≥7 → table[7]=null):
 #   0→null, 1→B, 2/3→C, 4/5→A, 6→B, ≥7→null.
-# Хендлеры (T28/T2C/T30 = u32[0x40012440+0x28/0x2c/0x30], C18/C1A/C1C = u16[r0+0x18/0x1a/0x1c]):
+# Handlers (T28/T2C/T30 = u32[0x40012440+0x28/0x2c/0x30], C18/C1A/C1C = u16[r0+0x18/0x1a/0x1c]):
 #   A: o_c=(T28-C18)<<4, o_10=(T2C-C1A)<<4, o_14=-(o_c+o_10)
 #   B: o_10=(T2C-C1A)<<4, o_14=(T30-C1C)<<4, o_c=-(o_10+o_14)
 #   C: o_c=(T28-C18)<<4, o_14=(T30-C1C)<<4, o_10=-(o_c+o_14)
-# null: r0[+0xc..] не меняются. Затем OUT = clamp(o_c,o_10,o_14) в [-30000,30000].
+# null: r0[+0xc..] unchanged. Then OUT = clamp(o_c,o_10,o_14) to [-30000,30000].
 # ---------------------------------------------------------------------------
 
-TIMER_A_GATE = 0x40012C54      # u32[0x40012C40+0x14] — гейт (бит15 низких 16)
-TIMER_B = 0x40012440           # база таблицы capture (+0x28/+0x2c/+0x30)
+TIMER_A_GATE = 0x40012C54      # u32[0x40012C40+0x14] — gate (bit15 of low 16)
+TIMER_B = 0x40012440           # base of capture table (+0x28/+0x2c/+0x30)
 FOC_OUT = 0x838                # OUT @RAM+0x838/0x83C/0x840
 
 
@@ -2934,7 +2934,7 @@ def ref_foc_clamp(v):
 
 
 def ref_1be1c(gate_low16, r0vals, sector, T, C):
-    """r0vals=(o_c,o_10,o_14) начальные; T=(T28,T2C,T30); C=(C18,C1A,C1C)"""
+    """r0vals=(o_c,o_10,o_14) initial; T=(T28,T2C,T30); C=(C18,C1A,C1C)"""
     if (gate_low16 & 0x8000) == 0:
         return tuple(ref_foc_clamp(v) for v in r0vals)
     i = sector if sector < 7 else 7
@@ -2949,13 +2949,13 @@ def ref_1be1c(gate_low16, r0vals, sector, T, C):
     return ref_foc_clamp(oc), ref_foc_clamp(o10), ref_foc_clamp(o14)
 
 
-@t(0x1BE1C, '§60: TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938): гейт = бит15 низких16 u32[0x40012C54]; режим1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); режим2(=1) dispatch u16[r0+2] (0→null,1→B,2/3→C,4/5→A,6→B,≥7→null), хендлер A/B/C: две фазы (T-C)<<4 из u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], третья=-(сумма), clamp [-30000,30000]')
+@t(0x1BE1C, '§60: TIM capture -> FOC reconstruction of phase currents (subfunction 0x1A938): gate = bit15 of low 16 u32[0x40012C54]; mode1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); mode2(=1) dispatch u16[r0+2] (0->null,1->B,2/3->C,4/5->A,6->B,>=7->null), handler A/B/C: two phases (T-C)<<4 from u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], third=-(sum), clamp [-30000,30000]')
 def _(run, rng):
     uc = run.uc
-    S = 0x1F000   # r0-структ в RAM
-    # --- режим 1: гейт положит. (бит15=0), clamp+copy ---
+    S = 0x1F000   # r0-struct in RAM
+    # --- mode 1: positive gate (bit15=0), clamp+copy ---
     for _ in range(16):
-        gate = rng.getrandbits(16) & 0x7FFF   # бит15=0
+        gate = rng.getrandbits(16) & 0x7FFF   # bit15=0
         vals = tuple(rng.randrange(-40000, 40000) for _ in range(3))
         uc.mem_write(TIMER_A_GATE, struct.pack('<I', gate & 0xFFFFFFFF))
         uc.mem_write(RAM + S + 0x0c, struct.pack('<i', vals[0]))
@@ -2964,13 +2964,13 @@ def _(run, rng):
         run.call(0x1BE1C, (RAM + S,), max_insn=50000)
         got = tuple(struct.unpack_from('<i', uc.mem_read(RAM + FOC_OUT + i * 4, 4), 0)[0] for i in range(3))
         exp = ref_1be1c(gate, vals, 0, (0, 0, 0), (0, 0, 0))
-        assert got == exp, f'режим1: gate={gate:#x} vals={vals} got={got} exp={exp}'
-    # --- режим 2: гейт отрицат. (бит15=1), dispatch + хендлеры ---
+        assert got == exp, f'mode1: gate={gate:#x} vals={vals} got={got} exp={exp}'
+    # --- mode 2: negative gate (bit15=1), dispatch + handlers ---
     for _ in range(40):
-        gate = 0x8000 | (rng.getrandbits(16) & 0x7FFF)   # бит15=1
+        gate = 0x8000 | (rng.getrandbits(16) & 0x7FFF)   # bit15=1
         T = tuple(rng.randrange(0, 2000) for _ in range(3))
         C = tuple(rng.randrange(0, 500) for _ in range(3))
-        init = tuple(rng.randrange(-40000, 40000) for _ in range(3))   # для null-кейса
+        init = tuple(rng.randrange(-40000, 40000) for _ in range(3))   # for null case
         sector = rng.randrange(0, 9)
         uc.mem_write(TIMER_A_GATE, struct.pack('<I', gate & 0xFFFFFFFF))
         uc.mem_write(TIMER_B + 0x28, struct.pack('<I', T[0]))
@@ -2986,18 +2986,18 @@ def _(run, rng):
         run.call(0x1BE1C, (RAM + S,), max_insn=50000)
         got = tuple(struct.unpack_from('<i', uc.mem_read(RAM + FOC_OUT + i * 4, 4), 0)[0] for i in range(3))
         exp = ref_1be1c(gate, init, sector, T, C)
-        assert got == exp, f'режим2: sector={sector} T={T} C={C} init={init} got={got} exp={exp}'
+        assert got == exp, f'mode2: sector={sector} T={T} C={C} init={init} got={got} exp={exp}'
 
 
 # ---------------------------------------------------------------------------
-# §60.1: 0x1e410 — табличная декодировка Q15-вектора (подфункция FOC)
-# Аргумент r0 = u32 A. Ветвь b=A[15:14]; i1=(A>>6)&0xFF; i2=(0xFF−i1)&0xFF.
-# t1=s16[TBL[i1]], t2=s16[TBL[i2]] (TBL = 256×u16 @flash 0xA6C6). По ветви:
+# §60.1: 0x1e410 — table decoding of Q15 vector (FOC subfunction)
+# Argument r0 = u32 A. Branch b=A[15:14]; i1=(A>>6)&0xFF; i2=(0xFF-i1)&0xFF.
+# t1=s16[TBL[i1]], t2=s16[TBL[i2]] (TBL = 256*u16 @flash 0xA6C6). By branch:
 #   b0: lo=−t2, hi=−t1   b1: lo=t1, hi=−t2   b2: lo=t2, hi=t1   b3: lo=−t1, hi=t2
-# Возврат u32 = (hi<<16)|lo. (4-квадрантная знаковая инверсия одной пары.)
+# Return u32 = (hi<<16)|lo. (4-quadrant signed inversion of single pair.)
 # ---------------------------------------------------------------------------
 
-FOC_TBL_OFF = 0xA6C6   # flash-offset таблицы 256×u16 (FLASH0 base)
+FOC_TBL_OFF = 0xA6C6   # flash-offset of table 256*u16 (FLASH0 base)
 
 
 def _foc_tbl(uc):
@@ -3028,7 +3028,7 @@ def _asr32(v, n):
 
 
 def _div15(p):
-    """значное деление /2^15 с округлением: if p<0 → p+=0x7FFF; asr 15"""
+    """Signed division /2^15 with rounding: if p<0 -> p+=0x7FFF; asr 15"""
     pu = p & 0xFFFFFFFF
     if p < 0:
         pu = (pu + 0x7FFF) & 0xFFFFFFFF
@@ -3036,7 +3036,7 @@ def _div15(p):
 
 
 def ref_1d7ac(arg0, arg1, tbl):
-    """cross+dot двух Q15-векторов: X=0x1e410(arg1), A=arg0."""
+    """cross+dot of two Q15 vectors: X=0x1e410(arg1), A=arg0."""
     X = ref_1e410(arg1, tbl)
     X_lo, X_hi = _s16(X), _s16(X >> 16)
     a_lo, a_hi = _s16(arg0), _s16(arg0 >> 16)
@@ -3049,7 +3049,7 @@ def ref_1d7ac(arg0, arg1, tbl):
     return (out_hi << 16) | out_lo
 
 
-@t(0x1E410, '§60.1: табличная декодировка Q15-вектора (подфункция FOC): ветвь=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(−t2,−t1) b1:(t1,−t2) b2:(t2,t1) b3:(−t1,t2) → u32=(hi<<16)|lo')
+@t(0x1E410, '§60.1: table decoding of Q15 vector (FOC subfunction): branch=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(-t2,-t1) b1:(t1,-t2) b2:(t2,t1) b3:(-t1,t2) -> u32=(hi<<16)|lo')
 def _(run, rng):
     tbl = _foc_tbl(run.uc)
     for _ in range(60):
@@ -3059,7 +3059,7 @@ def _(run, rng):
         assert r0 == exp, f'0x1e410: A={A:#010x} got={r0:#010x} exp={exp:#010x}'
 
 
-@t(0x1D7AC, '§60.1: cross+dot двух Q15-векторов (подфункция FOC): X=0x1e410(arg1), A=arg0; lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF)')
+@t(0x1D7AC, '§60.1: cross+dot of two Q15 vectors (FOC subfunction): X=0x1e410(arg1), A=arg0; lo=cross(a_hi*X_lo-a_lo*X_hi), hi=dot(a_lo*X_lo+a_hi*X_hi); each product /2^15 with rounding (p<0->+0x7FFF)')
 def _(run, rng):
     tbl = _foc_tbl(run.uc)
     for _ in range(60):
@@ -3070,16 +3070,16 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.2: 0x1bd88 — 6-секторный FOC-классификатор (подфункция 0x1A938)
-# Аргументы: arg0=r0 = struct вывода (u16[r0+2]=сектор), arg1=r1 = указатель на
-# два s16: x0=s16[r1+0], x2=s16[r1+2]. Гейт: бит15 низких16 u32[0x40012C54]
-# (TIMER_A+0x14, тот же что в 0x1be1c): ==0 → обход (сектор не пишется).
+# §60.2: 0x1bd88 — 6-sector FOC classifier (subfunction 0x1A938)
+# Arguments: arg0=r0 = output struct (u16[r0+2]=sector), arg1=r1 = pointer to
+# two s16: x0=s16[r1+0], x2=s16[r1+2]. Gate: bit15 of low 16 u32[0x40012C54]
+# (TIMER_A+0x14, same as in 0x1be1c): ==0 -> bypass (sector not written).
 # A=0x3ce4, B=0x2328 (pool). S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2),
-# rnd(V)=(V−1 if V<0 else V)>>1; r2=B·x2. Сектор по знакам:
+# rnd(V)=(V-1 if V<0 else V)>>1; r2=B*x2. Sector by signs:
 #   S<0,D<0→5 ; S<0,D≥0→(3 if r2>0 else 4) ; S≥0,D<0→(1 if r2>0 else 6) ; S≥0,D≥0→2
 # ---------------------------------------------------------------------------
 
-BD88_GATE = 0x40012C54   # TIMER_A + 0x14 (гейт, бит15 низких 16)
+BD88_GATE = 0x40012C54   # TIMER_A + 0x14 (gate, bit15 of low 16)
 BD88_A = 0x3CE4
 BD88_B = 0x2328
 
@@ -3091,7 +3091,7 @@ def _rnd2(V):
 
 
 def ref_1bd88(gate_low16, x0, x2):
-    """вернёт сектор (1..6) или None если гейт положит. (обход)"""
+    """Return sector (1..6) or None if positive gate (bypass)"""
     if (gate_low16 & 0x8000) == 0:
         return None
     S = _rnd2(BD88_B * x2 + BD88_A * x0)
@@ -3103,7 +3103,7 @@ def ref_1bd88(gate_low16, x0, x2):
         return 1 if (D < 0 and r2 > 0) else (6 if D < 0 else 2)
 
 
-@t(0x1BD88, '§60.2: 6-секторный FOC-классификатор (подфункция 0x1A938): гейт=бит15 низких16 u32[0x40012C54] (=0→обход); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V−1 if V<0 else V)>>1; u16[r0+2]=сектор: S<0,D<0→5 / S<0,D≥0→(r2>0?3:4) / S≥0,D<0→(r2>0?1:6) / S≥0,D≥0→2, r2=B·x2')
+@t(0x1BD88, '§60.2: 6-sector FOC classifier (subfunction 0x1A938): gate=bit15 of low 16 u32[0x40012C54] (=0->bypass); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B*x2+A*x0)/2), D=rnd((B*x2-A*x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V-1 if V<0 else V)>>1; u16[r0+2]=sector: S<0,D<0->5 / S<0,D>=0->(r2>0?3:4) / S>=0,D<0->(r2>0?1:6) / S>=0,D>=0->2, r2=B*x2')
 def _(run, rng):
     uc = run.uc
     S_IN = 0x1F000; S_OUT = 0x1F100
@@ -3118,17 +3118,17 @@ def _(run, rng):
         got = struct.unpack_from('<H', uc.mem_read(RAM + S_OUT + 2, 2), 0)[0]
         exp = ref_1bd88(gate, x0, x2)
         if exp is None:
-            assert got == 0xEEEE, f'обход: gate={gate:#06x} x0={x0} x2={x2} got={got:#06x}'
+            assert got == 0xEEEE, f'bypass: gate={gate:#06x} x0={x0} x2={x2} got={got:#06x}'
         else:
-            assert got == exp, f'сектор: gate={gate:#06x} x0={x0} x2={x2} got={got} exp={exp}'
+            assert got == exp, f'sector: gate={gate:#06x} x0={x0} x2={x2} got={got} exp={exp}'
 
 
 # ---------------------------------------------------------------------------
-# §60.3: 0x1d818 — cross+dot (двойник 0x1d7ac, но X из RAM, не из таблицы)
-# Аргумент: arg0=r0 = A=(a_lo,a_hi) Q15. Вектор X = (X_lo,X_hi) из RAM:
-#   X_lo=s16[RAM+0x10c], X_hi=s16[RAM+0x10e] (база r6 = pool @flash 0x1d870).
-# Вычисление идентично 0x1d7ac: lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo
-# +a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF).
+# §60.3: 0x1d818 — cross+dot (twin of 0x1d7ac, but X from RAM, not table)
+# Argument: arg0=r0 = A=(a_lo,a_hi) Q15. Vector X = (X_lo,X_hi) from RAM:
+#   X_lo=s16[RAM+0x10c], X_hi=s16[RAM+0x10e] (base r6 = pool @flash 0x1d870).
+# Computation identical to 0x1d7ac: lo=cross(a_hi*X_lo-a_lo*X_hi), hi=dot(a_lo*X_lo
+# +a_hi*X_hi); each product /2^15 with rounding (p<0->+0x7FFF).
 # ---------------------------------------------------------------------------
 
 D818_XLO = 0x10C   # RAM-offset X_lo
@@ -3142,7 +3142,7 @@ def ref_1d818(arg0, X_lo, X_hi):
     return ((R + S) & 0xFFFF) << 16 | ((Q - P) & 0xFFFF)
 
 
-@t(0x1D818, '§60.3: cross+dot (двойник 0x1d7ac, X из RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое /2^15 с округлением')
+@t(0x1D818, '§60.3: cross+dot (twin of 0x1d7ac, X from RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi*X_lo-a_lo*X_hi), hi=dot(a_lo*X_lo+a_hi*X_hi); each /2^15 with rounding')
 def _(run, rng):
     uc = run.uc
     for _ in range(60):
@@ -3156,10 +3156,10 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.4: 0x1b3f2..0x1b460 — inline-блок FOC (inlined cross+dot) внутри 0x1A938
-# Входы (по трассировке, НЕ capstone pool-offsets): P=u32[RAM+0x388],
+# §60.4: 0x1b3f2..0x1b460 — inline block of FOC (inlined cross+dot) inside 0x1A938
+# Inputs (by trace, NOT capstone pool-offsets): P=u32[RAM+0x388],
 # X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]. r4=RAM+0x040 (struct).
-# Вычисления (muls + asrs#15):
+# Computations (muls + asrs#15):
 #   cross = asr15(R6·X_hi) − asr15(P·X_lo)      → RAM+0x3b8
 #   dot   = asr15(R6·X_lo) + asr15(P·X_hi)      → RAM+0x3bc
 #   t1 = −(dot<<14)
@@ -3167,8 +3167,8 @@ def _(run, rng):
 #   r4+0x20 = asr15(t1 − 0x6ed9·cross)
 #   r4+0x28 = dot>>1
 #   r4+0x24 = asr15(0x376d·cross + (dot<<13))
-# (тот же комплексный произведение, что 0x1d7ac/0x1d818, но inline)
-# Верификация: mid-function jump в 0x1b3f2 с r4=RAM+0x040, stop в 0x1b48a.
+# (same complex product as 0x1d7ac/0x1d818, but inlined)
+# Verification: mid-function jump into 0x1b3f2 with r4=RAM+0x040, stop at 0x1b48a.
 # ---------------------------------------------------------------------------
 
 
@@ -3189,7 +3189,7 @@ def ref_1b3f2(P, X_lo, X_hi, R6):
     return out
 
 
-@t(0x1B3F2, '§60.4: inline-блок FOC в 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6·Xhi)−asr15(P·Xlo)→RAM+0x3b8, dot=asr15(R6·Xlo)+asr15(P·Xhi)→RAM+0x3bc; r4+0x1c/0x20=asr15(∓t1±0x6ed9·cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d·cross+dot<<13); верификация mid-function jump (r4=RAM+0x040, stop 0x1b48a)')
+@t(0x1B3F2, '§60.4: inline FOC block in 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6*Xhi)-asr15(P*Xlo)->RAM+0x3b8, dot=asr15(R6*Xlo)+asr15(P*Xhi)->RAM+0x3bc; r4+0x1c/0x20=asr15(-+t1+-0x6ed9*cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d*cross+dot<<13); mid-function jump verification (r4=RAM+0x040, stop 0x1b48a)')
 def _(run, rng):
     uc = run.uc
     for _ in range(40):
@@ -3216,15 +3216,15 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.5: 0x1aa08..0x1aae6 — inline-блок FOC в 0x1A938: обработка/кламп моторных
-# параметров + leaky-интегратор. Зависит от live-in регистров (r4=RAM+0x040 base,
-# r5=RAM+0x108, r6=0x2033) и stack-frame ([sp+0x18]=base). Изоляция: mid-function
-# jump в 0x1aa08 с этими регистрами + [sp+0x18]=RAM+0x040, stop в 0x1abd4.
-# Верифицированные операции (ключевые из ~13 выходов):
-#   (1) u16[RAM+0x044] = lo16(r0)          — store результата cross+dot (из bl 0x1d7ac)
-#   (2) u16[RAM+0x38c] = clamp(−s16[RAM+0x0a6], ±s16[RAM+0x390])  — симм. кламп
-#   (3) leaky-интегратор: acc=u32[RAM+0x094] (new=acc+delta−old_out),
-#       u16[RAM+0x046] = asr(acc_new, 5)   — тот же паттерн, что 0x1DFD8 (§59.8)
+# §60.5: 0x1aa08..0x1aae6 — inline FOC block in 0x1A938: motor parameter
+# processing/clamping + leaky integrator. Depends on live-in registers (r4=RAM+0x040 base,
+# r5=RAM+0x108, r6=0x2033) and stack frame ([sp+0x18]=base). Isolation: mid-function
+# jump into 0x1aa08 with these registers + [sp+0x18]=RAM+0x040, stop at 0x1abd4.
+# Verified operations (key outputs out of ~13):
+#   (1) u16[RAM+0x044] = lo16(r0)          — store cross+dot result (from bl 0x1d7ac)
+#   (2) u16[RAM+0x38c] = clamp(-s16[RAM+0x0a6], +-s16[RAM+0x390])  — symmetric clamp
+#   (3) leaky integrator: acc=u32[RAM+0x094] (new=acc+delta-old_out),
+#       u16[RAM+0x046] = asr(acc_new, 5)   — same pattern as 0x1DFD8 (§59.8)
 # ---------------------------------------------------------------------------
 
 
@@ -3233,7 +3233,7 @@ def _asr5(v):
     return s >> 5
 
 
-@t(0x1AA08, '§60.5: inline-блок FOC в 0x1A938 — обработка/кламп параметров + leaky-интегратор. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(−s16[RAM+0x0a6],±s16[RAM+0x390]); (3) интегратор acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (паттерн 0x1DFD8). Изоляция mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4)')
+@t(0x1AA08, '§60.5: inline FOC block in 0x1A938 — parameter processing/clamp + leaky integrator. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(-s16[RAM+0x0a6],+-s16[RAM+0x390]); (3) integrator acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (0x1DFD8 pattern). Isolation mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4)')
 def _(run, rng):
     uc = run.uc
     for _ in range(60):
@@ -3267,18 +3267,18 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.6: 0x1b48a..0x1b5f4 — inline-блок FOC в 0x1A938: коммутация/классификатор
-# секторов. Входы: v2c=u32[r4+0x2c], v30=u32[r4+0x30], v34=u32[r4+0x34] (значения из
-# блока 0x1b3f2). Порог = 16383 (0x3fff): если все ≤ порога — pass-through
-# (r4+0x38=v2c, r4+0x3c=v30, r4+0x40=v34); иначе секторная логика: определяется
-# максимум из (v2c,v30,v34) = сектор, считается switching-функция.
-# Верифицировано: default pass-through + v2c-max сектор:
+# §60.6: 0x1b48a..0x1b5f4 — inline FOC block in 0x1A938: sector switching/classifier.
+# Inputs: v2c=u32[r4+0x2c], v30=u32[r4+0x30], v34=u32[r4+0x34] (values from
+# block 0x1b3f2). Threshold = 16383 (0x3fff): if all <= threshold — pass-through
+# (r4+0x38=v2c, r4+0x3c=v30, r4+0x40=v34); else sector logic: determine
+# maximum of (v2c,v30,v34) = sector, switching function is computed.
+# Verified: default pass-through + v2c-max sector:
 #   r4+0x38 = 16383, r4+0x3c = min(v30 − asr(v2c,1) + 8192, 16383), r4+0x40 = r1
-# Изоляция: mid-function jump (r4=RAM+0x040, r7=RAM+0x3b8, [sp+0x18]=base, stop 0x1b584).
+# Isolation: mid-function jump (r4=RAM+0x040, r7=RAM+0x3b8, [sp+0x18]=base, stop 0x1b584).
 # ---------------------------------------------------------------------------
 
 
-@t(0x1B48A, '§60.6: inline-блок FOC в 0x1A938 — коммутация/классификатор секторов. Входы v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; порог 16383. Default (все≤порога): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max сектор: r4+0x38=16383, r4+0x3c=min(v30−asr(v2c,1)+8192,16383), r4+0x40=r1. Изоляция mid-function jump (stop 0x1b584)')
+@t(0x1B48A, '§60.6: inline FOC block in 0x1A938 — sector switching/classifier. Inputs v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; threshold 16383. Default (all<=threshold): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max sector: r4+0x38=16383, r4+0x3c=min(v30-asr(v2c,1)+8192,16383), r4+0x40=r1. Isolation mid-function jump (stop 0x1b584)')
 def _(run, rng):
     uc = run.uc
     def run_sector(v2c, v30, v34, r1):
@@ -3301,13 +3301,13 @@ def _(run, rng):
                 struct.unpack_from('<i', uc.mem_read(r4 + 0x3c, 4), 0)[0],
                 struct.unpack_from('<i', uc.mem_read(r4 + 0x40, 4), 0)[0])
     for _ in range(40):
-        # default path: все значения ≤ порога
+        # default path: all values <= threshold
         v2c = rng.randrange(-16000, 16000); v30 = rng.randrange(-16000, 16000)
         v34 = rng.randrange(-16000, 16000)
         a, b, c = run_sector(v2c, v30, v34, 0)
         assert (a, b, c) == (v2c, v30, v34), f'0x1b48a default: ({v2c},{v30},{v34})->({a},{b},{c})'
     for _ in range(40):
-        # v2c-max сектор: v2c > порога и v2c>=v30>=v34
+        # v2c-max sector: v2c > threshold and v2c>=v30>=v34
         v2c = rng.randrange(17000, 30000); v30 = v2c - rng.randrange(0, 4000)
         v34 = v30 - rng.randrange(0, 4000); r1 = rng.getrandbits(16)
         a, b, c = run_sector(v2c, v30, v34, r1)
@@ -3316,13 +3316,13 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.7: мелкие inline-фрагменты 0x1A938 (между крупными блоками)
-# (a) 0x1b470..0x1b488 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2:
+# §60.7: small inline fragments of 0x1A938 (between large blocks)
+# (a) 0x1b470..0x1b488 — computation of v2c/v30/v34 (inputs to block 3) from r0/r1/r2:
 #       if r0<=r2: (v2c,v30,v34)=(r1, r2−r0, −r0)  else: (r0−r2, r1, −r2)
-#     (связка блок 1 cross+dot → блок 3 коммутация)
-# (b) 0x1b584..0x1b5e2 — хвост: масштабирование выходов блока 3 + offset + фазы:
-#       svX=asr15(4500·vX) → r4+0x44/0x48/0x4c (V38/V3C/V40); pool-константа 4500
-#       offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset)
+#     (bridge from block 1 cross+dot -> block 3 switching)
+# (b) 0x1b584..0x1b5e2 — tail: scaling outputs of block 3 + offset + phases:
+#       svX=asr15(4500*vX) -> r4+0x44/0x48/0x4c (V38/V3C/V40); pool constant 4500
+#       offset=r4+0x50=asr1(2250-max(sv)); phases u16[RAM+0x382/0x384/0x386]=2250-(svX+offset)
 # ---------------------------------------------------------------------------
 
 
@@ -3335,7 +3335,7 @@ def _asr(v, n):
     return _s32(v) >> n
 
 
-@t(0x1B470, '§60.7a: inline-фрагмент 0x1A938 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2−r0,−r0) else: (r0−r2,r1,−r2). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b492)')
+@t(0x1B470, '§60.7a: inline fragment 0x1A938 — computation of v2c/v30/v34 (inputs of block 3) from r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2-r0,-r0) else: (r0-r2,r1,-r2). Isolation mid-function jump (r4=RAM+0x040, stop 0x1b492)')
 def _(run, rng):
     uc = run.uc
     for _ in range(80):
@@ -3368,7 +3368,7 @@ def _(run, rng):
         assert got == exp, f'0x1b470: r0={r0} r1={r1} r2={r2} got={got} exp={exp}'
 
 
-@t(0x1B584, '§60.7b: inline-фрагмент 0x1A938 — хвост: svX=asr15(4500·vX)→r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b5e4)')
+@t(0x1B584, '§60.7b: inline fragment 0x1A938 — tail: svX=asr15(4500*vX)->r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250-max(sv)); phases u16[RAM+0x382/0x384/0x386]=2250-(svX+offset). Isolation mid-function jump (r4=RAM+0x040, stop 0x1b5e4)')
 def _(run, rng):
     uc = run.uc
     for _ in range(80):
@@ -3410,7 +3410,7 @@ def _(run, rng):
             f'0x1b584 phase: v=({v38},{v3c},{v40}) got=({qa},{qb},{qc}) exp={exp_q}'
 
 
-@t(0x1A9F2, '§60.7c: inline-фрагмент 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (затем bl 0x1d7ac). Изоляция mid-function jump (stop 0x1aa04)')
+@t(0x1A9F2, '§60.7c: inline fragment 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (then bl 0x1d7ac). Isolation mid-function jump (stop 0x1aa04)')
 def _(run, rng):
     uc = run.uc
     for _ in range(50):
@@ -3439,20 +3439,20 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §60.8: 0x1A938 entry (0x1a938..0x1a9d0) — prologue + setup + табличная выборка.
-# (a) Табличная выборка (главный расчёт), вход s16[r4+2]=value, таблица E в flash
-#     @0x9E38 (2048 u16). Треугольный mapping:
+# §60.8: 0x1A938 entry (0x1a938..0x1a9d0) — prologue + setup + table lookup.
+# (a) Table lookup (main calculation), input s16[r4+2]=value, table E in flash
+#     @0x9E38 (2048 u16). Triangular mapping:
 #       idx = value>>4  (value<16384)  |  1023−(value−16384)>>4  (value>=16384)
 #       u16[r4+4]=idx;  u16[RAM+0x108]=tableE[idx];
 #       r0 = tableE[1024−idx] (value<16384)  |  −tableE[1024−idx] (value>=16384)
-#     (branch C неактивен — branch B покрывает весь верхний диапазон [16384,32767])
+#     (branch C inactive — branch B covers full upper range [16384,32767])
 # (b) scaled-delta: u16[r4+0x60]=u16[poolC=RAM+0x838],
 #     u16[r4+0x62]=asr16(0x93cc·(u32[poolC+4]−u32[poolC+8]))
-# (bl 0x1be1c — уже верифицированная подфункция)
+# (bl 0x1be1c — already verified subfunction)
 # ---------------------------------------------------------------------------
 
-_ENTRY_TBL_BASE = 0x9E38   # flash-таблица E
-_ENTRY_TBL = None          # кэш: список 2048 u16
+_ENTRY_TBL_BASE = 0x9E38   # flash table E
+_ENTRY_TBL = None          # cache: list of 2048 u16
 
 
 def _entry_table():
@@ -3465,11 +3465,11 @@ def _entry_table():
     return _ENTRY_TBL
 
 
-@t(0x1A938, '§60.8: entry 0x1A938 — табличная выборка (треугольный mapping по flash-таблице @0x9E38): idx=value>>4 | 1023−(value−16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta). Изоляция mid-function jump (r4=RAM+0x040)')
+@t(0x1A938, '§60.8: entry 0x1A938 — table lookup (triangular mapping on flash table @0x9E38): idx=value>>4 | 1023-(value-16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=+-tableE[1024-idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc*delta). Isolation mid-function jump (r4=RAM+0x040)')
 def _(run, rng):
     uc = run.uc
     tbl = _entry_table()
-    # (a) табличная выборка — полный диапазон value [0, 32767]
+    # (a) table lookup — full range of value [0, 32767]
     for _ in range(150):
         val = rng.randrange(0, 32768)
         uc.mem_write(RAM, bytes(0x20000))
@@ -3530,10 +3530,10 @@ def _(run, rng):
 
 
 # ---------------------------------------------------------------------------
-# §61: оставшиеся некаталогизированные функции (досмотр карты)
-# 0x11bac — форматтер даты/времени: total-seconds → байты через цепочку остатков.
-# Аргументы: arg0=r0=out-буфер, arg1=r1=total seconds. Дивизоры [31104000,2592000,
-# 86400,3600,60] (≈360d-год, 30d-месяц, день, час, минута):
+# §61: remaining uncataloged functions (map review)
+# 0x11bac — date/time formatter: total-seconds -> bytes via remainder chain.
+# Arguments: arg0=r0=out-buffer, arg1=r1=total seconds. Divisors [31104000,2592000,
+# 86400,3600,60] (≈360d-year, 30d-month, day, hour, minute):
 #   out[0]=v//31104000; out[i]=(v%D[i-1])//D[i]; out[5]=v%60
 # ---------------------------------------------------------------------------
 
@@ -3548,7 +3548,7 @@ def ref_11bac(v):
     return out
 
 
-@t(0x11BAC, '§61: форматтер даты/времени — total-seconds → байты (цепочка остатков, дивизоры [31104000,2592000,86400,3600,60] ≈ 360d-год/30d-месяц/день/час/мин/сек): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60')
+@t(0x11BAC, '§61: date/time formatter — total-seconds -> bytes (remainder chain, divisors [31104000,2592000,86400,3600,60] ≈ 360d-year/30d-month/day/hour/min/sec): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60')
 def _(run, rng):
     uc = run.uc
     OUT = RAM + 0x300
@@ -3584,7 +3584,7 @@ def _s16(x):
     x &= 0xFFFF
     return x - 0x10000 if x >= 0x8000 else x
 
-@t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = setpoint замкнутого контура скорости (out2=сглаж. оценка ∝ 48000/V; вывод r4[+0x18]=structB[+0x64]=throttle/duty, НЕ скорость). Вериф. 200/200 random-sweep + setpoint 300/300')
+@t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky integrators (asr5 / asr3 clamp>=0) -> out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1->522 / mode@0x229 0xb->125/2->u16@0x324/3->u16@0x326/else->208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = closed-loop speed setpoint (out2=smoothed estimate ∝ 48000/V; output r4[+0x18]=structB[+0x64]=throttle/duty, NOT speed). Verif. 200/200 random-sweep + setpoint 300/300')
 def _(run, rng):
     V = rng.randint(50, 60000)
     F = rng.getrandbits(1)
@@ -3592,8 +3592,8 @@ def _(run, rng):
     acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
     mode = rng.choice([2, 3, 0xb, 5, 7])
     f339 = rng.getrandbits(16)   # flag = low byte @0x339
-    c326 = rng.getrandbits(16)   # u16[RAM+0x326] (clamp-значение)
-    m2t  = rng.getrandbits(16)   # u16[RAM+0x324] (target при mode==2)
+    c326 = rng.getrandbits(16)   # u16[RAM+0x326] (clamp value)
+    m2t  = rng.getrandbits(16)   # u16[RAM+0x324] (target when mode==2)
     run.ram_write(0x158, struct.pack('<I', V))
     run.ram_write(0x100, bytes([F]))
     run.ram_write(0x1768, struct.pack('<H', 0))
@@ -3631,14 +3631,14 @@ def _(run, rng):
     assert g_set == e_tgt, f'setpoint +0x2a {g_set} != {e_tgt} (mode={mode},flag={flag})'
 
 
-# --- 0x1d078 ramp-core PI-регулятор: P-term + 2-фазный toggle (§72) ---
-@t(0x1D078, '§72: ramp-core (Phase B, counter S+0x28=1) = PI-регулятор. P-term: S+0x2c=min(err,300), err=(target−out2_new) if out1_new<target else (out2_new−target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1→2→reset 0. positive-target домен; вериф. 400/400')
+# --- 0x1d078 ramp-core PI controller: P-term + 2-phase toggle (§72) ---
+@t(0x1D078, '§72: ramp-core (Phase B, counter S+0x28=1) = PI controller. P-term: S+0x2c=min(err,300), err=(target-out2_new) if out1_new<target else (out2_new-target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1->2->reset 0. positive-target domain; verif. 400/400')
 def _(run, rng):
     V = rng.randint(10, 60000)
     F = rng.getrandbits(1)
     mode = rng.choice([2, 3, 0xb, 5, 7])
     f339 = rng.getrandbits(16)
-    c326 = rng.randint(1, 0x7fff)   # positive s16 (реалистичный speed-setpoint)
+    c326 = rng.randint(1, 0x7fff)   # positive s16 (realistic speed-setpoint)
     m2t = rng.randint(1, 0x7fff)
     acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
     acc2 = rng.getrandbits(32); out2 = rng.randint(-32768, 32767)
@@ -3653,7 +3653,7 @@ def _(run, rng):
     run.ram_write(0x1770, struct.pack('<H', out2 & 0xFFFF))
     run.ram_write(0x1774, struct.pack('<I', acc1))
     run.ram_write(0x1778, struct.pack('<H', out1 & 0xFFFF))
-    for off in (0x1760, 0x1764, 0x388, 0x224):   # anti-windup inходы = 0
+    for off in (0x1760, 0x1764, 0x388, 0x224):   # anti-windup inputs = 0
         run.ram_write(off, struct.pack('<I', 0))
     run.ram_write(0x3C8, b'\x00' * 0x70)          # Phase B: counter S+0x28=1
     run.ram_write(0x3C8 + 0x28, struct.pack('<H', 1))
@@ -3677,8 +3677,8 @@ def _(run, rng):
     assert g_28 == 0, f'toggle counter {g_28} != 0 (Phase B)'
 
 
-# --- 0x1d078 Phase B полная модель: I-term + anti-windup (§72.4) ---
-@t(0x1D078, '§72: Phase B полная модель — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; вериф. 2000/2000')
+# --- 0x1d078 Phase B full model: I-term + anti-windup (§72.4) ---
+@t(0x1D078, '§72: Phase B full model — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; verif. 2000/2000')
 def _(run, rng):
     V = rng.randint(10, 60000)
     F = rng.getrandbits(1)
@@ -3714,7 +3714,7 @@ def _(run, rng):
     run.ram_write(0x3C8 + 0x58, struct.pack('<I', old_int))
     run.ram_write(0x3C8 + 0x2E, struct.pack('<H', s2e_old))
     run.call(0x1D078, (), max_insn=400000)
-    # --- модель (совпадает с _d078_fullB.model_phaseB) ---
+    # --- model (matches _d078_fullB.model_phaseB) ---
     val = 0 if F == 0 else _s16(_sdiv(48000, V))
     o1n = _s16(_s32(acc1 + val - out1) >> 5)          # asr5 + sxth
     o2n = max(0, _s16(_s32(acc2 + val - out2) >> 3))   # asr3 + sxth + clamp>=0
@@ -3729,7 +3729,7 @@ def _(run, rng):
         err = _s16(o2n - tsgn); interim = (old_int - 5 * err) & 0xFFFFFFFF
     adj = _s32(u1764 - u388) >> 3
     integral = _s32(interim - adj)
-    S58 = max(8000, min(integral, 131040))            # clamp (верх → 131040!)
+    S58 = max(8000, min(integral, 131040))            # clamp (upper -> 131040!)
     S60 = _s32(S58 & 0xFFFFFFFF) >> 2
     if o1n < tsgn:   # INCREASE
         e2 = _s16(tsgn - o2n); S2c = e2 if e2 <= 300 else 300
@@ -3763,24 +3763,24 @@ def _(run, rng):
     assert g2e == S2e, f'S+0x2e {g2e} != {S2e}'
 
 
-# --- 0x1a938 FOC: конфигурация моторного таймера (§73) ---
-@t(0x1A938, '§73: FOC entry конфигурирует моторный таймер @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear бит 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Эмулятор: TimModel + periph-capture. Детерминизм: 4 записи для любого value.')
+# --- 0x1a938 FOC: motor timer configuration (§73) ---
+@t(0x1A938, '§73: FOC entry configures motor timer @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear bit 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Emulator: TimModel + periph-capture. Determinism: 4 writes for any value.')
 def _(run, rng):
     from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
     uc = run.uc
-    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
+    uc.mem_write(RAM, bytes(0x20000))          # clean RAM -> determinism
     r4 = RAM + 0x040
     uc.mem_write(r4, bytes(0x80))
-    val = rng.randrange(0, 32768)              # вход FOC: s16[r4+2]
+    val = rng.randrange(0, 32768)              # FOC input: s16[r4+2]
     uc.mem_write(r4 + 2, struct.pack('<h', val))
     tim = TimModel(run.emu, MOTOR_TIM_BASE)
-    tim.set(0x54, 0x8000)                      # STAT бит15=1 → гейт FOC открыт (иначе обход)
-    tim.set(0x30, 0xFFFF)                      # known pre-value для проверки RMW
+    tim.set(0x54, 0x8000)                      # STAT bit15=1 -> FOC gate open (else bypass)
+    tim.set(0x30, 0xFFFF)                      # known pre-value for RMW check
     def _st(uc_, addr, size, u):
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                 FLASH1 <= aa < FLASH1 + FW_LEN):
-            uc_.emu_stop()                      # чистый возврат (bx lr → 0x0BADF001)
+            uc_.emu_stop()                      # clean return (bx lr -> 0x0BADF001)
     sh = uc.hook_add(UC_HOOK_CODE, _st)
     try:
         uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x80)
@@ -3795,7 +3795,7 @@ def _(run, rng):
     finally:
         uc.hook_del(sh)
         uc.hook_del(tim._hook)
-    # --- проверка конфигурации таймера ---
+    # --- timer configuration check ---
     d0 = struct.unpack('<H', run.ram_read(0x386, 2))[0]
     d1 = struct.unpack('<H', run.ram_read(0x384, 2))[0]
     d2 = struct.unpack('<H', run.ram_read(0x382, 2))[0]
@@ -3806,14 +3806,14 @@ def _(run, rng):
     assert (t0, t1, t2) == (d0, d1, d2), \
         f'FOC timer DATA {t0,t1,t2} != u16[RAM+0x386/384/382] {d0,d1,d2}'
     assert ctrl == 0xDFFF, \
-        f'FOC timer CTRL 0x{ctrl:x} != 0xDFFF (RMW 0xFFFF & 0xDFFF, clear бит 13)'
+        f'FOC timer CTRL 0x{ctrl:x} != 0xDFFF (RMW 0xFFFF & 0xDFFF, clear bit 13)'
     offs = sorted(set(o for _, o, _, _ in tim.writes))
     assert {0x30, 0x44, 0x48, 0x4c} <= set(offs), \
-        f'FOC timer не записал все регистры: offs={offs}'
+        f'FOC timer did not write all registers: offs={offs}'
 
 
 # --- 0x1a938 FOC + TIM clock model (§73.x) ---
-@t(0x1A938, '§73.x: TIM clock model — такт контура (tick→update по period) управляет режимом FOC через STAT бит15: =0 → обход (0 записей таймера), event → set bit15 → config (4 записи). Свободно-ходный счётчик wrap; модель параметризована (period/step).')
+@t(0x1A938, '§73.x: TIM clock model — loop clock (tick->update by period) controls FOC mode via STAT bit15: =0 -> bypass (0 timer writes), event -> set bit15 -> config (4 writes). Free-running counter wrap; model parameterized (period/step).')
 def _(run, rng):
     from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
     uc = run.uc
@@ -3822,7 +3822,7 @@ def _(run, rng):
 
     def run_foc(stat_bit15):
         uc.mem_write(RAM, bytes(0x20000))
-        uc.mem_write(MOTOR_TIM_BASE, bytes(0x100))      # чистый моторный блок
+        uc.mem_write(MOTOR_TIM_BASE, bytes(0x100))      # clean motor block
         r4 = RAM + 0x040
         uc.mem_write(r4, bytes(0x80))
         uc.mem_write(r4 + 2, struct.pack('<h', rng.randrange(0, 32768)))
@@ -3851,29 +3851,29 @@ def _(run, rng):
         return sum(1 for _, a, s, v in run.emu.periph_writes[before:]
                    if a in TIM_OFFS)
 
-    period = rng.randrange(2, 16)                        # период контура (тактов)
+    period = rng.randrange(2, 16)                        # loop period (ticks)
     tim = TimModel(run.emu, MOTOR_TIM_BASE, period=period, step=1)
     try:
-        # фаза 1: STAT бит15=0 → обход (0 записей таймера)
+        # phase 1: STAT bit15=0 -> bypass (0 timer writes)
         n_off = run_foc(stat_bit15=False)
-        assert n_off == 0, f'FOC bit15=0: записей {n_off} != 0 (ожид. обход)'
-        # такты до первого update-события (wrap счётчика)
+        assert n_off == 0, f'FOC bit15=0: writes {n_off} != 0 (expected bypass)'
+        # ticks until first update event (counter wrap)
         t0 = tim.ticks
         while not tim.update:
             tim.tick()
-            assert (tim.ticks - t0) <= period + 2, 'clock не завернул за period'
+            assert (tim.ticks - t0) <= period + 2, 'clock did not wrap within period'
         assert tim.cnt == 0 and tim.update, \
-            f'clock: cnt={tim.cnt} update={tim.update} (ожид. wrap→0/True)'
-        # фаза 2: event → модель задает STAT бит15 → config (4 записи)
+            f'clock: cnt={tim.cnt} update={tim.update} (expected wrap->0/True)'
+        # phase 2: event -> model sets STAT bit15 -> config (4 writes)
         tim.set_status_bits(MOTOR_TIM_BASE + 0x54, 0x8000)
         n_on = run_foc(stat_bit15=True)
-        assert n_on == 4, f'FOC bit15=1: записей {n_on} != 4 (ожид. config)'
+        assert n_on == 4, f'FOC bit15=1: writes {n_on} != 4 (expected config)'
     finally:
         uc.hook_del(tim._hook)
 
 
 # --- 0x1be1c ADC/capture model (§73.x) ---
-@t(0x1BE1C, '§73.x: ADC/capture model — 0x1be1c реконструирует фазные токи из T28/T2C/T30 (periph @0x40012468/6c/70): фаза=(T−C)<<4, 3-я=−сумма (Кирхгоф). sector→handler: 0→null,1→B,2/3→A,4/5→C,6→B. AdcModel.set_captures/set_currents.')
+@t(0x1BE1C, '§73.x: ADC/capture model — 0x1be1c reconstructs phase currents from T28/T2C/T30 (periph @0x40012468/6c/70): phase=(T-C)<<4, 3rd=-sum (Kirchhoff). sector->handler: 0->null,1->B,2/3->A,4/5->C,6->B. AdcModel.set_captures/set_currents.')
 def _(run, rng):
     from emulator.mcu_emu import (AdcModel, ADC_SECTOR_HANDLER,
                                   ADC_HANDLER_MEASURED)
@@ -3887,7 +3887,7 @@ def _(run, rng):
         uc.mem_write(r0 + 0x18, struct.pack('<h', c18))
         uc.mem_write(r0 + 0x1a, struct.pack('<h', c1a))
         uc.mem_write(r0 + 0x1c, struct.pack('<h', c1c))
-        uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))   # mode-2 гейт
+        uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))   # mode-2 gate
 
     def run_be1c():
         def _st(uc_, addr, size, u):
@@ -3915,7 +3915,7 @@ def _(run, rng):
     c18 = rng.randrange(500, 2000)
     c1a = rng.randrange(500, 2000)
     c1c = rng.randrange(500, 2000)
-    # --- (1) set_captures: raw T → pre-clamp (T−C)<<4 + −sum по handler ---
+    # --- (1) set_captures: raw T -> pre-clamp (T-C)<<4 + -sum by handler ---
     for sector in range(7):
         setup(sector, c18, c1a, c1c)
         t28 = rng.randrange(0, 4000)
@@ -3939,7 +3939,7 @@ def _(run, rng):
             e = (d28, -(d28 + d30), d30)       # C: o_c=T28, o_10=−sum, o_14=T30
         assert (oc, o10, o14) == e, \
             f'sector={sector} h={h}: got {(oc, o10, o14)} != exp {e}'
-    # --- (2) set_currents: инжект токов → измеренные фазы совпадают (×16 квант) ---
+    # --- (2) set_currents: current injection -> measured phases match (*16 quantum) ---
     for sector in (1, 2, 4, 6):
         setup(sector, c18, c1a, c1c)
         h = ADC_SECTOR_HANDLER[sector]
@@ -3955,18 +3955,18 @@ def _(run, rng):
                 f'set_currents sector={sector} h={h}: out{off:#x} {got[off]} != {targets[off]}'
 
 
-# --- 0x1d078 closed loop: SpeedModel (замер скорости) (§73.x) ---
-@t(0x1D078, '§73.x closed loop: SpeedModel — замер скорости замыкает контур. set_period(V)→PID вычисляет val=s16(48000/V); set_speed(val) (V=48000//val) → PID даёт ровно val (для делителей 48000); stop() (F=0) → val=0. V=u32[RAM+0x158], F=byte[RAM+0x100].')
+# --- 0x1d078 closed loop: SpeedModel (speed measurement) (§73.x) ---
+@t(0x1D078, '§73.x closed loop: SpeedModel — speed measurement closes the loop. set_period(V)->PID computes val=s16(48000/V); set_speed(val) (V=48000//val) -> PID yields exactly val (for divisors of 48000); stop() (F=0) -> val=0. V=u32[RAM+0x158], F=byte[RAM+0x100].')
 def _(run, rng):
     from emulator.mcu_emu import SpeedModel
     sm = SpeedModel(run.emu)
 
     def run_pid():
-        # минимальное безопасное состояние 0x1d078 (как §69)
+        # minimal safe state of 0x1d078 (as in §69)
         run.ram_write(0x229, bytes([3]))                 # mode=3 → target=u16[RAM+0x326]
         run.ram_write(0x326, struct.pack('<H', 200))
         run.ram_write(0x339, b'\x00')                    # flag=0
-        run.ram_write(0x1768, struct.pack('<H', 0))      # чистый val
+        run.ram_write(0x1768, struct.pack('<H', 0))      # clean val
         run.ram_write(0x176c, struct.pack('<I', 0))      # acc2
         run.ram_write(0x1770, struct.pack('<h', 0))      # out2
         run.ram_write(0x1774, struct.pack('<I', 0))      # acc1
@@ -3981,7 +3981,7 @@ def _(run, rng):
         got = sm.get_val()
         exp = _s16(_sdiv(48000, V))
         assert got == exp, f'set_period V={V}: PID val {got} != s16(48000/V)={exp}'
-    # --- (2) set_speed: делители 48000 → PID даёт ровно val ---
+    # --- (2) set_speed: divisors of 48000 -> PID yields exactly val ---
     for val in (100, 200, 480, 1200, 4800, 12000):
         sm.set_speed(val)
         run_pid()
@@ -3994,20 +3994,20 @@ def _(run, rng):
     assert sm.get_val() == 0, f'stop(): val {sm.get_val()} != 0'
 
 
-# --- 0x1d078 motor dynamics: АВТОНОМНЫЙ симул замкнутого контура (§73.x) ---
-@t(0x1D078, '§73.x motor dynamics: MotorModel (plant) замыкает АВТОНОМНЫЙ симул. target=208 → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(speed) → SpeedModel(V) → PID ... Скорость сходится к target: 0→overshoot~338→settle~207; throttle спадает. Детерминированно (fixed params).')
+# --- 0x1d078 motor dynamics: AUTONOMOUS closed loop simulation (§73.x) ---
+@t(0x1D078, '§73.x motor dynamics: MotorModel (plant) closes AUTONOMOUS simulation. target=208 -> PID 0x1d078 -> throttle(u16[RAM+0x42c]) -> plant(speed) -> SpeedModel(V) -> PID ... Speed converges to target: 0->overshoot~338->settle~207; throttle decays. Deterministic (fixed params).')
 def _(run, rng):
     from emulator.mcu_emu import MotorModel, SpeedModel
     uc = run.uc
     target = 208
-    # начальное состояние PID: ramp-core + гейты + мощность разрешена (u1760≠0)
+    # initial PID state: ramp-core + gates + power allowed (u1760!=0)
     uc.mem_write(RAM, bytes(0x20000))
     uc.mem_write(RAM + 0x229, bytes([3]))                 # mode=3 → target=u16[RAM+0x326]
     uc.mem_write(RAM + 0x326, struct.pack('<H', target))
     uc.mem_write(RAM + 0x339, b'\x00')
     uc.mem_write(RAM + 0x333, b'\x00')                    # skip mode-change
     uc.mem_write(RAM + 0x263, b'\x00')                    # gate → ramp-core
-    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))  # мощность разрешена (не reset)
+    uc.mem_write(RAM + 0x1760, struct.pack('<I', 32760))  # power allowed (not reset)
     uc.mem_write(RAM + 0x1764, struct.pack('<I', 0))
     uc.mem_write(RAM + 0x388, struct.pack('<I', 0))
     uc.mem_write(RAM + 0x224, struct.pack('<I', 0))
@@ -4022,18 +4022,18 @@ def _(run, rng):
         thrs.append(thr)
         mm.step(thr)
         speeds.append(mm.speed)
-    # --- замкнутый контур сходится к target ---
-    assert speeds[0] > 0, f'ускорение не началось: speed[0]={speeds[0]}'
+    # --- closed loop converges to target ---
+    assert speeds[0] > 0, f'acceleration did not start: speed[0]={speeds[0]}'
     assert max(speeds) > target, \
-        f'скорость не достигла target: max={max(speeds):.1f} < {target}'
+        f'speed did not reach target: max={max(speeds):.1f} < {target}'
     assert abs(speeds[-1] - target) < 0.5 * target, \
-        f'схождение: speed_end={speeds[-1]:.1f} вне полосы ±50% от target={target}'
+        f'convergence: speed_end={speeds[-1]:.1f} outside +/-50% band from target={target}'
     assert thrs[0] > thrs[-1], \
-        f'throttle не спадает при подходе к target: {thrs[0]} -> {thrs[-1]}'
+        f'throttle does not decrease when approaching target: {thrs[0]} -> {thrs[-1]}'
 
 
-# --- батарея: BatteryModel (SoC + разряд) (§73.x) ---
-@t(0x1DFD8, '§73.x battery: BatteryModel — SoC%→u16[RAM+0x306] (+сырое i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%→415/100%→535; разряд монотонно падает с нагрузкой, bounded [0,100], без нагрузки не меняется. Пороги FOC 90/10 гейтятся (byte@0x22e).')
+# --- battery: BatteryModel (SoC + discharge) (§73.x) ---
+@t(0x1DFD8, '§73.x battery: BatteryModel — SoC%->u16[RAM+0x306] (+raw i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%->415/100%->535; discharge monotonically decreases with load, bounded [0,100], unchanged without load. FOC thresholds 90/10 are gated (byte@0x22e).')
 def _(run, rng):
     from emulator.mcu_emu import BatteryModel, BATT_RAW_MIN, BATT_RAW_MAX
     uc = run.uc
@@ -4049,22 +4049,22 @@ def _(run, rng):
     assert struct.unpack('<h', uc.mem_read(RAM + 0x17A0, 2))[0] == 415
     bm.set_soc(100)
     assert struct.unpack('<h', uc.mem_read(RAM + 0x17A0, 2))[0] == 535
-    # --- (2) разряд: монотонно падает с нагрузкой, bounded [0,100] ---
+    # --- (2) discharge: monotonically decreases with load, bounded [0,100] ---
     bm.set_soc(80)
     prev = 80.0
     for _ in range(20):
-        thr = rng.randint(5000, 32760)          # нагрузка (прокси тока)
+        thr = rng.randint(5000, 32760)          # load (current proxy)
         s = bm.discharge(thr, dt=1.0)
-        assert 0 <= s <= 100, f'разряд вне [0,100]: {s}'
-        assert s <= prev, f'разряд не монотонен: {prev} -> {s}'
+        assert 0 <= s <= 100, f'discharge out of [0,100]: {s}'
+        assert s <= prev, f'discharge is not monotonic: {prev} -> {s}'
         prev = s
-    # без нагрузки SoC не меняется
+    # without load SoC does not change
     bm.set_soc(50)
-    assert bm.discharge(0, dt=1.0) == 50, 'разряд без нагрузки изменил SoC'
+    assert bm.discharge(0, dt=1.0) == 50, 'discharge without load changed SoC'
 
 
-# --- запас хода: RangeModel (0x1d898) (§73.x) ---
-@t(0x1D898, '§73.x range: RangeModel — v=i16[RAM+0x27A]→X=(8000·v)>>16, R=10000·X/(500−X) (делитель 0x19994; div-by-zero→-1, отриц. знаменатель→отриц.). Closed-form вериф. random-sweep (v≥0) против firmware 0x1d898 + edge-cases (v=0/415/535/4096).')
+# --- range reserve: RangeModel (0x1d898) (§73.x) ---
+@t(0x1D898, '§73.x range: RangeModel — v=i16[RAM+0x27A]->X=(8000*v)>>16, R=10000*X/(500-X) (divisor 0x19994; div-by-zero->-1, negative denominator->negative). Closed-form verif. random-sweep (v>=0) against firmware 0x1d898 + edge-cases (v=0/415/535/4096).')
 def _(run, rng):
     from emulator.mcu_emu import RangeModel
     rm = RangeModel(run.emu)
@@ -4084,27 +4084,27 @@ def _(run, rng):
     assert rm.estimate(0) == (0, 0) and fw(0) == (0, 0)
     assert rm.estimate(415) == (50, 1111) and fw(415) == (50, 1111)
     assert rm.estimate(535) == (65, 1494) and fw(535) == (65, 1494)
-    # div-by-zero: X=500 при v=4096 → R=-1
+    # div-by-zero: X=500 at v=4096 -> R=-1
     assert rm.estimate(4096) == (500, -1) and fw(4096) == (500, -1)
 
 
-# --- 0x1d898 аккумулятор (leaky integrator) (§73.x) ---
-@t(0x1D898, '§73.x range-acc: аккумулятор 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep против firmware + edge-cases.')
+# --- 0x1d898 accumulator (leaky integrator) (§73.x) ---
+@t(0x1D898, '§73.x range-acc: accumulator 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta-prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep against firmware + edge-cases.')
 def _(run, rng):
     from emulator.mcu_emu import RangeModel, McuEmu
     from unicorn import UC_HOOK_CODE, UcError
     from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
     rm = RangeModel(run.emu)
-    # 0x1d898 state-зависим (поздние под-вызовы, data-driven jump) → self-contained:
-    # fresh McuEmu на каждый вызов (чистый путь, как в probe 250/250). Reuse emu +
-    # re-zero RAM ломает large-A итерации (нере-zeroed periph → early unmapped fetch).
+    # 0x1d898 is state-dependent (late sub-calls, data-driven jump) -> self-contained:
+    # fresh McuEmu on each call (clean path, as in probe 250/250). Reuse emu +
+    # re-zero RAM breaks large-A iterations (non-re-zeroed periph -> early unmapped fetch).
     def fw_acc(A, B, D):
         femu = McuEmu(max_insn=300000)
         femu.uc.mem_write(RAM, bytes(0x20000))
         femu.uc.mem_write(RAM + 0x404, struct.pack('<I', A & 0xFFFFFFFF))  # old_0x3c
         femu.uc.mem_write(RAM + 0x3DC, struct.pack('<h', B))               # prev_0x14
         femu.uc.mem_write(RAM + 0x26E, struct.pack('<h', D))               # delta
-        femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))             # v (не влияет на acc)
+        femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))             # v (does not affect acc)
         def stop(uc_, a, s, u):
             aa = a & ~1
             if not (0 <= aa < 0x25000 or 0x08000000 <= aa < 0x08000000 + 0x25000):
@@ -4135,8 +4135,8 @@ def _(run, rng):
     assert fw_acc(0, 0, 1024) == rm.acc_step(0, 0, 1024) == (1024, 1)
 
 
-# --- 0x1d898 state-machine: гейты статус-флагов (§73.x) ---
-@t(0x1D898, '§73.x range-sm: state-machine 0x1d898 — дефолт (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); гейт +0x286≠0 → (0x290,0x292)=(0,0); гейт +0x29e≠0 → (0x2a8,0x2aa)=(0,0). Флаги mode/LUT-driven (LUT 0x614-0x6c4/0x738-0x808), v/SoC не влияют. Fresh emu/call.')
+# --- 0x1d898 state-machine: status flag gates (§73.x) ---
+@t(0x1D898, '§73.x range-sm: state-machine 0x1d898 — default (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); gate +0x286!=0 -> (0x290,0x292)=(0,0); gate +0x29e!=0 -> (0x2a8,0x2aa)=(0,0). Mode/LUT-driven flags (LUT 0x614-0x6c4/0x738-0x808), v/SoC do not affect. Fresh emu/call.')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE, UcError
     from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
@@ -4163,17 +4163,17 @@ def _(run, rng):
         def h(o):
             return struct.unpack('<h', femu.uc.mem_read(RAM + o, 2))[0]
         return (h(0x290), h(0x292), h(0x2a8), h(0x2aa))
-    # --- дефолт (zeroed state) ---
+    # --- default (zeroed state) ---
     assert status({}) == (2, 140, 1, 78)
-    # --- гейт +0x286: (0x290,0x292)→(0,0), (0x2a8,0x2aa) не меняется ---
+    # --- gate +0x286: (0x290,0x292)->(0,0), (0x2a8,0x2aa) unchanged ---
     assert status({0x286: 1}) == (0, 0, 1, 78)
-    # --- гейт +0x29e: (0x2a8,0x2aa)→(0,0), (0x290,0x292) не меняется ---
+    # --- gate +0x29e: (0x2a8,0x2aa)->(0,0), (0x290,0x292) unchanged ---
     assert status({0x29E: 1}) == (2, 140, 0, 0)
-    # --- оба гейта ---
+    # --- both gates ---
     assert status({0x286: 1, 0x29E: 1}) == (0, 0, 0, 0)
 
 
-# --- FOC-интеграция в автономный контур (§73.x) ---
+# --- FOC integration into autonomous loop (§73.x) ---
 FW_LEN = 0x25000
 
 def _foc_amp(ccr):
@@ -4182,12 +4182,12 @@ def _foc_amp(ccr):
 
 
 def _foc_run(uc, current_ref):
-    """Полный FOC 0x1a938 на данном uc (общий RAM): current-ref u16[RAM+0x224] → CCR (RAM+0x382/384/386)."""
+    """Full FOC 0x1a938 on given uc (shared RAM): current-ref u16[RAM+0x224] -> CCR (RAM+0x382/384/386)."""
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
     r4 = RAM + 0x040
     uc.mem_write(r4, bytes(0x80))
-    uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — не управляет PWM
+    uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — does not control PWM
     uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
     def stop(uc_, a, s, u):
         aa = a & ~1
@@ -4206,9 +4206,9 @@ def _foc_run(uc, current_ref):
     return tuple(struct.unpack('<H', uc.mem_read(RAM + o, 2))[0] for o in (0x382, 0x384, 0x386))
 
 
-@t(0x1A938, '§73.x FOC-интеграция: transfer-функция current-ref u16[RAM+0x224]→PWM CCR (RAM+0x382/384/386): amp монотонно растёт с ref (0→~0, 4000→~41, 8000→~83, 16384→~169, 28624→~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-фазная FOC-модуляция). Интегрир. контур: PID(0x1d078)→throttle 0x42c→0x224→FOC→PWM, скорость растёт от 0.')
+@t(0x1A938, '§73.x FOC integration: transfer function current-ref u16[RAM+0x224]->PWM CCR (RAM+0x382/384/386): amp monotonically increases with ref (0->~0, 4000->~41, 8000->~83, 16384->~169, 28624->~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-phase FOC modulation). Integrated loop: PID(0x1d078)->throttle 0x42c->0x224->FOC->PWM, speed increases from 0.')
 def _(run, rng):
-    # --- transfer-функция FOC: amp монотонна в current-ref (fresh emu/call для чистоты) ---
+    # --- FOC transfer function: amp monotonic in current-ref (fresh emu/call for cleanliness) ---
     refs = (0, 4000, 8000, 16384, 28624)
     amps = []; centers = []
     for ref in refs:
@@ -4218,22 +4218,22 @@ def _(run, rng):
         ccr = _foc_run(femu.uc, ref)
         amp, center = _foc_amp(ccr)
         amps.append(amp); centers.append(center)
-    assert amps[0] < 1.0, f'ref=0 → amp должен ≈0, got {amps[0]}'
+    assert amps[0] < 1.0, f'ref=0 -> amp must be ~0, got {amps[0]}'
     for i in range(1, len(refs)):
-        assert amps[i] > amps[i - 1], f'amp не монотонен: {amps}'
+        assert amps[i] > amps[i - 1], f'amp is not monotonic: {amps}'
     for c in centers:
-        assert 1120.0 <= c <= 1135.0, f'center вне [1120,1135]: {centers}'
-    # CCR_A растёт, CCR_B падает с ref (2-фазная модуляция)
+        assert 1120.0 <= c <= 1135.0, f'center outside [1120,1135]: {centers}'
+    # CCR_A increases, CCR_B decreases with ref (2-phase modulation)
     femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
     ccr_lo = _foc_run(femu.uc, 4000)
     femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
     ccr_hi = _foc_run(femu.uc, 28624)
-    assert ccr_hi[0] > ccr_lo[0], f'CCR_A не растёт: {ccr_lo} -> {ccr_hi}'
-    assert ccr_hi[1] < ccr_lo[1], f'CCR_B не падает: {ccr_lo} -> {ccr_hi}'
+    assert ccr_hi[0] > ccr_lo[0], f'CCR_A does not increase: {ccr_lo} -> {ccr_hi}'
+    assert ccr_hi[1] < ccr_lo[1], f'CCR_B does not decrease: {ccr_lo} -> {ccr_hi}'
 
 
-# --- интегрированный контур: PID → throttle → FOC → PWM → plant (ОДИН emu, общий RAM) ---
-@t(0x1D078, '§73.x FOC-контур (интегрир.): ОДИН McuEmu, общий RAM. Шаги: SpeedModel(speed→V)→PID 0x1d078→throttle s16[RAM+0x42c]→u16[RAM+0x224]=throttle→FOC 0x1a938 (тот же emu)→PWM CCR→plant(throttle→speed). За 6 шагов скорость монотонно растёт от 0, throttle>0, FOC-amp>0 (полная цепочка прошивки — PID+FOC — исполняется каждый шаг на общем RAM).')
+# --- integrated loop: PID -> throttle -> FOC -> PWM -> plant (SINGLE emu, shared RAM) ---
+@t(0x1D078, '§73.x FOC loop (integrated): SINGLE McuEmu, shared RAM. Steps: SpeedModel(speed->V)->PID 0x1d078->throttle s16[RAM+0x42c]->u16[RAM+0x224]=throttle->FOC 0x1a938 (same emu)->PWM CCR->plant(throttle->speed). Over 6 steps speed monotonically increases from 0, throttle>0, FOC-amp>0 (full firmware chain — PID+FOC — executes each step on shared RAM).')
 def _(run, rng):
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
@@ -4263,21 +4263,21 @@ def _(run, rng):
         except Exception: pass
         uc.hook_del(sh)
         thr = struct.unpack('<h', uc.mem_read(RAM + 0x42c, 2))[0]
-        ccr = _foc_run(uc, thr & 0xFFFF)   # FOC на ТОМ ЖЕ emu (общий RAM)
+        ccr = _foc_run(uc, thr & 0xFFFF)   # FOC on SAME emu (shared RAM)
         amp, center = _foc_amp(ccr)
         if it == 0:
-            assert thr > 0, f'PID не дал throttle: {thr}'
-            assert amp > 10.0, f'FOC не дал PWM из throttle: amp={amp}'
+            assert thr > 0, f'PID did not produce throttle: {thr}'
+            assert amp > 10.0, f'FOC did not produce PWM from throttle: amp={amp}'
         tnorm = max(0.0, min(1.0, thr / tref)) if tref else 0.0
         speed += (1.0 / tau) * (v_max * tnorm - speed)
         speeds.append(speed)
-    assert speeds[-1] > speeds[0], f'скорость не растёт: {speeds}'
-    assert all(speeds[i + 1] >= speeds[i] for i in range(len(speeds) - 1)), f'скорость не монотонна в рост: {speeds}'
+    assert speeds[-1] > speeds[0], f'speed does not increase: {speeds}'
+    assert all(speeds[i + 1] >= speeds[i] for i in range(len(speeds) - 1)), f'speed does not increase monotonically: {speeds}'
 
 
-# --- FOC current-ref→P copy + электро-контур (§73.x) ---
+# --- FOC current-ref->P copy + electrical loop (§73.x) ---
 def _foc_run_pp(uc, current_ref, xlo=0, xhi=0, gate=False):
-    """FOC 0x1a938: возвращает (ccr_a,ccr_b,ccr_c, P). current-ref u16[RAM+0x224], вектор 0x108/0x10a."""
+    """FOC 0x1a938: returns (ccr_a,ccr_b,ccr_c, P). current-ref u16[RAM+0x224], vector 0x108/0x10a."""
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
     r4 = RAM + 0x040
@@ -4307,58 +4307,58 @@ def _foc_run_pp(uc, current_ref, xlo=0, xhi=0, gate=False):
     return ccr, P
 
 
-@t(0x1A938, '§73.x FOC current-ref→P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref идёт в cross+dot (§60.4) как P. Электро-контур НЕАКТИВЕН в изолированном FOC: measured vector s16[RAM+0x108/0x10a] не меняет PWM CCR (ни с gate=0, ни с STAT bit15=1) — feedback требует полного state-machine (сектор+реконструкция из ADC+PI) и live-gains мотора.')
+@t(0x1A938, '§73.x FOC current-ref->P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref goes into cross+dot (§60.4) as P. Electrical loop INACTIVE in isolated FOC: measured vector s16[RAM+0x108/0x10a] does not change PWM CCR (neither with gate=0 nor with STAT bit15=1) — feedback requires full state machine (sector+reconstruction from ADC+PI) and live motor gains.')
 def _(run, rng):
-    # --- P = [0x224] (1:1 copy), для нескольких ref ---
+    # --- P = [0x224] (1:1 copy), for multiple ref values ---
     for ref in (4000, 8000, 16384):
         femu = McuEmu(trace=False, max_insn=200000)
         femu.uc.mem_write(RAM, bytes(0x20000))
         femu.hook_periph_ready()
         ccr, P = _foc_run_pp(femu.uc, ref)
         assert P == (ref & 0xFFFF), f'P({P:#x}) != [0x224]({ref:#x})'
-    # --- электро-контур неактивен: вектор 0x108/0x10a не меняет CCR ---
+    # --- electrical loop inactive: vector 0x108/0x10a does not alter CCR ---
     femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
     ccr_base, _ = _foc_run_pp(femu.uc, 8000, 0, 0)
     for (xlo, xhi) in ((1000, 0), (0, 2000), (3000, -3000)):
         femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
         ccr, _ = _foc_run_pp(femu.uc, 8000, xlo, xhi)
-        assert ccr == ccr_base, f'veктор ({xlo},{xhi}) изменил CCR: {ccr} != {ccr_base}'
-    # --- даже с активным гейтом (STAT bit15=1) feedback не включается в изоляции ---
+        assert ccr == ccr_base, f'vector ({xlo},{xhi}) changed CCR: {ccr} != {ccr_base}'
+    # --- even with active gate (STAT bit15=1) feedback is not enabled in isolation ---
     femu = McuEmu(trace=False, max_insn=200000); femu.uc.mem_write(RAM, bytes(0x20000)); femu.hook_periph_ready()
     ccr_g, _ = _foc_run_pp(femu.uc, 8000, 3000, -3000, gate=True)
-    assert ccr_g == ccr_base, f'гейт включил feedback: {ccr_g} != {ccr_base}'
+    assert ccr_g == ccr_base, f'gate enabled feedback: {ccr_g} != {ccr_base}'
 
 
-# --- §74: ControlLoop — автономный time-driven контур (warm-start) ---
-@t(0x1D078, '§74: ControlLoop — автономный time-driven warm-start контур. Виртуальные часы + реальный firmware PID(0x1d078)+FOC(0x1a938) на каждом tick + plant/battery/range (один emu, общий RAM). target=208: скорость растёт от 0 (max>150), throttle>0 всюду, FOC-amp>0 (FOC исполняется каждый шаг), SoC падает с нагрузкой, range>0. Сходится ВЫШЕ target (~325) — свойство калибровки plant/PID; траектория совпадает с _foc_sim.py 40/40.')
+# --- §74: ControlLoop — autonomous time-driven loop (warm-start) ---
+@t(0x1D078, '§74: ControlLoop — autonomous time-driven warm-start loop. Virtual clock + real firmware PID(0x1d078)+FOC(0x1a938) on each tick + plant/battery/range (single emu, shared RAM). target=208: speed increases from 0 (max>150), throttle>0 everywhere, FOC-amp>0 (FOC executed every step), SoC decreases with load, range>0. Converges ABOVE target (~325) — property of plant/PID calibration; trajectory matches _foc_sim.py 40/40.')
 def _(run, rng):
     from emulator.mcu_emu import ControlLoop, McuEmu
     femu = McuEmu(trace=False, max_insn=400000)
     cl = ControlLoop(emu=femu, v_max=522.0, tau=15.0, throttle_ref=28624.0)
     cl.setup(target=208, mode=3, soc=100.0)
     traj = cl.run(24)
-    # старт: скорость >0 и мала
+    # start: speed > 0 and small
     assert traj[0]['speed'] > 0 and traj[0]['speed'] < 60, f"start: {traj[0]}"
-    # тяга есть всюду (throttle>0)
-    assert all(st['throttle'] > 0 for st in traj), 'throttle<=0 (нет тяги)'
-    # FOC исполняется каждый шаг (amp>0)
-    assert all(st['pwm_amp'] > 0 for st in traj), 'FOC-amp=0 (FOC не исполняется)'
-    # скорость растёт к target (достигает >150)
+    # thrust present everywhere (throttle>0)
+    assert all(st['throttle'] > 0 for st in traj), 'throttle<=0 (no thrust)'
+    # FOC executed on each step (amp>0)
+    assert all(st['pwm_amp'] > 0 for st in traj), 'FOC-amp=0 (FOC not executed)'
+    # speed increases toward target (reaches >150)
     assert max(st['speed'] for st in traj) > 150, \
         f"max speed {max(s['speed'] for s in traj)} < 150"
-    # батарея разряжается с нагрузкой
-    assert traj[-1]['soc'] < 100.0, f"SoC не падает: {traj[-1]['soc']}"
-    # запас хода вычисляется (R>0)
+    # battery discharges with load
+    assert traj[-1]['soc'] < 100.0, f"SoC does not decrease: {traj[-1]['soc']}"
+    # range reserve is computed (R>0)
     assert all(st['range'] > 0 for st in traj), 'range<=0'
 
 
-# --- A1: GpioModel (кастомный GPIO-блок «портов», §39.1) ---
-@t(0x1BF48, 'A1: GpioModel — кастомный GPIO-блок «портов» (§39.1): 4 порта × stride 0x400 (база 0x48000000), режимы в MODER_LO/HI (+0x2c/+0x28) по 2 бита/пин. MOTOR-INIT 0x1bf48 конфигурирует пины через драйвер 0x22000; модель ловит записи и декодит режимы. Детерминизм: фиксированный набор портов с ненулевыми режимами (MODER_LO записан).')
+# --- A1: GpioModel (custom GPIO block of "ports", §39.1) ---
+@t(0x1BF48, 'A1: GpioModel — custom GPIO block of "ports" (§39.1): 4 ports * stride 0x400 (base 0x48000000), modes in MODER_LO/HI (+0x2c/+0x28) at 2 bits/pin. MOTOR-INIT 0x1bf48 configures pins via driver 0x22000; model catches writes and decodes modes. Determinism: fixed set of ports with non-zero modes (MODER_LO written).')
 def _(run, rng):
     from emulator.mcu_emu import GpioModel
     uc = run.uc
-    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
-    run.emu.hook_periph_ready()                 # status-биты ready (как в run_func)
+    uc.mem_write(RAM, bytes(0x20000))          # clean RAM -> determinism
+    run.emu.hook_periph_ready()                 # status ready bits (as in run_func)
     gpio = GpioModel(run.emu)
     def _st(uc_, addr, size, u):
         aa = addr & ~1
@@ -4377,64 +4377,64 @@ def _(run, rng):
     finally:
         uc.hook_del(sh)
         uc.hook_del(gpio._hook)
-    # модель поймала записи в портовый блок
-    assert gpio.writes, 'GpioModel не поймал записей в портовый блок'
+    # model caught writes to port block
+    assert gpio.writes, 'GpioModel did not capture writes to port block'
     ports_written = sorted(set(p for _, p, _, _, _ in gpio.writes))
-    assert ports_written, 'порты не записаны'
-    # декод режимов: MODER_LO (+0x2c) записан с ненулевым пакетом хотя бы в один порт
+    assert ports_written, 'ports not written'
+    # decode modes: MODER_LO (+0x2c) written with non-zero packet to at least one port
     cfg = gpio.config_report()
-    assert cfg, 'config_report пуст — ни одного ненулевого режима пина'
+    assert cfg, 'config_report is empty — no non-zero pin modes'
     moder_ports = [p for p in range(4) if gpio.read(p, 0x2c)]
-    assert moder_ports, 'MODER_LO (+0x2c) не записан ни в одном порту'
-    # каждый декодированный режим — валиден (0..3 по 2 бита)
+    assert moder_ports, 'MODER_LO (+0x2c) not written to any port'
+    # each decoded mode is valid (0..3 in 2 bits)
     for p, pins in cfg.items():
         for pin, mode in pins.items():
-            assert 0 <= mode <= 3, f'невалидный режим {mode} порт {p} пин {pin}'
+            assert 0 <= mode <= 3, f'invalid mode {mode} port {p} pin {pin}'
 
 
-# --- A2: UsartTxModel (push-кадры, сборщик 0x211f8) ---
-@t(0x211F8, 'A2: UsartTxModel — push-TX pipeline (этап сборки). Прогон РЕАЛЬНОГО сборщика 0x211f8 (без арг., читает фикс. RAM-поля телеметрии) → TX-кольцо @0x10b5 → декод кадров 61..9E (chk=SUM&0xFF). Seed: mode@0x229=2, u16@0x236=50 → валидный a0-кадр с mode_lo=2 и pct_0x236=50.')
+# --- A2: UsartTxModel (push frames, collector 0x211f8) ---
+@t(0x211F8, 'A2: UsartTxModel — push-TX pipeline (assembly stage). Running REAL collector 0x211f8 (no args, reads fixed RAM telemetry fields) -> TX ring @0x10b5 -> decode frames 61..9E (chk=SUM&0xFF). Seed: mode@0x229=2, u16@0x236=50 -> valid a0 frame with mode_lo=2 and pct_0x236=50.')
 def _(run, rng):
     from emulator.mcu_emu import McuEmu, UsartTxModel
     femu = McuEmu(trace=False, max_insn=400000)
     uc = femu.uc
-    uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
+    uc.mem_write(RAM, bytes(0x20000))          # clean RAM -> determinism
     uc.mem_write(RAM + 0x229, bytes([2]))              # mode lo
     uc.mem_write(RAM + 0x236, struct.pack('<H', 50))   # pct (u16@0x236)
-    uc.mem_write(RAM + 0x306, struct.pack('<H', 89))   # батарея %
+    uc.mem_write(RAM + 0x306, struct.pack('<H', 89))   # battery %
     femu.hook_periph_ready()
     tx = UsartTxModel(femu)
     frames = tx.assemble()
-    assert frames, 'сборщик не произвёл ни одного валидного push-кадра'
+    assert frames, 'collector produced no valid push frames'
     a0 = [f for f in frames if f[1] == 0x30]
-    assert a0, 'нет a0-кадра (телеметрия)'
+    assert a0, 'no a0 frame (telemetry)'
     raw, sub, fl = a0[0]
     assert fl['mode'] & 0xF == 2, f"mode_lo != 2: {fl['mode']:02x} (seed @0x229=2)"
     assert fl['pct_0x236'] == 50, f"pct_0x236 != 50: {fl['pct_0x236']} (seed @0x236=50)"
 
 
-# --- A3: SpiFlashModel (внешний SPI-flash / NVM) ---
-@t(0x221E6, 'A3: SpiFlashModel — внешний SPI-flash (NVM). Виртуальный буфер size=0x1000 (≤4KB, из валидации addr в 0x221e6), дефолт 0xFF (стёртая flash); set/get round-trip; OOB -> ValueError. SPI-протокол: write-enable 0x221a4 (cmd 0x06) + page-program 0x221e6 (шаг слота 4Б); NVRAM-save 0x21A08 персистит конфиг/калибровку.')
+# --- A3: SpiFlashModel (external SPI-flash / NVM) ---
+@t(0x221E6, 'A3: SpiFlashModel — external SPI-flash (NVM). Virtual buffer size=0x1000 (<=4KB, from addr validation in 0x221e6), default 0xFF (erased flash); set/get round-trip; OOB -> ValueError. SPI protocol: write-enable 0x221a4 (cmd 0x06) + page-program 0x221e6 (slot step 4B); NVRAM-save 0x21A08 persists config/calibration.')
 def _(run, rng):
     from emulator.mcu_emu import McuEmu, SpiFlashModel, NVM_SIZE
     assert NVM_SIZE == 0x1000, f'NVM_SIZE != 4KB: {NVM_SIZE:#x}'
     femu = McuEmu(trace=False, max_insn=200000)
     nvm = SpiFlashModel(femu)
-    assert all(b == 0xFF for b in nvm.flash), 'NVM-дефолт != 0xFF (стёртая flash)'
+    assert all(b == 0xFF for b in nvm.flash), 'NVM default != 0xFF (erased flash)'
     nvm.set(0x10, struct.pack('<H', 0x1234))
     assert nvm.get(0x10, 2) == b'\x34\x12', 'set/get round-trip (little-endian u16)'
     nvm.seed({0x20: 89, 0x30: bytes([1, 2, 3])})
     assert nvm.get(0x20, 1) == b'\x59', 'seed byte'
     assert nvm.get(0x30, 3) == b'\x01\x02\x03', 'seed bytes'
     try:
-        nvm.set(NVM_SIZE - 1, b'\x00\x00')   # 2 байта за границей
-        assert False, 'OOB set не выбросил ValueError'
+        nvm.set(NVM_SIZE - 1, b'\x00\x00')   # 2 bytes past boundary
+        assert False, 'OOB set did not raise ValueError'
     except ValueError:
         pass
 
 
-# --- B1: CmdControlModel (командный слой -> блок управления @0x40021000) ---
-@t(0xC664, 'B1: CmdControlModel — командный слой (dispatcher 0x2e0c / handler 0x97f4) шевелит биты в кастомном блоке управления @0x40021000 (поля +0x10/+0x18/+0x1c). Примитив 0xc664(r0=бит, r1=set/clear): pre-set поля в 0 -> set(0x200000) пишет ровно бит21 в +0x1c; clear снимает. Модель ловит операции.')
+# --- B1: CmdControlModel (command layer -> control block @0x40021000) ---
+@t(0xC664, 'B1: CmdControlModel — command layer (dispatcher 0x2e0c / handler 0x97f4) toggles bits in custom control block @0x40021000 (fields +0x10/+0x18/+0x1c). Primitive 0xc664(r0=bit, r1=set/clear): pre-set field to 0 -> set(0x200000) writes exactly bit21 to +0x1c; clear clears it. Model captures operations.')
 def _(run, rng):
     from emulator.mcu_emu import McuEmu, CmdControlModel, CMD_CTRL_BASE
     femu = McuEmu(trace=False, max_insn=50000)
@@ -4442,7 +4442,7 @@ def _(run, rng):
     uc.mem_write(RAM, bytes(0x20000))
     femu.hook_periph_ready()
     for off in (0x10, 0x18, 0x1c):
-        femu.uc.mem_write(CMD_CTRL_BASE + off, struct.pack('<I', 0))   # pre-set в 0
+        femu.uc.mem_write(CMD_CTRL_BASE + off, struct.pack('<I', 0))   # pre-set to 0
     cmd = CmdControlModel(femu)
 
     def _call(fn, r0, r1):
@@ -4466,17 +4466,17 @@ def _(run, rng):
         finally:
             uc.hook_del(sh)
     cmd.ops.clear()
-    _call(0xC664, 0x200000, 1)   # set bit21 в +0x1c
+    _call(0xC664, 0x200000, 1)   # set bit21 in +0x1c
     assert any(o == 0x1c and v == 0x200000 for _, o, v in cmd.ops), \
-        f'0xc664(0x200000,set) не поставил бит21 в +0x1c: {cmd.ops}'
+        f'0xc664(0x200000,set) did not set bit21 in +0x1c: {cmd.ops}'
     cmd.ops.clear()
-    _call(0xC664, 0x200000, 0)   # clear bit21 (поле сейчас 0x200000)
+    _call(0xC664, 0x200000, 0)   # clear bit21 (field is currently 0x200000)
     assert any(o == 0x1c and v == 0 for _, o, v in cmd.ops), \
-        f'0xc664(0x200000,clear) не снял бит21: {cmd.ops}'
+        f'0xc664(0x200000,clear) did not clear bit21: {cmd.ops}'
 
 
-# --- B2: UsartRxCommandTable (USART3 RX-протокол = ASCII-command-ID) ---
-@t(0x1E9E0, 'B2: UsartRxCommandTable — USART3 RX-протокол (BLE→MCU) = ASCII-command-ID. Парсер 0x1e9e0 (1914 Б), 15 команд @ A B C D E F G H I J K ` a c, 2 категории (@GKc=cat2 response/status; остальные=cat0xa SET-params). Таблица сверена с cmp-иммедиатами в dispatch-регионах (static-consistency).')
+# --- B2: UsartRxCommandTable (USART3 RX protocol = ASCII command ID) ---
+@t(0x1E9E0, 'B2: UsartRxCommandTable — USART3 RX protocol (BLE->MCU) = ASCII command ID. Parser 0x1e9e0 (1914 B), 15 commands @ A B C D E F G H I J K ` a c, 2 categories (@GKc=cat2 response/status; others=cat0xa SET-params). Table verified against cmp immediates in dispatch regions (static consistency).')
 def _(run, rng):
     import os as _os
     import re
@@ -4508,11 +4508,11 @@ def _(run, rng):
         assert cat == expect, f'{ch!r}: cat={cat:#x} != {expect:#x}'
     assert usart_rx_cmd(0x41)[0] == 0x1EC74   # 'A'
     assert usart_rx_cmd('a')[0] == 0x1F112
-    assert usart_rx_cmd(0x58) is None          # 'X' — неизвестно
+    assert usart_rx_cmd(0x58) is None          # 'X' — unknown
 
 
-# --- E1: покрытие — bsearch (floor index для интерполяции) ---
-@t(0x16176, 'E1: 0x16176 — i16 bsearch (floor index). 0x16176(key, arr, mid0, hi) с mid0=0 возвращает clamped lower_bound: последний i в [0,hi) с arr[i]<=key; 0 если key<arr[0]. Вериф на сортированном i16-массиве по диапазону ключей (эмулятор).')
+# --- E1: coverage — bsearch (floor index for interpolation) ---
+@t(0x16176, 'E1: 0x16176 — i16 bsearch (floor index). 0x16176(key, arr, mid0, hi) with mid0=0 returns clamped lower_bound: last i in [0,hi) with arr[i]<=key; 0 if key<arr[0]. Verified on sorted i16 array across key range (emulator).')
 def _(run, rng):
     arr = [10, 20, 30, 40, 50]
     ARR_OFF = 0x4000
@@ -4532,7 +4532,7 @@ def _(run, rng):
     assert n >= 25
 
 
-@t(0x1619E, 'E1: 0x1619e — u32 bsearch (твин 0x16176, unsigned). Те же семантики clamped lower_bound для u32-массива (ldr [arr,mid<<2]).')
+@t(0x1619E, 'E1: 0x1619e — u32 bsearch (twin of 0x16176, unsigned). Same clamped lower_bound semantics for u32 array (ldr [arr,mid<<2]).')
 def _(run, rng):
     arr = [100, 200, 300, 400, 500]
     ARR_OFF = 0x4100
@@ -4549,8 +4549,8 @@ def _(run, rng):
         assert r0 == clamped_lb(key), f'key={key}: got {r0}, want {clamped_lb(key)}'
 
 
-# --- C1: LutModel (LUT-блоки range-эстиматора 0x1d898) ---
-@t(0x1D898, 'C1: LutModel — LUT-блоки range-эстиматора 0x1d898 @RAM+0x614 (45 слов) / RAM+0x738 (53 слова), u32-слова шаг 4. Модель ловит ЧТЕНИЯ firmware: 0x1d898 сканирует оба блока (каждое слово по разу); status-гейты @0x286/0x29e (§73.13). Тест: свежий McuEmu + battery seed -> прогон 0x1d898 -> модель зафиксировала скан обоих блоков + seed/get round-trip.')
+# --- C1: LutModel (LUT blocks of range estimator 0x1d898) ---
+@t(0x1D898, 'C1: LutModel — LUT blocks of range estimator 0x1d898 @RAM+0x614 (45 words) / RAM+0x738 (53 words), u32 words step 4. Model captures firmware READS: 0x1d898 scans both blocks (each word once); status gates @0x286/0x29e (§73.13). Test: fresh McuEmu + battery seed -> run 0x1d898 -> model recorded scan of both blocks + seed/get round-trip.')
 def _(run, rng):
     from emulator.mcu_emu import (McuEmu, LutModel, RANGE_LUT0_OFF, RANGE_LUT0_WORDS,
                                   RANGE_LUT1_OFF, RANGE_LUT1_WORDS)
@@ -4558,7 +4558,7 @@ def _(run, rng):
     uc = femu.uc
     uc.mem_write(RAM, bytes(0x20000))
     femu.hook_periph_ready()
-    femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 480))   # battery середина [415..535]
+    femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 480))   # battery midpoint [415..535]
     lut = LutModel(femu)
 
     def _st(uc_, a, s, u):
@@ -4579,14 +4579,14 @@ def _(run, rng):
     finally:
         uc.hook_del(sh)
     assert lut.scanned(RANGE_LUT0_OFF, RANGE_LUT0_WORDS), \
-        f'блок0 не просканирован: прочитано {len(lut.reads)} оффс'
-    assert lut.scanned(RANGE_LUT1_OFF, RANGE_LUT1_WORDS), 'блок1 не просканирован'
+        f'block0 not scanned: read {len(lut.reads)} offsets'
+    assert lut.scanned(RANGE_LUT1_OFF, RANGE_LUT1_WORDS), 'block1 not scanned'
     lut.set_word(RANGE_LUT0_OFF + 8, 0xDEADBEEF)
     assert lut.get_word(RANGE_LUT0_OFF + 8) == 0xDEADBEEF
 
 
-# --- C2: FocPipelineModel (FOC-рутина 0x1a938 как value-gated pipeline) ---
-@t(0x1A938, 'C2: FocPipelineModel — FOC-рутина 0x1a938 как value-gated pipeline (не дискретный FSM; ветвления по токам/порогам, §60.3). Выходы: P@0x388 = current-ref @0x224 (1:1), PWM-фазы @0x382/4/6 = 1125 ± ~0.0103·|ref|. Тест: seeded ref -> прогон 0x1a938 -> P==ref + фазы отклоняются от center 1125 монотонно с |ref|.')
+# --- C2: FocPipelineModel (FOC routine 0x1a938 as value-gated pipeline) ---
+@t(0x1A938, 'C2: FocPipelineModel — FOC routine 0x1a938 as value-gated pipeline (not discrete FSM; branches on currents/thresholds, §60.3). Outputs: P@0x388 = current-ref @0x224 (1:1), PWM phases @0x382/4/6 = 1125 +/- ~0.0103*|ref|. Test: seeded ref -> run 0x1a938 -> P==ref + phases deviate from center 1125 monotonically with |ref|.')
 def _(run, rng):
     from emulator.mcu_emu import (McuEmu, FocPipelineModel, FOC_ROUTINE, FOC_REF_OFF,
                                   FOC_PHASE_CENTER)
@@ -4621,17 +4621,17 @@ def _(run, rng):
     for ref in (0, 500, 2000):
         p, _ = measure(ref)
         assert p == ref, f'ref={ref}: P@0x388={p} != ref'
-    # фазы: center при ref=0; spread монотонно растёт с |ref|
+    # phases: center at ref=0; spread monotonically increases with |ref|
     def spread(ref):
         _, ph = measure(ref)
         return max(abs(p - FOC_PHASE_CENTER) for p in ph)
     s0, s500, s2000 = spread(0), spread(500), spread(2000)
-    assert s0 <= 2, f'ref=0 фазы не center: spread={s0}'
-    assert s2000 > s500 > 0, f'spread не монотонен: 500={s500}, 2000={s2000}'
+    assert s0 <= 2, f'ref=0 phases not center: spread={s0}'
+    assert s2000 > s500 > 0, f'spread not monotonic: 500={s500}, 2000={s2000}'
 
 
-# --- D1: SchedulerModel (main-loop диспетчер 0x1f600) ---
-@t(0x1F600, 'D1: SchedulerModel — main-loop диспетчер 0x1f600 (round-robin по N слотам). Ловит состояние (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick-слова @0x17F78+). ПОТОЛОК §74.1: task function-pointers runtime; в нулевом RAM dispatch упирается в unmapped fetch (jump to 0). Тест: seeded slot_index=1 -> прогон 0x1f600 -> модель зафиксировала чтение slot-index + tick-регионов (pre-dispatch логика).')
+# --- D1: SchedulerModel (main-loop dispatcher 0x1f600) ---
+@t(0x1F600, 'D1: SchedulerModel — main-loop dispatcher 0x1f600 (round-robin across N slots). Captures state (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick words @0x17F78+). LIMIT §74.1: task function pointers runtime; in zeroed RAM dispatch hits unmapped fetch (jump to 0). Test: seeded slot_index=1 -> run 0x1f600 -> model recorded read of slot-index + tick regions (pre-dispatch logic).')
 def _(run, rng):
     from emulator.mcu_emu import (McuEmu, SchedulerModel, SCHEDULER_FN,
                                   SCHED_SLOT_INDEX_OFF, SCHED_TICK_WORDS_OFF)
@@ -4659,15 +4659,15 @@ def _(run, rng):
             pass
     finally:
         uc.hook_del(sh)
-    # ядро состояния: диспетчер прочитал slot-index @0x2C2 (стабильно в zeroed и
-    # dispatch-path; tick/state-регионы path-dependent — 0x17F78+ / 0x1E0+ по ветке)
+    # core state: dispatcher read slot-index @0x2C2 (consistently in zeroed and
+    # dispatch-path; tick/state regions path-dependent — 0x17F78+ / 0x1E0+ by branch)
     assert sch.touched(SCHED_SLOT_INDEX_OFF) or \
         sch.touched(SCHED_SLOT_INDEX_OFF - 1), \
-        f'slot-index не прочитан: {sorted(hex(o) for o in sch.reads if 0x2C0 <= o < 0x2D0)}'
+        f'slot-index not read: {sorted(hex(o) for o in sch.reads if 0x2C0 <= o < 0x2D0)}'
 
 
-# --- E1: CRC-7 примитив 0x3c7c (ядро §50 I2C stream-кодека) ---
-@t(0x3C7C, 'E1: 0x3c7c — CRC-7 примитив (ядро §50 I2C stream-кодека). 0x3c7c(byte=r0, prev=r1) -> r0: crc=(prev^byte)&0xFF; 8 бит MSB-first: if MSB -> ((crc<<1)&0xFF)^0x07 else (crc<<1)&0xFF. Poly=0x07, no reflect/xorout, init=prev. Вериф sweep byte×prev vs независимая реализация.')
+# --- E1: CRC-7 primitive 0x3c7c (core of §50 I2C stream codec) ---
+@t(0x3C7C, 'E1: 0x3c7c — CRC-7 primitive (core of §50 I2C stream codec). 0x3c7c(byte=r0, prev=r1) -> r0: crc=(prev^byte)&0xFF; 8 bits MSB-first: if MSB -> ((crc<<1)&0xFF)^0x07 else (crc<<1)&0xFF. Poly=0x07, no reflect/xorout, init=prev. Verif sweep byte*prev vs independent implementation.')
 def _(run, rng):
     def crc7(b, prev):
         crc = (prev ^ b) & 0xFF
@@ -4685,7 +4685,7 @@ def _(run, rng):
 
 
 # --- E2: periph-write-trace facility ---
-@t(0x1BF48, 'E2: periph-write-trace facility — McuEmu.periph_write_map() / periph_writes_since(). Захват periph-writes на функцию для верификации «функция пишет в регистр Y». Тест: прогон мотор-инит 0x1bf48 (221 запись) -> periph_write_map() содержит motor-TIM @0x40012C00 + GPIO-блок @0x48000000; periph_writes_since(mark) = окно вызова.')
+@t(0x1BF48, 'E2: periph-write-trace facility — McuEmu.periph_write_map() / periph_writes_since(). Captures periph-writes per function to verify "function writes to register Y". Test: run motor init 0x1bf48 (221 writes) -> periph_write_map() contains motor-TIM @0x40012C00 + GPIO block @0x48000000; periph_writes_since(mark) = call window.')
 def _(run, rng):
     from emulator.mcu_emu import McuEmu, RAM, FLASH0, FLASH1, STACK_TOP
     femu = McuEmu(trace=False, max_insn=500000)
@@ -4712,15 +4712,15 @@ def _(run, rng):
         uc.hook_del(sh)
     wm = femu.periph_write_map()
     assert any(0x40012C00 <= a < 0x40012D00 for a in wm), \
-        f'motor-TIM @0x40012C00 не в map: {sorted(hex(a) for a in wm)[:8]}'
-    assert any(0x48000000 <= a < 0x48001000 for a in wm), 'GPIO-блок @0x48000000 не в map'
+        f'motor-TIM @0x40012C00 not in map: {sorted(hex(a) for a in wm)[:8]}'
+    assert any(0x48000000 <= a < 0x48001000 for a in wm), 'GPIO block @0x48000000 not in map'
     tail = femu.periph_writes_since(mark)
     assert len(tail) == len(femu.periph_writes) - mark and len(tail) >= 100, \
-        f'periph_writes_since: {len(tail)} (ожидал >=100)'
+        f'periph_writes_since: {len(tail)} (expected >=100)'
 
 
 # --- E1 continuation: checksum + divisibility 0x16410 ---
-@t(0x16410, 'E1: 0x16410 — checksum + divisibility. 0x16410(arg0=r0, arg1=r1, arg2=r2) -> r0 = sum(block[:arg1]) + arg2 + flag; block=00 1f 1c 1f 1e 1f 1e 1f 1f 1e 1f 1e (embedded 12B из пула); flag добавляется только если arg1>2: a0%4!=0->0, a0%100!=0->1, a0%400!=0->0, else->1. Вериф sweep (arg0,arg1,arg2).')
+@t(0x16410, 'E1: 0x16410 — checksum + divisibility. 0x16410(arg0=r0, arg1=r1, arg2=r2) -> r0 = sum(block[:arg1]) + arg2 + flag; block=00 1f 1c 1f 1e 1f 1e 1f 1f 1e 1f 1e (embedded 12B from pool); flag added only if arg1>2: a0%4!=0->0, a0%100!=0->1, a0%400!=0->0, else->1. Verif sweep (arg0,arg1,arg2).')
 def _(run, rng):
     BLOCK = bytes([0x00, 0x1f, 0x1c, 0x1f, 0x1e, 0x1f, 0x1e, 0x1f, 0x1f, 0x1e, 0x1f, 0x1e])
 
@@ -4744,7 +4744,7 @@ def _(run, rng):
 
 
 # --- E1 continuation: CRC-7 stream encoder 0x15640 ---
-@t(0x15640, 'E1: 0x15640 — CRC-7 stream-кодер §50 I2C. 0x15640(arg0=r0, arg1=r1, src=r2, dst=r3, len=[pre_sp+0]): warmup r7=crc7(a1,crc7(a0,0)); для каждого src[i]: dst[2i]=src[i], dst[2i+1]=crc7(src[i], r7 if i==0 else 0) — первый CRC цепляется от warmup, остальные сброс в init=0. Примитив crc7 = 0x3c7c (poly=0x07 MSB-first). Вериф manual-call (len в стек, push=8 рег=0x20).')
+@t(0x15640, 'E1: 0x15640 — CRC-7 stream encoder §50 I2C. 0x15640(arg0=r0, arg1=r1, src=r2, dst=r3, len=[pre_sp+0]): warmup r7=crc7(a1,crc7(a0,0)); for each src[i]: dst[2i]=src[i], dst[2i+1]=crc7(src[i], r7 if i==0 else 0) — first CRC chains from warmup, rest reset to init=0. Primitive crc7 = 0x3c7c (poly=0x07 MSB-first). Verif manual-call (len on stack, push=8 regs=0x20).')
 def _(run, rng):
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
@@ -4809,9 +4809,9 @@ def _(run, rng):
 
 # --- E1: 0x15a60 close-out — helpers strlen/memcmp + buffer processor ---
 def _fresh_call(off, args=(), extra_ram=None, max_insn=50000, extra_mem=None):
-    """Свежий McuEmu + ручной call (чистый RAM, без shared-state). Возвращает (r0, emu).
-    extra_ram: [(RAM_abs_addr, bytes)] — pre-set в RAM.
-    extra_mem: [(any_abs_addr, bytes)] — pre-set в ЛЮБОЙ адрес (periph и т.п.)."""
+    """Fresh McuEmu + manual call (clean RAM, no shared state). Returns (r0, emu).
+    extra_ram: [(RAM_abs_addr, bytes)] — pre-set in RAM.
+    extra_mem: [(any_abs_addr, bytes)] — pre-set in ANY address (periph etc.)."""
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
     emu = _M(max_insn=max_insn)
@@ -4847,7 +4847,7 @@ def _fresh_call(off, args=(), extra_ram=None, max_insn=50000, extra_mem=None):
     return r0, emu
 
 
-@t(0x11EC, 'E1: 0x11ec — strlen (null-terminated). 0x11ec(src=r0) -> r0 = число байтов до первого null. Помощник 0x15a60 (§87). Вериф sweep.')
+@t(0x11EC, 'E1: 0x11ec — strlen (null-terminated). 0x11ec(src=r0) -> r0 = number of bytes up to first null. Helper 0x15a60 (§87). Verif sweep.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     ok = 0
@@ -4860,7 +4860,7 @@ def _(run, rng):
     assert ok >= 5
 
 
-@t(0x11FA, 'E1: 0x11fa — bounded-memcmp. 0x11fa(A=r0, B=r1, n=r2) -> r0 = A[i]-B[i] на первом несовпадении (i<n); 0 на полное совпадение или когда ОБА null на той же позиции (ранний выход). Помощник 0x15a60 (§87). Вериф sweep.')
+@t(0x11FA, 'E1: 0x11fa — bounded-memcmp. 0x11fa(A=r0, B=r1, n=r2) -> r0 = A[i]-B[i] at first mismatch (i<n); 0 on exact match or when BOTH are null at same position (early exit). Helper 0x15a60 (§87). Verif sweep.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     cases = [(b'abc', b'abc', 3, 0), (b'abc', b'abd', 3, -1),
@@ -4876,7 +4876,7 @@ def _(run, rng):
         assert got == exp, f'A={A!r} B={B!r} n={n}: got {got} want {exp}'
 
 
-@t(0x15A60, 'E1: 0x15a60 — USART/DFU command/data buffer processor (§87). (src=r0, len=r1): рабочий буфер @RAM+0x1f10 (memset 0x11d6->0x11c8), TBL1=flash@0x1a93c (7×50B binary-паттерны; strlen через 0x11ec). Path A (len<=0x32): buf[0]=src[0], return 0. Path B (len>0x32): гейт src[0]==1 -> копирует src в буфер; иначе early-return 0 (только buf[0]=src[0]). Вериф детерминированного поведения.')
+@t(0x15A60, 'E1: 0x15a60 — USART/DFU command/data buffer processor (§87). (src=r0, len=r1): working buffer @RAM+0x1f10 (memset 0x11d6->0x11c8), TBL1=flash@0x1a93c (7x50B binary patterns; strlen via 0x11ec). Path A (len<=0x32): buf[0]=src[0], return 0. Path B (len>0x32): gate src[0]==1 -> copies src to buffer; else early-return 0 (buf[0]=src[0] only). Verif deterministic behavior.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     SRC = _R + 0x4000
@@ -4900,8 +4900,8 @@ def _(run, rng):
         f'pathB gate-pass: return={r0:#x} buf={buf.hex()} want {src_c[:4].hex()}'
 
 
-# --- E2-batch1: пофункционная кампания — чистые/простые функции ---
-@t(0x01E34, 'E2-b1: 0x01e34 — сумма байтов mod 256. 0x01e34(ptr=r0, n=r1) -> r0 = (Σ buf[i], i=0..n-1) & 0xFF. Чистая функция. Вериф 4/4.')
+# --- E2-batch1: function-by-function campaign — pure/simple functions ---
+@t(0x01E34, 'E2-b1: 0x01e34 — byte sum mod 256. 0x01e34(ptr=r0, n=r1) -> r0 = (Σ buf[i], i=0..n-1) & 0xFF. Pure function. Verif 4/4.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     ok = 0
@@ -4914,7 +4914,7 @@ def _(run, rng):
     assert ok >= 4
 
 
-@t(0x015AA, 'E2-b1: 0x015aa — packed-field setter. 0x015aa(struct=r0, field_id=r1, selector=r2, value=r3): 3-бит поле (из value): id==0x12->[+0x5c]b[2:0]; id>9->[+0xc]b[(id-0xa)*3..3]; id<=9->[+0x10]b[id*3..3]. 5-бит поле (из field_id), по selector: <7->[+0x34]b[(sel-1)*5..5]; <0xd->[+0x30]b[(sel-7)*5..5]; else->[+0x2c]b[(sel-0xd)*5..5]. Чистая (struct в r0). Вериф 6/6.')
+@t(0x015AA, 'E2-b1: 0x015aa — packed-field setter. 0x015aa(struct=r0, field_id=r1, selector=r2, value=r3): 3-bit field (from value): id==0x12->[+0x5c]b[2:0]; id>9->[+0xc]b[(id-0xa)*3..3]; id<=9->[+0x10]b[id*3..3]. 5-bit field (from field_id), by selector: <7->[+0x34]b[(sel-1)*5..5]; <0xd->[+0x30]b[(sel-7)*5..5]; else->[+0x2c]b[(sel-0xd)*5..5]. Pure (struct in r0). Verif 6/6.')
 def _(run, rng):
     import struct as _st
     from emulator.mcu_emu import RAM as _R
@@ -4924,26 +4924,26 @@ def _(run, rng):
         emu = _fresh_call(0x015AA, args=(S, r1, r5, r3))[1]
         u32 = lambda off: _st.unpack('<I', bytes(emu.uc.mem_read(S + off, 4)))[0]
         return u32(0x5c), u32(0xc), u32(0x10), u32(0x34), u32(0x30), u32(0x2c)
-    # 3-бит: id==0x12 -> [0x5c] low3 = value
+    # 3-bit: id==0x12 -> [0x5c] low3 = value
     assert runf(0x12, 1, 5)[0] == 5
-    # 3-бит: id<=9 -> [0x10] bit(id*3) w3 = value
+    # 3-bit: id<=9 -> [0x10] bit(id*3) w3 = value
     assert runf(2, 1, 7)[2] == (7 & 7) << 6
-    # 3-бит: id>9 -> [0xc] bit((id-0xa)*3) w3 = value
+    # 3-bit: id>9 -> [0xc] bit((id-0xa)*3) w3 = value
     assert runf(0xb, 1, 4)[1] == (4 & 7) << 3
-    # 5-бит: selector<7 -> [0x34] bit((sel-1)*5) w5 = field_id
+    # 5-bit: selector<7 -> [0x34] bit((sel-1)*5) w5 = field_id
     assert runf(20, 1, 0)[3] == (20 & 0x1F)
-    # 5-бит: selector in [7,0xd) -> [0x30] bit((sel-7)*5) w5 = field_id
+    # 5-bit: selector in [7,0xd) -> [0x30] bit((sel-7)*5) w5 = field_id
     assert runf(30, 8, 0)[4] == (30 & 0x1F) << 5
-    # 5-бит: selector>=0xd -> [0x2c] bit((sel-0xd)*5) w5 = field_id
+    # 5-bit: selector>=0xd -> [0x2c] bit((sel-0xd)*5) w5 = field_id
     assert runf(9, 0xe, 0)[5] == (9 & 0x1F) << 5
 
 
 def _intercept(off, target, max_insn=20000, arg=None, args=None, extra_ram=None):
-    """Свежий McuEmu; стоп на входе bl-цели `target`, снимаем R0-R3. -> (dict, emu).
+    """Fresh McuEmu; stop at entry of bl target `target`, capture R0-R3. -> (dict, emu).
 
-    Для тонких делегаторов: верифицируем, что функция вызывает хелпер с нужными аргументами.
-    `args` — кортеж для R0-R3; иначе `arg` — только R0 (по умолчанию 0).
-    `extra_ram` — [(addr, bytes)], досев RAM перед запуском (для stateful-гейтов)."""
+    For thin delegators: verify function calls helper with correct arguments.
+    `args` — tuple for R0-R3; else `arg` — R0 only (default 0).
+    `extra_ram` — [(addr, bytes)], RAM pre-population before launch (for stateful gates)."""
     from emulator.mcu_emu import McuEmu as _M, RAM as _R, FLASH0 as _F0, \
         FLASH1 as _F1, STACK_TOP as _ST
     emu = _M(max_insn=max_insn)
@@ -4987,8 +4987,8 @@ def _intercept(off, target, max_insn=20000, arg=None, args=None, extra_ram=None)
     return cap, emu
 
 
-# --- E2-batch2: I2C2-wr семья (22 тонких делегатора -> 0x1c61) ---
-# Контракт (вериф bl-intercept): 0x1c61(op=8, reg=r1, buf=&u32@0x16XX=r2, len=r3).
+# --- E2-batch2: I2C2-wr family (22 thin delegators -> 0x1c61) ---
+# Contract (verif bl-intercept): 0x1c61(op=8, reg=r1, buf=&u32@0x16XX=r2, len=r3).
 _I2C2_WR = {
     0x020c4: (0x38, 2), 0x02138: (0x36, 2), 0x021dc: (0x12, 2), 0x021f0: (0x14, 2),
     0x02204: (0x16, 2), 0x02218: (0x18, 2), 0x0222c: (0x1a, 2), 0x02240: (0x1c, 2),
@@ -5006,7 +5006,7 @@ def _mk_i2c2_wr(addr, reg, ln):
         assert cap.get('r0') == 8, f'0x{addr:05x}: r0={cap.get("r0"):#x} want 0x8'
         assert cap.get('r1') == reg, f'0x{addr:05x}: reg={cap.get("r1"):#x} want 0x{reg:x}'
         assert cap.get('r3') == ln, f'0x{addr:05x}: len={cap.get("r3")} want {ln}'
-        assert cap.get('r2', 0) >= _R, f'0x{addr:05x}: buf не в RAM'
+        assert cap.get('r2', 0) >= _R, f'0x{addr:05x}: buf not in RAM'
     return _test
 
 
@@ -5014,8 +5014,8 @@ for _addr, (_reg, _ln) in sorted(_I2C2_WR.items()):
     t(_addr, f'E2-b2: I2C2-wr 0x{_addr:05x} -> 0x1c61(op=8, reg=0x{_reg:x}, len={_ln}) [bl-intercept]')(_mk_i2c2_wr(_addr, _reg, _ln))
 
 
-# --- E2-batch3: median (выборка) + I2C2-read делегатор ---
-@t(0x0170C, 'E2-b3: 0x0170c — выборка ADC-сэмпла по индексу. 0x0170c(arg=r0) -> r0 = u16[RAM+0xB7E + arg*2] (arg<2). Копирует выбранный сэмпл в 7 слотов локального массива, sort+center (no-op на константе) -> возвращает его. Каталог «медиана из 7» неточен. Вериф 10/10.')
+# --- E2-batch3: median (sample) + I2C2-read delegator ---
+@t(0x0170C, 'E2-b3: 0x0170c — sample ADC value by index. 0x0170c(arg=r0) -> r0 = u16[RAM+0xB7E + arg*2] (arg<2). Copies selected sample into 7 slots of local array, sort+center (no-op on constant) -> returns it. Catalog "median of 7" is inaccurate. Verif 10/10.')
 def _(run, rng):
     import struct as _st
     from emulator.mcu_emu import RAM as _R
@@ -5027,7 +5027,7 @@ def _(run, rng):
             assert r0 == vals[arg], f'arg={arg}: got {r0:#x} want {vals[arg]:#x}'
 
 
-@t(0x01BDC, 'E2-b3: 0x01bdc — I2C2 read (code16). 0x01bdc(code=r0) -> bl 0x1e73(op=8, dev=0x3e, r2=1, buf=[sp+4]); buf = [code&0xFF, code>>8] (LE). Вериф bl-intercept.')
+@t(0x01BDC, 'E2-b3: 0x01bdc — I2C2 read (code16). 0x01bdc(code=r0) -> bl 0x1e73(op=8, dev=0x3e, r2=1, buf=[sp+4]); buf = [code&0xFF, code>>8] (LE). Verif bl-intercept.')
 def _(run, rng):
     for code in (0x1234, 0xABCD, 0x00FF):
         cap, emu = _intercept(0x01BDC, 0x1E73, arg=code)
@@ -5037,7 +5037,7 @@ def _(run, rng):
         assert buf == code.to_bytes(2, 'little'), f'code={code:#06x}: buf={buf.hex()}'
 
 
-@t(0x01C1C, 'E2-b4: 0x01c1c — I2C2 read (code16, base). 0x01c1c(code=r0) -> bl 0x90a1(r0=0x40005800 [I2C2 base], op=8, dev=0x3e, buf=[sp+4]); buf=LE code. Вериф bl-intercept.')
+@t(0x01C1C, 'E2-b4: 0x01c1c — I2C2 read (code16, base). 0x01c1c(code=r0) -> bl 0x90a1(r0=0x40005800 [I2C2 base], op=8, dev=0x3e, buf=[sp+4]); buf=LE code. Verif bl-intercept.')
 def _(run, rng):
     for code in (0x1234, 0xABCD):
         cap, emu = _intercept(0x01C1C, 0x90A1, arg=code)
@@ -5047,7 +5047,7 @@ def _(run, rng):
         assert buf == code.to_bytes(2, 'little'), f'code={code:#06x}: buf={buf.hex()}'
 
 
-@t(0x01C7A, 'E2-b4: 0x01c7a — I2C2 read (arg0, code16). 0x01c7a(a0=r0, code=r1) -> bl 0x1e73(r0=a0, dev=0x3e, r2=1, buf=[sp+4]); buf=LE code. Вериф bl-intercept.')
+@t(0x01C7A, 'E2-b4: 0x01c7a — I2C2 read (arg0, code16). 0x01c7a(a0=r0, code=r1) -> bl 0x1e73(r0=a0, dev=0x3e, r2=1, buf=[sp+4]); buf=LE code. Verif bl-intercept.')
 def _(run, rng):
     for a0, code in ((0x55, 0x1234), (0xAA, 0xBE01)):
         cap, emu = _intercept(0x01C7A, 0x1E73, args=(a0, code))
@@ -5057,34 +5057,34 @@ def _(run, rng):
         assert buf == code.to_bytes(2, 'little'), f'code={code:#06x}: buf={buf.hex()}'
 
 
-@t(0x0218C, 'E2-b5: 0x0218c — I2C read reg 0x83. 0x0218c() -> bl 0x1c7b(op=8, reg=0x83, buf=&RAM, len=2); результат -> u16@0xB42 (если != 0xFFFF). Вериф bl-intercept.')
+@t(0x0218C, 'E2-b5: 0x0218c — I2C read reg 0x83. 0x0218c() -> bl 0x1c7b(op=8, reg=0x83, buf=&RAM, len=2); result -> u16@0xB42 (if != 0xFFFF). Verif bl-intercept.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     cap, emu = _intercept(0x0218C, 0x1C7B)
     assert cap.get('r0') == 8 and cap.get('r1') == 0x83 and cap.get('r3') == 2, f'{cap}'
-    assert cap.get('r2', 0) >= _R, f'buf не в RAM: {cap}'
+    assert cap.get('r2', 0) >= _R, f'buf not in RAM: {cap}'
 
 
-# --- E2-batch6: I2C2-read цепочки (тонкие делегаторы) ---
-@t(0x01C60, 'E2-b6: 0x01c60 — I2C2-цепочка #1. 0x01c60() -> bl 0x1e53(r0=0, r1=0, r2=1, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+# --- E2-batch6: I2C2-read chains (thin delegators) ---
+@t(0x01C60, 'E2-b6: 0x01c60 — I2C2 chain #1. 0x01c60() -> bl 0x1e53(r0=0, r1=0, r2=1, r3=0) [zero RAM state]. Verif bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x01C60, 0x1E53)
     assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 1, 0), f'{cap}'
 
 
-@t(0x01E52, 'E2-b6: 0x01e52 — I2C2-цепочка #2. 0x01e52() -> bl 0x214d(r0=0, r1=0, r2=0, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+@t(0x01E52, 'E2-b6: 0x01e52 — I2C2 chain #2. 0x01e52() -> bl 0x214d(r0=0, r1=0, r2=0, r3=0) [zero RAM state]. Verif bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x01E52, 0x214D)
     assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 0, 0), f'{cap}'
 
 
-@t(0x01E72, 'E2-b6: 0x01e72 — I2C2-цепочка #3. 0x01e72() -> bl 0x2731(r0=0, r1=0, r2=0, r3=0) [нулевой RAM-state]. Вериф bl-intercept.')
+@t(0x01E72, 'E2-b6: 0x01e72 — I2C2 chain #3. 0x01e72() -> bl 0x2731(r0=0, r1=0, r2=0, r3=0) [zero RAM state]. Verif bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x01E72, 0x2731)
     assert (cap.get('r0'), cap.get('r1'), cap.get('r2'), cap.get('r3')) == (0, 0, 0, 0), f'{cap}'
 
 
-# --- E2-batch7: CRC-семья (чистые чексаумы, вериф по Python-референсу) ---
+# --- E2-batch7: CRC family (pure checksums, verif against Python reference) ---
 def _crc32z(b):
     import zlib
     return zlib.crc32(b) & 0xFFFFFFFF
@@ -5111,7 +5111,7 @@ def _crc16_a001(b):
 _CRC_BUFS = [b'', b'123456789', b'\x00\x01\x02', b'hello world', bytes(range(20))]
 
 
-@t(0x03C04, 'E2-b7: 0x03c04 — CRC-32/zlib. 0x03c04(buf=r0, len=r1, init=r2) -> r0 = crc32 (init=0 -> 0xFFFFFFFF). Вериф по zlib 5/5.')
+@t(0x03C04, 'E2-b7: 0x03c04 — CRC-32/zlib. 0x03c04(buf=r0, len=r1, init=r2) -> r0 = crc32 (init=0 -> 0xFFFFFFFF). Verif against zlib 5/5.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x3000
@@ -5120,7 +5120,7 @@ def _(run, rng):
         assert (r0 & 0xFFFFFFFF) == _crc32z(b), f'{b!r}: got {r0:#x} want {_crc32z(b):#x}'
 
 
-@t(0x03B82, 'E2-b7: 0x03b82 — CRC-16 0x1021 MSB-first (init=0). 0x03b82(buf=r0, len=r1) -> r0 = u16 crc. Вериф 5/5.')
+@t(0x03B82, 'E2-b7: 0x03b82 — CRC-16 0x1021 MSB-first (init=0). 0x03b82(buf=r0, len=r1) -> r0 = u16 crc. Verif 5/5.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x3000
@@ -5129,7 +5129,7 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == _crc16_1021(b), f'{b!r}: got {r0:#x} want {_crc16_1021(b):#x}'
 
 
-@t(0x03BC4, 'E2-b7: 0x03bc4 — CRC-16 0x1021 MSB-first (init в r0). 0x03bc4(init=r0, buf=r1, len=r2) -> r0 = u16 crc. Вериф 5/5.')
+@t(0x03BC4, 'E2-b7: 0x03bc4 — CRC-16 0x1021 MSB-first (init in r0). 0x03bc4(init=r0, buf=r1, len=r2) -> r0 = u16 crc. Verif 5/5.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x3000
@@ -5138,7 +5138,7 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == _crc16_1021(b), f'{b!r}: got {r0:#x} want {_crc16_1021(b):#x}'
 
 
-@t(0x03B42, 'E2-b7: 0x03b42 — CRC-16 отражённый (poly 0xA001, init 0xFFFF, xorout ~). 0x03b42(buf=r0, len=r1) -> r0 = u16 crc. Вериф 5/5.')
+@t(0x03B42, 'E2-b7: 0x03b42 — CRC-16 reflected (poly 0xA001, init 0xFFFF, xorout ~). 0x03b42(buf=r0, len=r1) -> r0 = u16 crc. Verif 5/5.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x3000
@@ -5147,8 +5147,8 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == _crc16_a001(b), f'{b!r}: got {r0:#x} want {_crc16_a001(b):#x}'
 
 
-# --- E2-batch8: табличные CRC-16 (референс из flash-памяти emu) ---
-@t(0x03C4C, 'E2-b8: 0x03c4c — CRC-16 табличный. 0x03c4c(buf=r0,len=r1)->u16; tbl@flash 0x19784 (256 u16); idx=byte^(crc>>8); crc=(tbl[idx]^(crc<<8))&0xFFFF. Вериф по flash-таблице 5/5.')
+# --- E2-batch8: table CRC-16 (reference from emu flash memory) ---
+@t(0x03C4C, 'E2-b8: 0x03c4c — CRC-16 table. 0x03c4c(buf=r0,len=r1)->u16; tbl@flash 0x19784 (256 u16); idx=byte^(crc>>8); crc=(tbl[idx]^(crc<<8))&0xFFFF. Verif against flash table 5/5.')
 def _(run, rng):
     import struct as _st
     from emulator.mcu_emu import RAM as _R, FLASH0 as _F0
@@ -5162,7 +5162,7 @@ def _(run, rng):
         assert (r0 & 0xFFFF) == c, f'{b!r}: got {r0:#x} want {c:#x}'
 
 
-@t(0x08A50, 'E2-b8: 0x08a50 — dual-table CRC-16. 0x08a50(buf=r0,len=r1)->u16; t1@flash 0x19584 (high), t2@0x19684 (low); hi=lo=0xFF; idx=byte^hi; hi=t1[idx]^lo; lo=t2[idx]; crc=(hi<<8)|lo. Вериф по flash-таблицам 5/5.')
+@t(0x08A50, 'E2-b8: 0x08a50 — dual-table CRC-16. 0x08a50(buf=r0,len=r1)->u16; t1@flash 0x19584 (high), t2@0x19684 (low); hi=lo=0xFF; idx=byte^hi; hi=t1[idx]^lo; lo=t2[idx]; crc=(hi<<8)|lo. Verif against flash tables 5/5.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R, FLASH0 as _F0
     P = _R + 0x3000
@@ -5180,7 +5180,7 @@ def _(run, rng):
 
 
 # --- E2-batch9: byte bit-permutation + NOT ---
-@t(0x0BF58, 'E2-b9: 0x0bf58 — byte bit-permutation + NOT. 0x0bf58(ptr=r0, sel=r1, mode=r2), mode=1: out=RAM+0x17F9C = ~((b1<<3)|(b0<<2)|(b3<<1)|b2)&0xFF, затем маска по sel (0->0xFE,1->0xFD,2->0xFB,3->0xF7; иначе 0xFF); bN=бит N байта [ptr]. Функция также инициализирует соседний struct. Вериф по формуле.')
+@t(0x0BF58, 'E2-b9: 0x0bf58 — byte bit-permutation + NOT. 0x0bf58(ptr=r0, sel=r1, mode=r2), mode=1: out=RAM+0x17F9C = ~((b1<<3)|(b0<<2)|(b3<<1)|b2)&0xFF, then mask by sel (0->0xFE,1->0xFD,2->0xFB,3->0xF7; else 0xFF); bN=bit N of byte [ptr]. Function also initializes adjacent struct. Verif by formula.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x3000
@@ -5199,33 +5199,33 @@ def _(run, rng):
                 f'b={b:#04x} sel={sel}: got {out:#x} want {bitperm(b, sel):#x}'
 
 
-# --- E2-batch10: RCC/DMA init-делегаторы (bl-intercept первого хелпера) ---
-@t(0x01580, 'E2-b10: 0x01580 — RCC ext init. Первый вызов -> 0xc491(r0=0x100). bl-intercept.')
+# --- E2-batch10: RCC/DMA init-delegators (bl-intercept of first helper) ---
+@t(0x01580, 'E2-b10: 0x01580 — RCC ext init. First call -> 0xc491(r0=0x100). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x01580, 0xC491)
     assert cap.get('r0') == 0x100, f'{cap}'
 
 
-@t(0x01940, 'E2-b10: 0x01940 — RCC ext init #2. Первый вызов -> 0xc625(r0=1, r1=1). bl-intercept.')
+@t(0x01940, 'E2-b10: 0x01940 — RCC ext init #2. First call -> 0xc625(r0=1, r1=1). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x01940, 0xC625)
     assert cap.get('r0') == 1 and cap.get('r1') == 1, f'{cap}'
 
 
-@t(0x016D4, 'E2-b10: 0x016d4 — DMA1 reset. Первый вызов -> 0x1941(r0=0) [RCC clock-enable пролог]. bl-intercept.')
+@t(0x016D4, 'E2-b10: 0x016d4 — DMA1 reset. First call -> 0x1941(r0=0) [RCC clock-enable prologue]. bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x016D4, 0x1941)
     assert cap.get('r0') == 0, f'{cap}'
 
 
-@t(0x0175C, 'E2-b10: 0x0175c — DMA1 enable. Первый вызов -> 0x1941(r0=0) [пролог]; затем цикл i<2: 0x1859/0x1671/0x18fd. bl-intercept.')
+@t(0x0175C, 'E2-b10: 0x0175c — DMA1 enable. First call -> 0x1941(r0=0) [prologue]; then loop i<2: 0x1859/0x1671/0x18fd. bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x0175C, 0x1941)
     assert cap.get('r0') == 0, f'{cap}'
 
 
 # --- E2-batch11: flash region validator + I2C2 wr ---
-@t(0x080AC, 'E2-b11: 0x080ac — flash region validator. 0x080ac(base=r0, buf=r1, len=r2): return 0 если base не по align 0x800, buf==0, len==0, len>0x800, len%4!=0, или base вне [lo,hi). Вериф гейтов (5 невалидных -> 0).')
+@t(0x080AC, 'E2-b11: 0x080ac — flash region validator. 0x080ac(base=r0, buf=r1, len=r2): return 0 if base not 0x800-aligned, buf==0, len==0, len>0x800, len%4!=0, or base out of [lo,hi). Verif gates (5 invalid -> 0).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     P = _R + 0x4000
@@ -5243,39 +5243,39 @@ def _(run, rng):
     assert cap.get('r0') == 0x40005800 and cap.get('r2') == 0x3E, f'{cap}'
 
 
-# --- E2-batch12: CRC-32-обёртка + I2C-like + event varargs ---
-@t(0x03940, 'E2-b12: 0x03940 — CRC-32 обёртка. 0x03940() -> bl 0x3c04(r0=0x8000000 [flash addr], r1=0x3000 [len], r2=0) -> u32@0xCC. bl-intercept.')
+# --- E2-batch12: CRC-32 wrapper + I2C-like + event varargs ---
+@t(0x03940, 'E2-b12: 0x03940 — CRC-32 wrapper. 0x03940() -> bl 0x3c04(r0=0x8000000 [flash addr], r1=0x3000 [len], r2=0) -> u32@0xCC. bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x03940, 0x3C05)
     assert cap.get('r0') == 0x8000000 and cap.get('r1') == 0x3000, f'{cap}'
 
 
-@t(0x02E84, 'E2-b12: 0x02e84 — I2C-подобный запрос. 0x02e84() -> bl 0x9874(r1=0x20000). bl-intercept.')
+@t(0x02E84, 'E2-b12: 0x02e84 — I2C-like request. 0x02e84() -> bl 0x9874(r1=0x20000). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x02E84, 0x9875)
     assert cap.get('r1') == 0x20000, f'{cap}'
 
 
-@t(0x0307C, 'E2-b12: 0x0307c — event varargs {b,b,b,1}. 0x0307c() -> bl 0xc0b4 (event dispatch, r0=указатель на stack-буфер). bl-intercept (достигает хелпера).')
+@t(0x0307C, 'E2-b12: 0x0307c — event varargs {b,b,b,1}. 0x0307c() -> bl 0xc0b4 (event dispatch, r0=pointer to stack buffer). bl-intercept (reaches helper).')
 def _(run, rng):
     cap, _emu = _intercept(0x0307C, 0xC0B5)
-    assert 'r0' in cap, f'не достиг 0xc0b4: {cap}'
+    assert 'r0' in cap, f'did not reach 0xc0b4: {cap}'
 
 
 # --- E2-batch13: poll / I2C init / telemetry reset / GPIO init (bl-intercept) ---
-@t(0x04E08, 'E2-b13: 0x04e08 — poll. 0x04e08() -> bl 0x1bdc(r0=0x94) + задержка. bl-intercept.')
+@t(0x04E08, 'E2-b13: 0x04e08 — poll. 0x04e08() -> bl 0x1bdc(r0=0x94) + delay. bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x04E08, 0x1BDD)
     assert cap.get('r0') == 0x94, f'{cap}'
 
 
-@t(0x05FB4, 'E2-b13: 0x05fb4 — I2C init. 0x05fb4() -> 0x5a38() + задержка + bl 0x1c1c(r0=0x92). bl-intercept.')
+@t(0x05FB4, 'E2-b13: 0x05fb4 — I2C init. 0x05fb4() -> 0x5a38() + delay + bl 0x1c1c(r0=0x92). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x05FB4, 0x1C1D)
     assert cap.get('r0') == 0x92, f'{cap}'
 
 
-@t(0x09AA4, 'E2-b13: 0x09aa4 — телеметрия reset. zero @0x1344 + bl 0x11d6(r0=RAM+0x1384, r1=0x4a). bl-intercept.')
+@t(0x09AA4, 'E2-b13: 0x09aa4 — telemetry reset. zero @0x1344 + bl 0x11d6(r0=RAM+0x1384, r1=0x4a). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x09AA4, 0x11D7)
     assert cap.get('r0') == 0x20001384 and cap.get('r1') == 0x4A, f'{cap}'
@@ -5287,38 +5287,38 @@ def _(run, rng):
     assert cap.get('r1') == 0x40010818, f'{cap}'
 
 
-# --- E2-batch14: bulk erase + u16-обмен + retry/toggle (bl-intercept) ---
-@t(0x07EE8, 'E2-b14: 0x07ee8 — bulk erase init. Инициирует stack-буфер + bl 0x11d6(ptr, r1=0x800 [сектор 0x800B]). bl-intercept.')
+# --- E2-batch14: bulk erase + u16 swap + retry/toggle (bl-intercept) ---
+@t(0x07EE8, 'E2-b14: 0x07ee8 — bulk erase init. Initializes stack buffer + bl 0x11d6(ptr, r1=0x800 [sector 0x800B]). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x07EE8, 0x11D7)
     assert cap.get('r1') == 0x800, f'{cap}'
 
 
-@t(0x07FDC, 'E2-b14: 0x07fdc — bulk erase body. Тело цикла: bl 0x11d6(ptr, r1=0x800). bl-intercept.')
+@t(0x07FDC, 'E2-b14: 0x07fdc — bulk erase body. Loop body: bl 0x11d6(ptr, r1=0x800). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x07FDC, 0x11D7)
     assert cap.get('r1') == 0x800, f'{cap}'
 
 
-@t(0x057F8, 'E2-b14: 0x057f8 — u16@0xCB3 -> байты @0xCB3/0xCB5 + bl 0x13bb8(r0=1). bl-intercept.')
+@t(0x057F8, 'E2-b14: 0x057f8 — u16@0xCB3 -> bytes @0xCB3/0xCB5 + bl 0x13bb8(r0=1). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x057F8, 0x13BB9)
     assert cap.get('r0') == 1, f'{cap}'
 
 
-@t(0x05818, 'E2-b14: 0x05818 — байты @0xCB3/0xCB5 -> u16@0xCB3 + bl 0x13bb8(r0=0). bl-intercept.')
+@t(0x05818, 'E2-b14: 0x05818 — bytes @0xCB3/0xCB5 -> u16@0xCB3 + bl 0x13bb8(r0=0). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x05818, 0x13BB9)
     assert 'r0' in cap, f'{cap}'
 
 
-@t(0x0236C, 'E2-b14: 0x0236c — retry-счётчик I2C. Успех -> bl 0x21dc; @0xA76=0, @0xA75++. bl-intercept (достигает хелпера).')
+@t(0x0236C, 'E2-b14: 0x0236c — I2C retry counter. Success -> bl 0x21dc; @0xA76=0, @0xA75++. bl-intercept (reaches helper).')
 def _(run, rng):
     cap, _emu = _intercept(0x0236C, 0x21DD)
     assert 'r0' in cap, f'{cap}'
 
 
-@t(0x09B08, 'E2-b14: 0x09b08 — toggle bit3 byte@0xA71 (до 3 попыток, гейт 0x2a5c). bl-intercept (достигает хелпера).')
+@t(0x09B08, 'E2-b14: 0x09b08 — toggle bit3 byte@0xA71 (up to 3 retries, gate 0x2a5c). bl-intercept (reaches helper).')
 def _(run, rng):
     cap, _emu = _intercept(0x09B08, 0x2A5D)
     assert 'r0' in cap, f'{cap}'
@@ -5331,70 +5331,70 @@ def _(run, rng):
     assert cap.get('r0') == 0x40005800, f'{cap}'
 
 
-@t(0x02730, 'E2-b15: 0x02730 — I2C2 read-путь. 0x02730() -> bl 0x9048(r0=0x40005800 [I2C2 base]). bl-intercept.')
+@t(0x02730, 'E2-b15: 0x02730 — I2C2 read-path. 0x02730() -> bl 0x9048(r0=0x40005800 [I2C2 base]). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x02730, 0x9049)
     assert cap.get('r0') == 0x40005800, f'{cap}'
 
 
-@t(0x03150, 'E2-b15: 0x03150 — event {u32=0,u16=0x7F,u32=0x136}. 0x03150() -> bl 0xcd0c (event dispatch, r0=stack-буфер). bl-intercept.')
+@t(0x03150, 'E2-b15: 0x03150 — event {u32=0,u16=0x7F,u32=0x136}. 0x03150() -> bl 0xcd0c (event dispatch, r0=stack buffer). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x03150, 0xCD0D)
     assert 'r0' in cap, f'{cap}'
 
 
-@t(0x03970, 'E2-b15: 0x03970 — доступ к структуре @0x98. 0x03970() -> bl 0x8a90 (r0=ptr). bl-intercept.')
+@t(0x03970, 'E2-b15: 0x03970 — struct access @0x98. 0x03970() -> bl 0x8a90 (r0=ptr). bl-intercept.')
 def _(run, rng):
     cap, _emu = _intercept(0x03970, 0x8A91)
     assert 'r0' in cap, f'{cap}'
 
 
-# --- E2-batch16: transaction-return (условный выход по результату транзакции) ---
-@t(0x08380, 'E2-b16: 0x08380 — transaction 0x833c: если r0 -> return 0 (условный выход). bl-intercept (достигает 0x833c).')
+# --- E2-batch16: transaction-return (conditional exit on transaction result) ---
+@t(0x08380, 'E2-b16: 0x08380 — transaction 0x833c: if r0 -> return 0 (conditional exit). bl-intercept (reaches 0x833c).')
 def _(run, rng):
     cap, _emu = _intercept(0x08380, 0x833D)
     assert 'r0' in cap, f'{cap}'
 
 
-@t(0x084A0, 'E2-b16: 0x084a0 — transaction 0x833c: если r0==0 -> return. bl-intercept (достигает 0x833c).')
+@t(0x084A0, 'E2-b16: 0x084a0 — transaction 0x833c: if r0==0 -> return. bl-intercept (reaches 0x833c).')
 def _(run, rng):
     cap, _emu = _intercept(0x084A0, 0x833D)
     assert 'r0' in cap, f'{cap}'
 
 
-@t(0x0851C, 'E2-b16: 0x0851c — transaction 0x833c: если r0!=0 -> return pc. bl-intercept (достигает 0x833c).')
+@t(0x0851C, 'E2-b16: 0x0851c — transaction 0x833c: if r0!=0 -> return pc. bl-intercept (reaches 0x833c).')
 def _(run, rng):
     cap, _emu = _intercept(0x0851C, 0x833D)
     assert 'r0' in cap, f'{cap}'
 
 
-# --- E2-batch17: one-shot флаг 0x03a6c (stateful, вериф fire/no-fire) ---
-@t(0x03A6C, 'E2-b17: 0x03a6c — one-shot флаг byte@0x142. Если ==1 -> обнуляет его + bl 0xdd81; иначе return. Вериф: flag=1 достигает 0xdd81, flag=0 нет.')
+# --- E2-batch17: one-shot flag 0x03a6c (stateful, verif fire/no-fire) ---
+@t(0x03A6C, 'E2-b17: 0x03a6c — one-shot flag byte@0x142. If ==1 -> clears it + bl 0xdd81; else return. Verif: flag=1 reaches 0xdd81, flag=0 does not.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     cap_fired, _emu = _intercept(0x03A6C, 0xDD81,
                                  extra_ram=[(_R + 0x142, b'\x01')])
-    assert 'r0' in cap_fired, f'flag=1: не достиг 0xdd81: {cap_fired}'
+    assert 'r0' in cap_fired, f'flag=1: did not reach 0xdd81: {cap_fired}'
     cap_idle, _emu2 = _intercept(0x03A6C, 0xDD81,
                                  extra_ram=[(_R + 0x142, b'\x00')])
-    assert 'r0' not in cap_idle, f'flag=0: достиг 0xdd81 (ошибка): {cap_idle}'
+    assert 'r0' not in cap_idle, f'flag=0: reached 0xdd81 (error): {cap_idle}'
 
 
-# --- E2-batch18: flag-хендлер 0x09678 (stateful, полный разбор pool) ---
-@t(0x09678, 'E2-b18: 0x09678 — flag-хендлер. BIT1=byte@0xB65 (bit1), COUNTER=byte@0xB73, A0=byte@0xB64. Если bit1 set и (COUNTER++)>=3 -> COUNTER=0, clear BIT1 bit1, A0=(A0&0x0f)|0xa0; затем если (A0>>4)==0xa -> bl (capstone: 0x173cd, эмулятор попадает в 0x173cc). Вериф: fire (BIT1=2,CNT=2) достигает; no-fire (BIT1=2,CNT=0) нет.')
+# --- E2-batch18: flag handler 0x09678 (stateful, full pool resolution) ---
+@t(0x09678, 'E2-b18: 0x09678 — flag handler. BIT1=byte@0xB65 (bit1), COUNTER=byte@0xB73, A0=byte@0xB64. If bit1 set and (COUNTER++)>=3 -> COUNTER=0, clear BIT1 bit1, A0=(A0&0x0f)|0xa0; then if (A0>>4)==0xa -> bl (capstone: 0x173cd, emulator reaches 0x173cc). Verif: fire (BIT1=2,CNT=2) reaches; no-fire (BIT1=2,CNT=0) does not.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     cap_fire, _emu = _intercept(0x09678, 0x173CC,
                                 extra_ram=[(_R + 0xB65, b'\x02'),
                                            (_R + 0xB73, b'\x02')])
-    assert 'r0' in cap_fire, f'fire: не достиг 0x173cc: {cap_fire}'
+    assert 'r0' in cap_fire, f'fire: did not reach 0x173cc: {cap_fire}'
     cap_nofire, _emu2 = _intercept(0x09678, 0x173CC,
                                    extra_ram=[(_R + 0xB65, b'\x02')])
-    assert 'r0' not in cap_nofire, f'no-fire: достиг 0x173cc (ошибка): {cap_nofire}'
+    assert 'r0' not in cap_nofire, f'no-fire: reached 0x173cc (error): {cap_nofire}'
 
 
-# --- E2-batch19: счётчики с насыщением (stateful, inc + saturation) ---
-@t(0x12C24, 'E2-b19: 0x12c24 — счётчик с насыщением. GATE=bit0(byte@0xB76), COUNTER=u16@0xB7A. Если gate set: COUNTER++; если COUNTER>0xC8 -> clear gate + COUNTER=0. Вериф inc (cnt 5->6) и sat (cnt 0xC8->0, gate clr).')
+# --- E2-batch19: saturating counters (stateful, inc + saturation) ---
+@t(0x12C24, 'E2-b19: 0x12c24 — saturating counter. GATE=bit0(byte@0xB76), COUNTER=u16@0xB7A. If gate set: COUNTER++; if COUNTER>0xC8 -> clear gate + COUNTER=0. Verif inc (cnt 5->6) and sat (cnt 0xC8->0, gate clr).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5409,7 +5409,7 @@ def _(run, rng):
     assert cnt2 == 0 and gate == 0, f'sat: cnt={cnt2} gate={gate}'
 
 
-@t(0x12E64, 'E2-b19: 0x12e64 — счётчик с насыщением #2. GATE=bit2(byte@0xB76), COUNTER=u16@0xB7C. Аналогично 0x12c24 (кап 0xC8). Вериф inc (cnt 5->6) и sat (cnt 0xC8->0, gate clr).')
+@t(0x12E64, 'E2-b19: 0x12e64 — saturating counter #2. GATE=bit2(byte@0xB76), COUNTER=u16@0xB7C. Analogous to 0x12c24 (cap 0xC8). Verif inc (cnt 5->6) and sat (cnt 0xC8->0, gate clr).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5424,8 +5424,8 @@ def _(run, rng):
     assert cnt2 == 0 and gate == 0, f'sat: cnt={cnt2} gate={gate}'
 
 
-# --- E2-batch20: mismatch-счётчик 0x0c02c (stateful) ---
-@t(0x0C02C, 'E2-b20: 0x0c02c — mismatch-счётчик. Читает bit0/bit1(0xF71) vs byte(0xA65)/byte(0xA66). Mismatch -> COUNTER(u16@0xA68)++; если >=0x32 -> toggle bit3(0xF73) + COUNTER=0x32. Match (оба равны) -> COUNTER=0 + clear bit3(0xF73). Вериф mismatch-inc / match-reset / saturation.')
+# --- E2-batch20: mismatch counter 0x0c02c (stateful) ---
+@t(0x0C02C, 'E2-b20: 0x0c02c — mismatch counter. Reads bit0/bit1(0xF71) vs byte(0xA65)/byte(0xA66). Mismatch -> COUNTER(u16@0xA68)++; if >=0x32 -> toggle bit3(0xF73) + COUNTER=0x32. Match (both equal) -> COUNTER=0 + clear bit3(0xF73). Verif mismatch-inc / match-reset / saturation.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5447,8 +5447,8 @@ def _(run, rng):
     assert cnt3 == 0x32 and (flag3 & 8), f'sat: cnt={cnt3:#x} flag={flag3:#x}'
 
 
-# --- E2-batch21: pure-logic (checksum / критсекция / u32 из двух u16) ---
-@t(0x048D8, 'E2-b21: 0x048d8 — контрольная сумма: r0 = (~sum(buf[0..len])) & 0xFF. Вериф 3 буфера.')
+# --- E2-batch21: pure-logic (checksum / critsec / u32 from two u16) ---
+@t(0x048D8, 'E2-b21: 0x048d8 — checksum: r0 = (~sum(buf[0..len])) & 0xFF. Verif 3 buffers.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     for buf in (b'\x01\x02\x03', b'\xff\xff\xff', bytes(4)):
@@ -5458,7 +5458,7 @@ def _(run, rng):
         assert (r0 & 0xFF) == exp, f'buf={buf!r}: got {r0&0xff} want {exp}'
 
 
-@t(0x02D1C, 'E2-b21: 0x02d1c — вход в критсекцию: COUNTER=u16@0xB5C; если ==0 -> cpsid i; затем COUNTER++. Вериф 0->1 и 5->6.')
+@t(0x02D1C, 'E2-b21: 0x02d1c — enter critical section: COUNTER=u16@0xB5C; if ==0 -> cpsid i; then COUNTER++. Verif 0->1 and 5->6.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5468,7 +5468,7 @@ def _(run, rng):
         assert cnt == init + 1, f'init={init}: got {cnt} want {init+1}'
 
 
-@t(0x098AE, 'E2-b21: 0x098ae — u32 из двух u16: r0 = u16[ptr+0x14] | ((u16[ptr+0x18]&0xFF)<<16) (старший байт B сброшен). Вериф 3 пары.')
+@t(0x098AE, 'E2-b21: 0x098ae — u32 from two u16: r0 = u16[ptr+0x14] | ((u16[ptr+0x18]&0xFF)<<16) (high byte of B cleared). Verif 3 pairs.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5480,7 +5480,7 @@ def _(run, rng):
         assert r0 == exp, f'A={A:#x} B={B:#x}: got {r0:#x} want {exp:#x}'
 
 
-# --- E2-batch22: set/clear-биты + signed-div-prep + sign-extend ---
+# --- E2-batch22: set/clear bits + signed-div-prep + sign-extend ---
 def _setclr(off, bit, desc):
     @t(off, desc)
     def _(run, rng):
@@ -5495,12 +5495,12 @@ def _setclr(off, bit, desc):
     return _
 
 
-_setclr(0x097CA, 0x400, 'E2-b22: 0x097ca — set/clear bit0x400 в *(u16@r0): mode!=0 -> |=, else &=~. Вериф set+clear.')
-_setclr(0x0982C, 0x1, 'E2-b22: 0x0982c — set/clear bit0 в *(u16@r0). Вериф set+clear.')
-_setclr(0x106A0, 0x40, 'E2-b22: 0x106a0 — set/clear bit0x40 в *(u16@r0). Вериф set+clear.')
+_setclr(0x097CA, 0x400, 'E2-b22: 0x097ca — set/clear bit0x400 in *(u16@r0): mode!=0 -> |=, else &=~. Verif set+clear.')
+_setclr(0x0982C, 0x1, 'E2-b22: 0x0982c — set/clear bit0 in *(u16@r0). Verif set+clear.')
+_setclr(0x106A0, 0x40, 'E2-b22: 0x106a0 — set/clear bit0x40 in *(u16@r0). Verif set+clear.')
 
 
-@t(0x16288, 'E2-b22: 0x16288 — signed-подготовка к делению. При r1==0: возвращает 0x7FFFFFFF (если r2>=0) или 0x80000000 (если r2<0). Вериф оба знака.')
+@t(0x16288, 'E2-b22: 0x16288 — signed division prep. If r1==0: returns 0x7FFFFFFF (if r2>=0) or 0x80000000 (if r2<0). Verif both signs.')
 def _(run, rng):
     for r2 in (5, -5):
         r0, _e = _fresh_call(0x16288, args=(r2 & 0xFFFFFFFF, 0))
@@ -5508,7 +5508,7 @@ def _(run, rng):
         assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
 
 
-@t(0x08F58, 'E2-b22: 0x08f58 — sign-extend: читает s8@0xFC8 -> i16 -> u16@0x135E, возвращает. Вериф -1/127/-128.')
+@t(0x08F58, 'E2-b22: 0x08f58 — sign-extend: reads s8@0xFC8 -> i16 -> u16@0x135E, returns. Verif -1/127/-128.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5519,12 +5519,12 @@ def _(run, rng):
         assert stored == exp, f'stored={stored:#x} want {exp:#x}'
 
 
-# --- E2-batch23: set/clear-биты (прод.) + signed-prep варианты + memmove ---
-_setclr(0x09844, 0x100, 'E2-b23: 0x09844 — set/clear bit0x100 в *(u16@r0). Вериф set+clear.')
-_setclr(0x0985C, 0x200, 'E2-b23: 0x0985c — set/clear bit0x200 в *(u16@r0). Вериф set+clear.')
+# --- E2-batch23: set/clear bits (cont.) + signed-prep variants + memmove ---
+_setclr(0x09844, 0x100, 'E2-b23: 0x09844 — set/clear bit0x100 in *(u16@r0). Verif set+clear.')
+_setclr(0x0985C, 0x200, 'E2-b23: 0x0985c — set/clear bit0x200 in *(u16@r0). Verif set+clear.')
 
 
-@t(0x162CE, 'E2-b23: 0x162ce — signed-подготовка к делению (вариант). r1==0 -> 0x7FFFFFFF (r2>=0) / 0x80000000 (r2<0).')
+@t(0x162CE, 'E2-b23: 0x162ce — signed division prep (variant). r1==0 -> 0x7FFFFFFF (r2>=0) / 0x80000000 (r2<0).')
 def _(run, rng):
     for r2 in (5, -5):
         r0, _e = _fresh_call(0x162CE, args=(r2 & 0xFFFFFFFF, 0))
@@ -5532,7 +5532,7 @@ def _(run, rng):
         assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
 
 
-@t(0x16328, 'E2-b23: 0x16328 — signed-подготовка к делению (вариант 2). r1==0 -> 0x7FFFFFFF / 0x80000000.')
+@t(0x16328, 'E2-b23: 0x16328 — signed division prep (variant 2). r1==0 -> 0x7FFFFFFF / 0x80000000.')
 def _(run, rng):
     for r2 in (5, -5):
         r0, _e = _fresh_call(0x16328, args=(r2 & 0xFFFFFFFF, 0))
@@ -5540,7 +5540,7 @@ def _(run, rng):
         assert r0 == exp, f'r2={r2}: got {r0:#x} want {exp:#x}'
 
 
-@t(0x07FB8, 'E2-b23: 0x07fb8 — memmove: копирует len байт из src(r0) в dst(r1), возвращает 1. Вериф 5-байтовый буфер.')
+@t(0x07FB8, 'E2-b23: 0x07fb8 — memmove: copies len bytes from src(r0) to dst(r1), returns 1. Verif 5-byte buffer.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     src = bytes([0x11, 0x22, 0x33, 0x44, 0x55])
@@ -5550,8 +5550,8 @@ def _(run, rng):
     assert r0 == 1 and dst == src, f'r0={r0} dst={dst.hex()}'
 
 
-# --- E2-batch24: обнуление блока ---
-@t(0x04A04, 'E2-b24: 0x04a04 — обнуление блока: byte@0x129 + u32@0x12C/0x130/0x134/0x138 (блок 0x129..0x13B). Вериф: pre-set -> все 0.')
+# --- E2-batch24: block clear ---
+@t(0x04A04, 'E2-b24: 0x04a04 — block clear: byte@0x129 + u32@0x12C/0x130/0x134/0x138 (block 0x129..0x13B). Verif: pre-set -> all 0.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     pre = [(_R + 0x129, b'\xAA'), (_R + 0x12C, b'\x11\x22\x33\x44'),
@@ -5562,8 +5562,8 @@ def _(run, rng):
     assert block == bytes(0x13), f'block not zeroed: {block.hex()}'
 
 
-# --- E2-batch25: event-очередь push (stateful) ---
-@t(0x04BC0, 'E2-b25: 0x04bc0 — event-очередь push: если idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (через critsec). Вериф idx=2 (write) и idx=7 (skip).')
+# --- E2-batch25: event queue push (stateful) ---
+@t(0x04BC0, 'E2-b25: 0x04bc0 — event queue push: if idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (via critsec). Verif idx=2 (write) and idx=7 (skip).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5579,8 +5579,8 @@ def _(run, rng):
     assert p7 == 0, f'idx=7: expected skip, ptr={p7:#x}'
 
 
-# --- E2-batch26: инициализация event-кольца ---
-@t(0x04BE8, 'E2-b26: 0x04be8 — init event-кольца. u32@0xB4C=0; для i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Вериф: pre-set -> все очищены.')
+# --- E2-batch26: event ring initialization ---
+@t(0x04BE8, 'E2-b26: 0x04be8 — event ring init. u32@0xB4C=0; for i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Verif: pre-set -> all cleared.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5599,8 +5599,8 @@ def _(run, rng):
             f'slot {i}: f0={f0:#x} f1={f1:#x} sent={sent:#x}'
 
 
-# --- E2-batch27: merge struct-полей (чистые arg-указатели) ---
-@t(0x04F70, 'E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Вериф OR-агрегация + copy (2 init).')
+# --- E2-batch27: merge struct fields (pure arg-pointers) ---
+@t(0x04F70, 'E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Verif OR aggregation + copy (2 init).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5624,8 +5624,8 @@ def _(run, rng):
         assert d8 == 0x12345678, f'dst[+8]={d8:#x}'
 
 
-# --- E2-batch28: u16-merge struct-полей (чистые arg-указатели) ---
-@t(0x10734, 'E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Вериф (2 init).')
+# --- E2-batch28: u16-merge struct fields (pure arg-pointers) ---
+@t(0x10734, 'E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Verif (2 init).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5650,7 +5650,7 @@ def _(run, rng):
 
 
 # --- E2-batch29: memcpy (word-fast-path + byte-tail) ---
-@t(0x19A68, 'E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy если оба 4-aligned, else byte; tail по байтам. Вериф len=0..64 (aligned+unaligned).')
+@t(0x19A68, 'E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy if both 4-aligned, else byte; byte tail. Verif len=0..64 (aligned+unaligned).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     for ln in (0, 1, 3, 4, 5, 7, 16, 17, 64):
@@ -5663,7 +5663,7 @@ def _(run, rng):
 
 
 # --- E2-batch30: bit-field containment check ---
-@t(0x09874, 'E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> поле u32@(ptr+0x18), mask=r1>>16; else поле u32@(ptr+0x14), mask=r1&0xFFFFFF. Вериф: 1 если (*field & mask)!=0 (7 кейсов).')
+@t(0x09874, 'E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> field u32@(ptr+0x18), mask=r1>>16; else field u32@(ptr+0x14), mask=r1&0xFFFFFF. Verif: 1 if (*field & mask)!=0 (7 cases).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5684,7 +5684,7 @@ def _(run, rng):
 
 
 # --- E2-batch31: two-part bit check ---
-@t(0x130F2, 'E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Вериф: 1 если оба бита set (6 кейсов).')
+@t(0x130F2, 'E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Verif: 1 if both bits set (6 cases).')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5704,8 +5704,8 @@ def _(run, rng):
         assert got == exp, f'code={code:#x} f0={f0:#x} fc={fc:#x} f10={f10:#x} f14={f14:#x}: got {got} want {exp}'
 
 
-# --- E2-batch32: XOR 16-байт блоков ---
-@t(0x1A5FA, 'E2-b32: 0x1a5fa — XOR-блок: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 байт). Вериф idx=0,1,2.')
+# --- E2-batch32: XOR 16-byte blocks ---
+@t(0x1A5FA, 'E2-b32: 0x1a5fa — XOR block: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 bytes). Verif idx=0,1,2.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     dst = _R + 0x100; src = _R + 0x300
@@ -5722,7 +5722,7 @@ def _(run, rng):
 
 
 # --- E2-batch33: exponent-ramp (2^(t-0x7F)) ---
-@t(0x1A010, 'E2-b33: 0x1a010 — exponent-ramp: для r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (линейный рост 2^0..2^23). Вериф sweep t=0x78..0x96.')
+@t(0x1A010, 'E2-b33: 0x1a010 — exponent-ramp: for r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (linear growth 2^0..2^23). Verif sweep t=0x78..0x96.')
 def _(run, rng):
     for t in range(0x78, 0x97):
         r0 = t << 23
@@ -5732,7 +5732,7 @@ def _(run, rng):
 
 
 # --- E2-batch34: u16 bit-check + 24-bit field all-set check ---
-@t(0x10718, 'E2-b34: 0x10718 — u16 bit-check: 1 если (u16@(ptr+8) & mask)!=0. Вериф 3 кейса.')
+@t(0x10718, 'E2-b34: 0x10718 — u16 bit-check: 1 if (u16@(ptr+8) & mask)!=0. Verif 3 cases.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5744,7 +5744,7 @@ def _(run, rng):
         got = a(mask, val)
         assert got == exp, f'mask={mask:#x} val={val:#x}: got {got} want {exp}'
 
-@t(0x09794, 'E2-b34: 0x09794 — 24-битное поле (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 если (field&mask)==mask. Вериф 4 кейса.')
+@t(0x09794, 'E2-b34: 0x09794 — 24-bit field (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 if (field&mask)==mask. Verif 4 cases.')
 def _(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
@@ -5760,14 +5760,14 @@ def _(run, rng):
 
 
 # --- E2-batch35: periph const-write / bit-set via pool pointers ---
-@t(0x05CC0, 'E2-b35: 0x05cc0 — пишет константу 0xAAAA в periph[0x40003000] (pool-указатель). Вериф значение после вызова.')
+@t(0x05CC0, 'E2-b35: 0x05cc0 — writes constant 0xAAAA to periph[0x40003000] (pool pointer). Verif value after call.')
 def _(run, rng):
     import struct as _st
     r0, emu = _fresh_call(0x05CC0)
     got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40003000, 4)))[0]
     assert got == 0xAAAA, f'periph[0x40003000]={got:#x} want 0xaaaa'
 
-@t(0x1A5C4, 'E2-b35: 0x1a5c4 — ставит бит3 (0x8) в u32@periph[0x40012418] (pool-base 0x40012400). Вериф pre=0/0xFF.')
+@t(0x1A5C4, 'E2-b35: 0x1a5c4 — sets bit3 (0x8) in u32@periph[0x40012418] (pool-base 0x40012400). Verif pre=0/0xFF.')
 def _(run, rng):
     import struct as _st
     for pre, exp in [(0, 0x8), (0xFF, 0xFF)]:
@@ -5775,7 +5775,7 @@ def _(run, rng):
         got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40012418, 4)))[0]
         assert got == exp, f'pre={pre:#x}: got {got:#x} want {exp:#x}'
 
-@t(0x1A5D4, 'E2-b35: 0x1a5d4 — ставит бит5 (0x20) в u32@periph[0x40012418]. Вериф pre=0/0x0F.')
+@t(0x1A5D4, 'E2-b35: 0x1a5d4 — sets bit5 (0x20) in u32@periph[0x40012418]. Verif pre=0/0x0F.')
 def _(run, rng):
     import struct as _st
     for pre, exp in [(0, 0x20), (0x0F, 0x2F)]:
@@ -5785,9 +5785,9 @@ def _(run, rng):
 
 
 # --- E2-batch36: 0x0d39d delegate family (gated channel-service) ---
-# Контракт (вериф bl-intercept): u32@(RAM+0x8C) — status-слово; если bit `channel` set,
-# функция вызывает 0x0d39d(channel); если 0x0d39d вернёт 1 -> сбросить bit `channel`
-# в другом status-u32 (по pool). gate-бит == channel. Вериф: bl достигнут с r0==channel.
+# Contract (verif bl-intercept): u32@(RAM+0x8C) is status word; if bit `channel` set,
+# function calls 0x0d39d(channel); if 0x0d39d returns 1 -> clear bit `channel`
+# in another status-u32 (via pool). gate bit == channel. Verif: bl reached with r0==channel.
 _OD39D_FAM = {0x0D6E4: 0xE, 0x0D734: 0xD, 0x0D75C: 0x10,
               0x0D784: 0x11, 0x0D7D4: 0xF, 0x0D850: 0x12}
 
@@ -5807,7 +5807,7 @@ for _addr, _ch in sorted(_OD39D_FAM.items()):
     t(_addr, f'E2-b36: 0x{_addr:05x} -> 0x0d39d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od39d(_addr, _ch))
 
 
-# --- E2-batch37: 0x0d46d delegate family (гated channel-service, брат 0x0d39d) ---
+# --- E2-batch37: 0x0d46d delegate family (gated channel-service, sibling of 0x0d39d) ---
 _OD46D_FAM = {0x0D70C: 0x9, 0x0D7AC: 0xB, 0x0D7FC: 0xC, 0x0D824: 0xA}
 
 
@@ -5826,9 +5826,9 @@ for _addr, _ch in sorted(_OD46D_FAM.items()):
     t(_addr, f'E2-b37: 0x{_addr:05x} -> 0x0d46d(channel=0x{_ch:x}) [gate=bit {_ch} of u32@RAM+0x8C; bl-intercept]')(_mk_od46d(_addr, _ch))
 
 
-# --- E2-batch38: тонкие single-bl делегаторы (passthrough + fixed-arg) ---
-# Контракт: функция = чистая обёртка `bl helper` (passthrough r0/r1/r2/r3) либо
-# задаёт фикс. аргумент и вызывает helper. Вериф через bl-intercept (стоп на входе helper).
+# --- E2-batch38: thin single-bl delegators (passthrough + fixed-arg) ---
+# Contract: function is pure wrapper `bl helper` (passthrough r0/r1/r2/r3) or
+# sets fixed argument and calls helper. Verif via bl-intercept (stop at helper entry).
 _PT_DELEG = {0x01DEC: 0x029E9, 0x02D14: 0x09679, 0x04E28: 0x05001, 0x04E30: 0x04FC1,
              0x09A18: 0x099F1, 0x0CE68: 0x03169, 0x10780: 0x10789, 0x10A20: 0x112BD,
              0x11CAC: 0x04C15, 0x12FD0: 0x12B51, 0x12FD8: 0x12D91, 0x1A5F2: 0x1BFA1}
@@ -5857,7 +5857,7 @@ for _d, (_h, _v) in sorted(_FX_DELEG.items()):
     t(_d, f'E2-b38: 0x{_d:05x} -> 0x{_h:05x}({hex(_v)}) [fixed-arg bl-intercept]')(_mk_fx(_d, _h, _v))
 
 
-# --- E2-batch39: тонкие делегаторы 2 (passthrough / fixed-arg / shuffle / r3-fix) ---
+# --- E2-batch39: thin delegators 2 (passthrough / fixed-arg / shuffle / r3-fix) ---
 _PT2 = {0x05B8C: 0x04DE1, 0x11668: 0x10E5D, 0x11888: 0x10F19, 0x07ED4: 0x061E5,
         0x082F0: 0x0833D, 0x08348: 0x0833D, 0x08468: 0x0833D}
 _FX2 = {0x110F0: (0x05B8D, 0)}
@@ -5897,17 +5897,17 @@ for _d, _h in sorted(_PT2.items()):
     t(_d, f'E2-b39: 0x{_d:05x} passthrough -> 0x{_h:05x} [bl-intercept r0]')(_mk_pt2(_d, _h))
 for _d, (_h, _v) in sorted(_FX2.items()):
     t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}({hex(_v)}) [fixed-arg]')(_mk_fx2(_d, _h, _v))
-for _d, _h in sorted(_SHUF.items()):
+# --- E2-batch44: setters (RAM/periph) + init-groups (2-3 bl) ---
     t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}(pool_ptr, orig_r0) [r1=orig_r0]')(_mk_shuf(_d, _h))
 for _d, _h in sorted(_R3FIX.items()):
     t(_d, f'E2-b39: 0x{_d:05x} -> 0x{_h:05x}(r0, r3=1) [r3-fix]')(_mk_r3fix(_d, _h))
 
 
-# --- E2-batch40: толстые fixed-point обёртки -> 0x1a0f9 / 0x1a185 ---
+# --- E2-batch40: thick fixed-point wrappers -> 0x1a0f9 / 0x1a185 ---
 # 0x19fbe(a)  -> 0x1a0f9(a, 0, 0, 0x96)
-# 0x19fae(a,b)-> 0x1a0f9(a+b, 0, b<<31, 0x96)   (b<<31 = 0x80000000 если b<0)
-# 0x19fcc(x)  -> 0x1a185(abs(x), 0, 0, 0)       (abs: sign/pool на стек, регистры чистые)
-# (0x19ab0 отложен: 50-инст fixed-point normalize, нет ручной модели)
+# 0x19fae(a,b)-> 0x1a0f9(a+b, 0, b<<31, 0x96)   (b<<31 = 0x80000000 if b<0)
+# 0x19fcc(x)  -> 0x1a185(abs(x), 0, 0, 0)       (abs: sign/pool on stack, registers clean)
+# (0x19ab0 deferred: 50-insn fixed-point normalize, no manual model)
 
 
 def _t_19fbe(run, rng):
@@ -5939,9 +5939,9 @@ t(0x19FCC, 'E2-b40: 0x19fcc(x) -> 0x1a185(abs(x),0,0,0) [abs wrapper]')(_t_19fcc
 
 
 # --- E2-batch41: periph-config init 0x0cb10 ---
-# 0x0cb10 = init таймера/периферии (регистры 0x400028xx): последовательность записи
-#   [0x40002824] = 0xca -> 0x53 -> 0xff (финал 0xff); [0x40002808] = base|r0.
-# Детерминированное (не зависит от state): финальный константный [0x40002824]==0xff.
+# 0x0cb10 = timer/peripheral init (registers 0x400028xx): write sequence
+#   [0x40002824] = 0xca -> 0x53 -> 0xff (final 0xff); [0x40002808] = base|r0.
+# Deterministic (state-independent): final constant [0x40002824]==0xff.
 
 
 def _t_0cb10(run, rng):
@@ -5954,7 +5954,7 @@ def _t_0cb10(run, rng):
 t(0x0CB10, 'E2-b41: 0x0cb10 periph-init -> [0x40002824]=0xff (seq ca->53->ff)')(_t_0cb10)
 
 
-# --- E2-batch42: stateful делегаторы (gate / fixed-ptr / stack-arg) ---
+# --- E2-batch42: stateful delegators (gate / fixed-ptr / stack-arg) ---
 def _t_0e6ec(run, rng):
     from emulator.mcu_emu import RAM as _R
     cap, _ = _intercept(0x0E6EC, 0x0F14D, extra_ram=[(_R + 0x13C9, b'\x01')])
@@ -5981,7 +5981,7 @@ t(0x123C0, 'E2-b42: 0x123c0 -> 0xb855(0x20000dd8) [fixed struct-ptr]')(_t_123c0)
 t(0x139AC, 'E2-b42: 0x139ac -> 0x13c79(sp) [writes 3 to stack, passes ptr]')(_t_139ac)
 
 
-# --- E2-batch43: последние тонкие делегаторы (класс исчерпан) ---
+# --- E2-batch43: final thin delegators (class exhausted) ---
 def _t_02a5c(run, rng):
     cap, _ = _intercept(0x02A5C, 0x01BDD, arg=0)
     assert cap.get('r0') == 0x9A, f'{cap}'
@@ -5997,7 +5997,7 @@ t(0x02A5C, 'E2-b43: 0x02a5c -> 0x1bdd(0x9a) [query bit, returns res&1]')(_t_02a5
 t(0x08AFC, 'E2-b43: 0x08afc -> 0x218d(r0) [passthrough, stores result]')(_t_08afc)
 
 
-# --- E2-batch44: setters (RAM/periph) + init-группы (2-3 bl) ---
+# --- E2-batch44: setters (RAM/periph) + init-groups (2-3 bl) ---
 def _t_087de(run, rng):
     import struct as _st
     from emulator.mcu_emu import RAM as _R
@@ -6039,9 +6039,9 @@ t(0x01CEA, 'E2-b44: 0x01cea init-group (bl 0x1fe1 -> 0x20d9)')(_mk_init_group(0x
 t(0x036F4, 'E2-b44: 0x036f4 init-group (bl 0x10901 -> 0x3b01)')(_mk_init_group(0x036F4, 0x3B01))
 t(0x09482, 'E2-b44: 0x09482 init-group (bl 0x9135 -> 0x9481)')(_mk_init_group(0x09482, 0x9481))
 t(0x09F64, 'E2-b44: 0x09f64 init-group (bl 0x9b45 -> 0x9f71)')(_mk_init_group(0x09F64, 0x9F71))
-# NOTE: 0x0bf4c (bl 0xd879->0xddc5) и 0x0ced0 (bl 0x310d->0x3151->0x31dd) НЕ доходят
-# до последнего bl в изоляции: первый sub-init не возвращается чисто при нулевом RAM.
-# Классифицированы как «не изолируются» (см. PROGRAM.md).
+# NOTE: 0x0bf4c (bl 0xd879->0xddc5) and 0x0ced0 (bl 0x310d->0x3151->0x31dd) do NOT reach
+# the last bl in isolation: first sub-init does not return cleanly with zeroed RAM.
+# Classified as "not isolated" (see PROGRAM.md).
 
 
 # --- E2-batch45: init-group 0x09b44 + protocol-parser magic-gate 0x0df10 ---
@@ -6053,7 +6053,7 @@ def _t_0df10(run, rng):
     from emulator.mcu_emu import RAM as _R
     buf = _R + 0x5000
     # 0x0df10 = protocol parser: magic-gate byte[struct+2]==0xaa.
-    # Ветка magic-mismatch (детерминированная, вериф): возвращает byte[struct+2].
+    # Branch magic-mismatch (deterministic, verif): returns byte[struct+2].
     for b2 in (0x55, 0x01, 0xFF):
         data = _st.pack('<H', 10) + bytes([b2, 0, 0]) + bytes(20)
         r0, emu = _fresh_call(0x0DF10, args=(buf,), extra_ram=[(buf, data)])
@@ -6063,11 +6063,11 @@ def _t_0df10(run, rng):
 t(0x0DF10, 'E2-b45: 0x0df10 protocol-parser magic-gate [s+2]==0xaa (mismatch->ret byte[2])')(_t_0df10)
 
 
-# --- E2-batch46: чистый compute 0x19f7c (gate-контракт первого возврата) ---
-# 0x19f7c(r0,r1,r2) -> (r0_out, r1_out). Первый возврат (вериф 206/206 sweep):
-#   r0_out = r0, если (signed)r2 > 0; иначе 0.
-# Второй возврат r1_out = сложная multi-word операция от (r1,r2) — не моделируется чисто
-# (см. PROGRAM.md); тестируем только детерминированный gate по первому возврату.
+# --- E2-batch46: pure compute 0x19f7c (first return gate contract) ---
+# 0x19f7c(r0,r1,r2) -> (r0_out, r1_out). First return (verif 206/206 sweep):
+#   r0_out = r0, if (signed)r2 > 0; else 0.
+# Second return r1_out = complex multi-word operation of (r1,r2) — not cleanly modeled
+# (see PROGRAM.md); testing only deterministic gate on first return.
 
 def _t_19f7c(run, rng):
     cases = [
@@ -6085,7 +6085,7 @@ def _t_19f7c(run, rng):
 t(0x19F7C, 'E2-b46: 0x19f7c compute gate: r0_out = r0 if (signed)r2>0 else 0')(_t_19f7c)
 
 
-# --- E2-batch47: тонкие делегаторы + init-группы (цепочки 0xc625/0x8589/0x5971/0x59a5) ---
+# --- E2-batch47: thin delegators + init groups (chains 0xc625/0x8589/0x5971/0x59a5) ---
 def _t_05874(run, rng):
     cap, _emu = _intercept(0x05874, 0x597D)
     assert cap.get('r0') == 1, f'r0={cap.get("r0"):#x} want 1'
@@ -6122,7 +6122,7 @@ t(0x032F4, 'E2-b47: 0x032f4 init-group -> bl 0x59a5(sp) [sp]={0x80,0,12,0}')(_t_
 t(0x03168, 'E2-b47: 0x03168 init-group (gate 0xcc69) -> bl 0x5971(r0=0x100000)')(_t_03168)
 
 
-# --- E2-batch48: одиночные тонкие делегаторы (скан по частоте bl-целей) ---
+# --- E2-batch48: single thin delegators (scan by bl target frequency) ---
 def _t_5dbc(run, rng):
     cap, _emu = _intercept(0x5DBC, 0x2D5D, max_insn=30000)
     assert cap.get('r0') == 0xAAAA, f'r0={cap.get("r0"):#x} want 0xaaaa'
@@ -6151,7 +6151,7 @@ t(0x12A64, 'E2-b48: 0x12a64 delegate -> bl 0x4c85(r0=0, r1=1)')(_t_12a64)
 t(0x13C5C, 'E2-b48: 0x13c5c delegate -> bl 0x11d7(r1=0x4b)')(_t_13c5c)
 
 
-# --- E2-batch49: stateful single-base gate + оставшиеся делегаторы ---
+# --- E2-batch49: stateful single-base gate + remaining delegators ---
 def _t_2d5c(run, rng):
     cap, _emu = _intercept(0x2D5C, 0x332C, max_insn=30000)
     assert cap.get('r1') == 0x1A, f'r1={cap.get("r1"):#x} want 0x1a'
@@ -6175,24 +6175,24 @@ t(0x178C, 'E2-b49: 0x0178c init-group -> bl 0x182b + bl 0x1815 (r1=0x1)')(_t_017
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--only', help='только функции с этим префиксом адреса (0x126c)')
+    ap.add_argument('--only', help='only functions with this address prefix (0x126c)')
     ap.add_argument('--seed', type=int, default=42)
-    ap.add_argument('--iters', type=int, default=30, help='итераций на тест')
-    ap.add_argument('--list', action='store_true', help='показать покрытые функции')
+    ap.add_argument('--iters', type=int, default=30, help='iterations per test')
+    ap.add_argument('--list', action='store_true', help='show covered functions')
     a = ap.parse_args()
 
     only = int(a.only, 16) if a.only else None
     sel = [(o, d, f) for o, d, f in TESTS if only is None or o == only]
 
     if a.list:
-        # покрытие каталога
+        # catalog coverage
         import gen_maps
-        cat = {s for s, _, _, st in gen_maps.ANALYZED_MCU if st == 'разобран'}
+        cat = {s for s, _, _, st in gen_maps.ANALYZED_MCU if st in ('analyzed', '\u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043d')}
         tested = {o for o, _, _ in TESTS}
-        print(f'тестов: {len(TESTS)}; каталог «разобран»: {len(cat)}')
-        print(f'покрыто эмуляцией: {len(tested & cat)}/{len(cat)} '
+        print(f'tests: {len(TESTS)}; catalog "analyzed": {len(cat)}')
+        print(f'covered by emulation: {len(tested & cat)}/{len(cat)} '
               f'({100.0 * len(tested & cat) / max(1, len(cat)):.1f}%)')
-        print('список тестов:')
+        print('test list:')
         for o, d, _ in TESTS:
             mark = '✓' if o in cat else '?'
             print(f'  {mark} {o:#06x}  {d}')
@@ -6216,7 +6216,7 @@ def main():
         print(f'  {"PASS" if ok else "FAIL"} {off:#06x}  {desc}'
               + ('' if ok else f'\n         {err}'))
 
-    print(f'\nитого: PASS {len(passed)} / FAIL {len(failed)} из {len(sel)}')
+    print(f'\ntotal: PASS {len(passed)} / FAIL {len(failed)} of {len(sel)}')
     return 1 if failed else 0
 
 # --- E2-batch50: single-bl reachable delegates (34) ---
@@ -6296,28 +6296,28 @@ def _t_11d98(run, rng):
     cap, _ = _intercept(0x11D98, 0x11DB6, max_insn=50000)
     assert cap
 t(0x11D98, 'E2-b50: delegate -> bl 0x11db6')(_t_11d98)
-# (Остальные b50-записи из 5c27a3b — 0x13cc8/0x145e8/0x14a50/0x16b70/0x17198/0x172d8/
-# 0x17c6c/0x17d38/0x17df4/0x18420/0x18a48/0x19cd0/0x1a300/0x1a928 — удалены: это были
-# не входы функций (mid-code), а «цели» — fallthrough-адреса, не bl; тесты тривиально
-# проходили и ничего не верифицировали.)
+# (Remaining b50 entries from 5c27a3b — 0x13cc8/0x145e8/0x14a50/0x16b70/0x17198/0x172d8/
+# 0x17c6c/0x17d38/0x17df4/0x18420/0x18a48/0x19cd0/0x1a300/0x1a928 — removed: these were
+# not function entries (mid-code), but "targets" — fallthrough addresses, not bl; tests
+# passed trivially without verifying anything.)
 def _t_158f8(run, rng):
     import struct as _st
     from emulator.mcu_emu import RAM as _R
-    # I2C-старт: byte@RAM+0xB8C=1 (гейт 0x15ffc) -> bl 0x15ffc(r0=0xA) -> byte@RAM+0x1FAF=1
+    # I2C start: byte@RAM+0xB8C=1 (gate 0x15ffc) -> bl 0x15ffc(r0=0xA) -> byte@RAM+0x1FAF=1
     cap, _ = _intercept(0x158F8, 0x15FFC, max_insn=50000)
     assert cap and cap.get('r0') == 0xA, f'r0={cap.get("r0"):#x} want 0xa'
-    # полный прогон (target = pop после финального strb): верифицируем побочные эффекты
+    # full run (target = pop after final strb): verify side effects
     cap, emu = _intercept(0x158F8, 0x1590C, max_insn=50000)
-    assert cap, 'не дошёл до pop'
+    assert cap, 'did not reach pop'
     b8c = emu.uc.mem_read(_R + 0xB8C, 1)[0]
     c80 = _st.unpack_from('<I', bytes(emu.uc.mem_read(_R + 0xC80, 4)), 0)[0]
     faf = emu.uc.mem_read(_R + 0x1FAF, 1)[0]
     assert b8c == 1, f'byte@RAM+0xb8c={b8c:#x} want 0x1'
     assert c80 == 9, f'u32@RAM+0xc80={c80:#x} want 0x9 (0xa-1, decrement-path 0x15ffc)'
     assert faf == 1, f'byte@RAM+0x1faf={faf:#x} want 0x1'
-t(0x158F8, 'E2-b50: 0x158f8 I2C-старт: byte@RAM+0xb8c=1 -> bl 0x15ffc(r0=0xa) -> byte@RAM+0x1faf=1')(_t_158f8)
+t(0x158F8, 'E2-b50: 0x158f8 I2C start: byte@RAM+0xb8c=1 -> bl 0x15ffc(r0=0xa) -> byte@RAM+0x1faf=1')(_t_158f8)
 
-# --- E2-batch51: новые reachable single-bl (13) ---
+# --- E2-batch51: new reachable single-bl (13) ---
 def _t_14924(run, rng):
     cap, _ = _intercept(0x14924, 0x14938, max_insn=50000)
     assert cap
@@ -6477,10 +6477,10 @@ def _t_13bb8(run, rng):
     assert cap
 t(0x13BB8, 'E2-b52: init-group -> bl 0x13bc4 + bl 0x13bdc')(_t_13bb8)
 
-# --- E2-batch53: stateful single-bl делегаторы с RAM-гейтами (extra_ram; открытая+закрытая ветка) ---
+# --- E2-batch53: stateful single-bl delegators with RAM gates (extra_ram; open+closed branch) ---
 def _t_8834(run, rng):
     from emulator.mcu_emu import RAM as _R
-    # гейт: byte@RAM+0x107==1 && byte@RAM+0x35==1 -> bl 0xa6a4
+    # gate: byte@RAM+0x107==1 && byte@RAM+0x35==1 -> bl 0xa6a4
     cap, _ = _intercept(0x8834, 0xA6A4, max_insn=30000,
                         extra_ram=[(_R + 0x107, b'\x01'), (_R + 0x35, b'\x01')])
     assert cap, 'bl 0xa6a4 not reached (gate open)'
@@ -6490,9 +6490,9 @@ t(0x8834, 'E2-b53: 0x8834 gated delegate -> bl 0xa6a4 (RAM+0x107==1 && RAM+0x35=
 
 def _t_1238c(run, rng):
     from emulator.mcu_emu import RAM as _R
-    # b=byte@RAM+0x35: b==0/1 -> bl 0xa7ec (+ bl 0xc098 после возврата); b==2 -> только 0xa7ec; b>=3 -> нет.
-    # bl 0xc098 верифицируем только в отрицательной ветке: возврат из 0xa7ec на нулевом RAM
-    # невозможен (внутренний blx [RAM-func-ptr] = runtime-потолок §74.1).
+    # b=byte@RAM+0x35: b==0/1 -> bl 0xa7ec (+ bl 0xc098 after return); b==2 -> 0xa7ec only; b>=3 -> none.
+    # bl 0xc098 verified only in negative branch: return from 0xa7ec on zero RAM
+    # is impossible (internal blx [RAM-func-ptr] = runtime ceiling §74.1).
     cap, _ = _intercept(0x1238C, 0xA7EC, max_insn=30000)
     assert cap, 'bl 0xa7ec not reached (b=0)'
     cap, _ = _intercept(0x1238C, 0xA7EC, max_insn=30000, extra_ram=[(_R + 0x35, b'\x02')])
@@ -6501,11 +6501,11 @@ def _t_1238c(run, rng):
     assert not cap, 'bl 0xa7ec reached with b=3'
     cap, _ = _intercept(0x1238C, 0xC098, max_insn=30000, extra_ram=[(_R + 0x35, b'\x03')])
     assert not cap, 'bl 0xc098 reached with b=3'
-t(0x1238C, 'E2-b53: 0x1238c mode-gate (byte@RAM+0x35<3) -> bl 0xa7ec; b>=3 -> нет bl')(_t_1238c)
+t(0x1238C, 'E2-b53: 0x1238c mode-gate (byte@RAM+0x35<3) -> bl 0xa7ec; b>=3 -> no bl')(_t_1238c)
 
 def _t_14ed0(run, rng):
     from emulator.mcu_emu import RAM as _R
-    # гейт: byte@RAM+0x31==1 -> bl 0x8e14
+    # gate: byte@RAM+0x31==1 -> bl 0x8e14
     cap, _ = _intercept(0x14ED0, 0x8E14, max_insn=30000, extra_ram=[(_R + 0x31, b'\x01')])
     assert cap, 'bl 0x8e14 not reached (gate open)'
     cap, _ = _intercept(0x14ED0, 0x8E14, max_insn=30000)
@@ -6514,7 +6514,7 @@ t(0x14ED0, 'E2-b53: 0x14ed0 gated delegate -> bl 0x8e14 (RAM+0x31==1)')(_t_14ed0
 
 def _t_15f00(run, rng):
     from emulator.mcu_emu import RAM as _R
-    # гейт: byte@RAM+0x1F11==1 && u16@RAM+0x1FB8==0 -> bl 0x15a1c
+    # gate: byte@RAM+0x1F11==1 && u16@RAM+0x1FB8==0 -> bl 0x15a1c
     cap, _ = _intercept(0x15F00, 0x15A1C, max_insn=30000, extra_ram=[(_R + 0x1F11, b'\x01')])
     assert cap, 'bl 0x15a1c not reached (gate open)'
     cap, _ = _intercept(0x15F00, 0x15A1C, max_insn=30000)
@@ -6523,7 +6523,7 @@ t(0x15F00, 'E2-b53: 0x15f00 gated delegate -> bl 0x15a1c (RAM+0x1F11==1 && u16@R
 
 def _t_15ffc(run, rng):
     from emulator.mcu_emu import RAM as _R
-    # r0->u32@RAM+0xC80; гейт: byte@RAM+0xB8C==1 && u32@RAM+0xC80==0 -> bl 0x15a1c
+    # r0->u32@RAM+0xC80; gate: byte@RAM+0xB8C==1 && u32@RAM+0xC80==0 -> bl 0x15a1c
     cap, _ = _intercept(0x15FFC, 0x15A1C, max_insn=30000, arg=0,
                         extra_ram=[(_R + 0xB8C, b'\x01')])
     assert cap, 'bl 0x15a1c not reached (gate open)'
@@ -6542,28 +6542,28 @@ def _t_d33c(run, rng):
     assert cap.get('r3') == 1, f'r3={cap.get("r3")} want 1'
     cap, _ = _intercept(0xD33C, 0x1C60, max_insn=30000)
     assert not cap, 'bl 0x1c60 reached with counter=0 (1<=5)'
-t(0xD33C, 'E2-b53: 0xd33c counter-gate -> bl 0x1c60(op=8, reg=0x7f, buf=&RAM+0x164b, len=1) при counter>5')(_t_d33c)
+t(0xD33C, 'E2-b53: 0xd33c counter-gate -> bl 0x1c60(op=8, reg=0x7f, buf=&RAM+0x164b, len=1) when counter>5')(_t_d33c)
 
 def _t_f1ec(run, rng):
     from emulator.mcu_emu import RAM as _R
     import struct as _st
-    # bit1(RAM+0xF72)==0 && u16(RAM+0xF9B)<=u16(flash 0x19d98)=6084 && counter u16@RAM+0xA22 >= порог u16(flash 0x19d9c)=16801 -> bl 0x156ac
-    # (сравнение `cmp r0,r1; bgt` инвертировано: bl когда порог <= счётчик)
+    # bit1(RAM+0xF72)==0 && u16(RAM+0xF9B)<=u16(flash 0x19d98)=6084 && counter u16@RAM+0xA22 >= threshold u16(flash 0x19d9c)=16801 -> bl 0x156ac
+    # (comparison cmp r0,r1; bgt is inverted: bl when threshold <= counter)
     cap, _ = _intercept(0xF1EC, 0x156AC, max_insn=30000,
                         extra_ram=[(_R + 0xA22, _st.pack('<H', 16801))])
     assert cap, 'bl 0x156ac not reached (counter at threshold)'
     cap, _ = _intercept(0xF1EC, 0x156AC, max_insn=30000)
     assert not cap, 'bl 0x156ac reached with counter=0'
-t(0xF1EC, 'E2-b53: 0xf1ec dual-counter throttle -> bl 0x156ac (когда counter>=порога flash 0x19d9c)')(_t_f1ec)
+t(0xF1EC, 'E2-b53: 0xf1ec dual-counter throttle -> bl 0x156ac (when counter>=threshold flash 0x19d9c)')(_t_f1ec)
 
 def _t_5b5a(run, rng):
-    # delay-loop делегатор: 2 цикла countdown 0x2710 -> bl 0x1c1c(r0=0x90)
+    # delay-loop delegator: 2 countdown loops 0x2710 -> bl 0x1c1c(r0=0x90)
     cap, _ = _intercept(0x5B5A, 0x1C1C, max_insn=300000)
     assert cap, 'bl 0x1c1c not reached after delay loops'
     assert cap.get('r0') == 0x90, f'r0={cap.get("r0"):#x} want 0x90'
 t(0x5B5A, 'E2-b53: 0x5b5a delay-loop delegate (2x0x2710) -> bl 0x1c1c(r0=0x90)')(_t_5b5a)
 
-# --- E2-batch54: семейство Q16-интерполяторов + валидатор (reference-model, возврат через LR-sentinel) ---
+# --- E2-batch54: Q16 interpolator family + validator (reference-model, return via LR-sentinel) ---
 _M32 = 0xFFFFFFFF
 
 def _sxth(x):
@@ -6576,7 +6576,7 @@ def _asr16(x):
     return v >> 16
 
 def _div16328(num, den):
-    """0x16328: signed-деление (udiv |a|/|b|, trunc); den==0 -> +0x7fffffff/-0x80000000; overflow -> clamp."""
+    """0x16328: signed division (udiv |a|/|b|, trunc); den==0 -> +0x7fffffff/-0x80000000; overflow -> clamp."""
     if den == 0:
         return 0x7FFFFFFF if num >= 0 else -0x80000000
     sign = ((num ^ den) >> 31) & 1
@@ -6586,7 +6586,7 @@ def _div16328(num, den):
     return q if q < 0x7FFFFFFF else 0x7FFFFFFF
 
 def _floor_idx(key, arr, hi):
-    """последний i в [0,hi) с arr[i] <= key (сравнение — как в вызывающем: signed/unsigned)."""
+    """Last i in [0,hi) with arr[i] <= key (comparison matches caller: signed/unsigned)."""
     return max(i for i in range(hi) if arr[i] <= key)
 
 def _s32(x):
@@ -6594,10 +6594,10 @@ def _s32(x):
     return x - 0x100000000 if x >= 0x80000000 else x
 
 def _ref_e36c(a0, a1):
-    # проверено эмпирически (b54): min/max — unsigned; diff — unsigned;
-    # "max < 0x2710" — SIGNED (blt); min<0 — signed; div-ветка: num=min*0x2710 (u32),
-    # den=0x2710-diff, res=div16328(num,den) с clamp в [-0x8000, 0x7FFF]; *out=sxth(res).
-    # min/max — SIGNED (blt на 0xe376 проверено эмпирически: (1640,-335)->sxth(min))
+    # verified empirically (b54): min/max — unsigned; diff — unsigned;
+    # "max < 0x2710" — SIGNED (blt); min<0 — signed; div branch: num=min*0x2710 (u32),
+    # den=0x2710-diff, res=div16328(num,den) with clamp in [-0x8000, 0x7FFF]; *out=sxth(res).
+    # min/max — SIGNED (blt at 0xe376 verified empirically: (1640,-335)->sxth(min))
     x, y = a0 & _M32, a1 & _M32
     xs, ys = _s32(x), _s32(y)
     mx, mn = (x, y) if xs >= ys else (y, x)
@@ -6625,7 +6625,7 @@ def _t_e36c(run, rng):
         exp = _ref_e36c(a0, a1)
         got = int.from_bytes(run.ram_read(out, 2), 'little')
         assert got == (exp & 0xFFFF), f'({a0},{a1}): *out={got:#x} want {exp & 0xFFFF:#x}'
-t(0xE36C, 'E2-b54: 0xe36c fixed-point lerp с насыщением: diff>=0x2710->0; max(signed)>=0x2710->sxth(max); min<0->sxth(min); иначе div16328(min*0x2710, 0x2710-diff) clamp[-0x8000,0x7fff]')(_t_e36c)
+t(0xE36C, 'E2-b54: 0xe36c fixed-point lerp with saturation: diff>=0x2710->0; max(signed)>=0x2710->sxth(max); min<0->sxth(min); else div16328(min*0x2710, 0x2710-diff) clamp[-0x8000,0x7fff]')(_t_e36c)
 
 def _ref_17306(key, arr, hi):
     if key < arr[0]:
@@ -6654,7 +6654,7 @@ def _t_17306(run, rng):
         assert r0 == exp_idx, f'key={key}: idx={r0} want {exp_idx}'
         got = int.from_bytes(run.ram_read(out, 4), 'little')
         assert got == exp_frac, f'key={key}: *out={got:#x} want {exp_frac:#x}'
-t(0x17306, 'E2-b54: 0x17306 i16-интерполятор: r0=idx (bsearch floor), *u32=Q15.16 frac; key<arr[0]->(0,0); key>=arr[hi]->(hi-1,0x10000)')(_t_17306)
+t(0x17306, 'E2-b54: 0x17306 i16 interpolator: r0=idx (bsearch floor), *u32=Q15.16 frac; key<arr[0]->(0,0); key>=arr[hi]->(hi-1,0x10000)')(_t_17306)
 
 def _ref_1736a(key, arr, hi):
     if key < arr[0]:
@@ -6683,10 +6683,10 @@ def _t_1736a(run, rng):
         assert r0 == exp_idx, f'key={key:#x}: idx={r0} want {exp_idx}'
         got = int.from_bytes(run.ram_read(out, 4), 'little')
         assert got == exp_frac, f'key={key:#x}: *out={got:#x} want {exp_frac:#x}'
-t(0x1736A, 'E2-b54: 0x1736a u32-интерполятор (twin 0x17306): bsearch 0x1619e + frac=0x161ea(key-x0, dx, 16)')(_t_1736a)
+t(0x1736A, 'E2-b54: 0x1736a u32 interpolator (twin 0x17306): bsearch 0x1619e + frac=0x161ea(key-x0, dx, 16)')(_t_1736a)
 
 def _ref_16aa2(key, arr, table, hi):
-    # x-таблица: u16 (ldrh), ключ: u32 — сравнения unsigned; y-таблица: s16 (ldrsh).
+    # x-table: u16 (ldrh), key: u32 — comparisons unsigned; y-table: s16 (ldrsh).
     if not arr[0] < key:
         idx, frac = 0, 0
     elif arr[hi] <= key:
@@ -6694,7 +6694,7 @@ def _ref_16aa2(key, arr, table, hi):
     else:
         idx = _floor_idx(key, arr, hi)
         diff = arr[idx + 1] - arr[idx]
-        frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32   # udiv — точно
+        frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32   # udiv — exact
     t0, t1 = _sxth(table[idx]), _sxth(table[idx + 1])
     prod = (frac * (t1 - t0)) & _M32          # muls: signed low-32
     return _sxth((table[idx] & 0xFFFF) + _asr16(prod))
@@ -6717,7 +6717,7 @@ def _t_16aa2(run, rng):
         exp = _ref_16aa2(key, arr, table, hi)
         got = _sxth(r0)
         assert got == exp, f'key={key}: r0={got} want {exp}'
-t(0x16AA2, 'E2-b54: 0x16aa2 u16-ключ/u16-x-таблица -> s16-таблица: bsearch(unsigned) + lerp frac*(t1-t0) asr16, sxth')(_t_16aa2)
+t(0x16AA2, 'E2-b54: 0x16aa2 u16-key/u16-x-table -> s16-table: bsearch(unsigned) + lerp frac*(t1-t0) asr16, sxth')(_t_16aa2)
 
 def _ref_table_interp(key, arr, table, hi, signed):
     if signed:
@@ -6736,7 +6736,7 @@ def _ref_table_interp(key, arr, table, hi, signed):
         idx, frac = hi - 1, 0x10000
     else:
         diff = (arr[idx + 1] - arr[idx]) & _M32
-        # 0x161ea — shift-and-subtract: ТОЧНЫЙ floor((key-arr[idx])*2^16/dx) без u32-wrap числителя
+        # 0x161ea — shift-and-subtract: EXACT floor((key-arr[idx])*2^16/dx) without u32-wrap of numerator
         frac = 0 if diff == 0 else ((key - arr[idx]) * 0x10000 // diff) & _M32
     t0, t1 = table[idx] & 0xFFFF, table[idx + 1] & 0xFFFF
     if t0 <= t1:
@@ -6768,11 +6768,11 @@ def _mk_table_interp(off, signed):
     return _test
 
 _t_169f0 = _mk_table_interp(0x169F0, False)
-t(0x169F0, 'E2-b54: 0x169f0 u32-ключ -> u16-таблица: bsearch + Q16-lerp (ветки asc/desc), r0=u16')(_t_169f0)
+t(0x169F0, 'E2-b54: 0x169f0 u32-key -> u16-table: bsearch + Q16-lerp (asc/desc branches), r0=u16')(_t_169f0)
 def _t_16b22(run, rng):
-    # «signed twin» по каталогу, НО эмпирически сравнения — unsigned (проверено:
+    # "signed twin" according to catalog, BUT empirically comparisons are unsigned (verified:
     # arr=[-5000,5000]: key=-4999/-1000 -> t1, key=-12418/0/5000/5001 -> t0) —
-    # контракт идентичен 0x169f0. Тестируем весь u32-диапазон ключей (включая >0x80000000).
+    # contract identical to 0x169f0. Testing entire u32 range of keys (including >0x80000000).
     import struct as _st
     from emulator.mcu_emu import RAM as _R
     xbase, ybase = 0x400, 0x800
@@ -6790,12 +6790,12 @@ def _t_16b22(run, rng):
         exp = _ref_table_interp(key, arr, table, hi, False)
         got = r0 & 0xFFFF
         assert got == exp, f'key={key:#x}: r0={got:#x} want {exp:#x}'
-t(0x16B22, 'E2-b54: 0x16b22 u32-ключ -> u16-таблица (twin 0x169f0; эмпирически unsigned-контракт на всём u32), r0=u16')(_t_16b22)
+t(0x16B22, 'E2-b54: 0x16b22 u32-key -> u16-table (twin 0x169f0; empirically unsigned contract across full u32), r0=u16')(_t_16b22)
 
 def _t_1647c(run, rng):
-    # валидатор: a∈[1,0xc] && b∈[1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b)
-    # (id проверок не ограничивает — эмпирически ни один id из [0..0xbbb], 0x1000,
-    #  0x10000, 0x80000000, 0xffffffff не отклонён; r3 в bl не передаётся)
+    # validator: a in [1,0xc] && b in [1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b)
+    # (id checks do not restrict — empirically none of id from [0..0xbbb], 0x1000,
+    #  0x10000, 0x80000000, 0xffffffff rejected; r3 not passed to bl)
     cap, _ = _intercept(0x1647C, 0x16410, max_insn=30000, args=(0xC00, 5, 0x10, 3))
     assert cap and cap.get('r0') == 0xC00 and cap.get('r1') == 5 and cap.get('r2') == 0x10, \
         f'args={cap} want (0xc00,5,0x10)'
@@ -6806,17 +6806,17 @@ def _t_1647c(run, rng):
                 (0xC00, 5, 0, 3), (0xC00, 5, 0x20, 3), (0xC00, 5, 0x10, 0x18)):
         cap, _ = _intercept(0x1647C, 0x16410, max_insn=30000, args=bad)
         assert not cap, f'{bad}: bl 0x16410 reached with invalid args'
-t(0x1647C, 'E2-b54: 0x1647c валидатор: a∈[1,0xc] && b∈[1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b); id не ограничивает (эмпирически)')(_t_1647c)
+t(0x1647C, 'E2-b54: 0x1647c validator: a in [1,0xc] && b in [1,0x1f] && c<=0x17 -> bl 0x16410(id,a,b); id does not restrict (empirically)')(_t_1647c)
 
-# --- E2-batch55: чистые compute-функции (reference-model) + табличные поиски ---
+# --- E2-batch55: pure compute functions (reference-model) + table searches ---
 def _sdiv(a, b):
-    """ARM SDIV: signed-деление с усечением к нулю."""
+    """ARM SDIV: signed division with truncation toward zero."""
     q = abs(a) // abs(b)
     return -q if (a < 0) != (b < 0) else q
 
 def _t_506a(run, rng):
-    # bubble sort u16: n проходов, i от n-k-1 вниз до 0, swap если buf[i] > buf[i+1] (unsigned);
-    # ЧИТАЕТ buf[n] (один элемент за концом!) — caller обязан дать n+1 слотов (эмпирически).
+    # bubble sort u16: n passes, i from n-k-1 down to 0, swap if buf[i] > buf[i+1] (unsigned);
+    # READS buf[n] (one element past end!) — caller must provide n+1 slots (empirically).
     import struct as _st
     from emulator.mcu_emu import RAM as _R
     for _ in range(20):
@@ -6831,12 +6831,12 @@ def _t_506a(run, rng):
                     buf[i], buf[i + 1] = buf[i + 1], buf[i]
         got = list(_st.unpack('<%dH' % (n + 1), run.ram_read(0x400, 2 * (n + 1))))
         assert got == buf, f'n={n}: {got} want {buf}'
-t(0x506A, 'E2-b55: 0x506a bubble sort u16 (n проходов, читает buf[n] — нужен n+1 слот)')(_t_506a)
+t(0x506A, 'E2-b55: 0x506a bubble sort u16 (n passes, reads buf[n] — requires n+1 slots)')(_t_506a)
 
 def _ref_50b0(buf, data, n):
-    # 0x50b0 (эмпирически): СРАВНЕНИЯ min/max — по байтам БУФ-АРГУМЕНТА (s8);
-    # значения при обновлении + суммирование — из ФИКСИРОВАННОГО буфера RAM+0x44 (pool-литерал).
-    # mn=mx=s8(buf[0]); r8=ip=1; sum=0 (sxth-накопление s8(data[i]));
+    # 0x50b0 (empirically): min/max COMPARISONS — on bytes of BUFFER ARGUMENT (s8);
+    # values on update + summation — from FIXED buffer RAM+0x44 (pool literal).
+    # mn=mx=s8(buf[0]); r8=ip=1; sum=0 (sxth accumulation of s8(data[i]));
     # if s8(buf[i]) > mx: mx=s8(data[i]), ip=i+1;  if s8(buf[i]) < mn: mn=s8(data[i]), r8=i+1
     # out = {s8(sdiv(sum,n)), mn, mx, r8, ip}
     def _s8(b):
@@ -6865,13 +6865,13 @@ def _t_50b0(run, rng):
         got = list(run.ram_read(0x600, 5))
         exp = _ref_50b0(buf, data, n)
         assert got == exp, f'n={n} buf0={buf[0]:#x}: {got} want {exp}'
-t(0x50B0, 'E2-b55: 0x50b0 byte-stats: сравнения по s8(buf[i]), значения/сумма из фикс. RAM+0x44; out={s8(sdiv(sum,n)),min,max,last_min+1,last_max+1}, init=s8(buf[0])')(_t_50b0)
+t(0x50B0, 'E2-b55: 0x50b0 byte-stats: comparisons on s8(buf[i]), values/sum from fixed RAM+0x44; out={s8(sdiv(sum,n)),min,max,last_min+1,last_max+1}, init=s8(buf[0])')(_t_50b0)
 
 def _ref_rle(src, max_out):
-    # RLE-токен (эмпирически, оба декодера идентичны по формату):
-    # h: lit = h&7 (0 -> extended-байт), КОПИРУЕТСЯ lit-1 литералов (pre-decrement цикл);
-    # lf = h>>4 логически (0 -> extended); bit3(h): backward (offset-байт, count=lf+2 от dst-offset)
-    # иначе lf нулей. Порядок: h, [lit-ext], [lf-ext], литералы, [off].
+    # RLE token (empirically, both decoders identical in format):
+    # h: lit = h&7 (0 -> extended byte), COPIES lit-1 literals (pre-decrement loop);
+    # lf = h>>4 logical (0 -> extended); bit3(h): backward (offset byte, count=lf+2 from dst-offset)
+    # else lf zeros. Order: h, [lit-ext], [lf-ext], literals, [off].
     out = bytearray()
     p = 0
     while len(out) < max_out:
@@ -6901,19 +6901,19 @@ def _mk_rle(off):
             src = bytearray()
             out = bytearray()
             while len(out) < max_out:
-                L = rng.randint(0, 20)      # желаемое число литералов
-                LF = rng.randint(0, 20)     # len-поле (нули или backward count-2)
+                L = rng.randint(0, 20)      # desired number of literals
+                LF = rng.randint(0, 20)     # len field (zeros or backward count-2)
                 B = rng.getrandbits(1)
-                if L == 0 and LF == 0:      # гарантия прогресса токена
+                if L == 0 and LF == 0:      # guarantee token progress
                     LF = 2
-                if B and len(out) == 0:     # backward требует >=1 байт в out
+                if B and len(out) == 0:     # backward requires >=1 byte in out
                     L = 1
-                # lit-поле: 3 бита = L+1 (1..7), 0 -> extended-байт = L+1
+                # lit field: 3 bits = L+1 (1..7), 0 -> extended byte = L+1
                 if L <= 6:
                     lit_field, lit_ext = L + 1, None
                 else:
                     lit_field, lit_ext = 0, L + 1
-                # len-поле: 4 бита = LF (1..15), 0 -> extended-байт = LF
+                # len field: 4 bits = LF (1..15), 0 -> extended byte = LF
                 if 1 <= LF <= 15:
                     lf_field, lf_ext = LF, None
                 else:
@@ -6944,9 +6944,9 @@ def _mk_rle(off):
     return _test
 
 _t_152a = _mk_rle(0x152A)
-t(0x152A, 'E2-b55: 0x152a RLE-декодер: lit=h&7 (0->ext), count=lit-1; lf=h>>4 (0->ext); bit3=backward(off,count=lf+2) иначе lf нулей')(_t_152a)
+t(0x152A, 'E2-b55: 0x152a RLE decoder: lit=h&7 (0->ext), count=lit-1; lf=h>>4 (0->ext); bit3=backward(off,count=lf+2) else lf zeros')(_t_152a)
 _t_1a24c = _mk_rle(0x1A24C)
-t(0x1A24C, 'E2-b55: 0x1a24c RLE-декодер #2 (твин 0x152a, формат токена идентичен)')(_t_1a24c)
+t(0x1A24C, 'E2-b55: 0x1a24c RLE decoder #2 (twin 0x152a, identical token format)')(_t_1a24c)
 
 def _mk_tbl_search(off, tbl_off, n_entries, out_off):
     def _test(run, rng):
@@ -6966,13 +6966,13 @@ def _mk_tbl_search(off, tbl_off, n_entries, out_off):
     return _test
 
 _t_3994 = _mk_tbl_search(0x3994, 0x5CC, 58, 0x7A0)
-t(0x3994, 'E2-b55: 0x3994 табличный поиск: 58×8B @RAM+0x5CC (..0x79B), match byte@+4 -> r0=указатель, *u8=1; out ОБЯЗАТЕЛЬНО вне таблицы (strb до скана!)')(_t_3994)
+t(0x3994, 'E2-b55: 0x3994 table search: 58x8B @RAM+0x5CC (..0x79B), match byte@+4 -> r0=pointer, *u8=1; out MUST be outside table (strb before scan!)')(_t_3994)
 _t_583c = _mk_tbl_search(0x583C, 0x92C, 17, 0xA00)
-t(0x583C, 'E2-b55: 0x583c табличный поиск (twin 0x3994): 17×8B @RAM+0x92C')(_t_583c)
+t(0x583C, 'E2-b55: 0x583c table search (twin 0x3994): 17x8B @RAM+0x92C')(_t_583c)
 
 def _t_befc(run, rng):
-    # 2 записи @RAM+0x7C4: lo=byte@entry+4, hi=lo+byte@[u32@entry+8]; match: lo<=key<hi (эмпирически);
-    # r0 = указатель на запись или 0, *u8 = флаг.
+    # 2 entries @RAM+0x7C4: lo=byte@entry+4, hi=lo+byte@[u32@entry+8]; match: lo<=key<hi (empirically);
+    # r0 = pointer to entry or 0, *u8 = flag.
     import struct as _st
     from emulator.mcu_emu import RAM as _R
     for _ in range(15):
@@ -6992,11 +6992,11 @@ def _t_befc(run, rng):
         exp_r0 = (_R + 0x7C4 + exp_i * 8) if exp_i is not None else 0
         assert r0 == exp_r0, f'key={key}: r0={r0:#x} want {exp_r0:#x}'
         assert run.ram_read(0x600, 1)[0] == (1 if exp_i is not None else 0), f'key={key}: *out flag'
-t(0xBEFC, 'E2-b55: 0xbefc range-поиск: 2 записи @RAM+0x7C4, [lo, lo+len) через u32-указатель -> r0=указатель')(_t_befc)
+t(0xBEFC, 'E2-b55: 0xbefc range search: 2 entries @RAM+0x7C4, [lo, lo+len) via u32 pointer -> r0=pointer')(_t_befc)
 
 def _t_17524(run, rng):
-    # boot-wait предикат: byte[RAM+0xFD3]>0x1E -> u32[RAM+8]=0, ret 0;
-    # u32[RAM+8] < 0x10E0 -> ret 0; иначе u32[RAM+8]=0x10E0 (clamp), ret 1.
+    # boot-wait predicate: byte[RAM+0xFD3]>0x1E -> u32[RAM+8]=0, ret 0;
+    # u32[RAM+8] < 0x10E0 -> ret 0; else u32[RAM+8]=0x10E0 (clamp), ret 1.
     from emulator.mcu_emu import RAM as _R
     cases = [(0, 0, 0, 0), (0, 4000, 0, 4000), (0, 0x10DF, 0, 0x10DF),
              (0, 0x10E0, 1, 0x10E0), (0, 9999, 1, 0x10E0),
@@ -7010,9 +7010,9 @@ def _t_17524(run, rng):
         got_v = int.from_bytes(run.ram_read(8, 4), 'little')
         assert r0 == exp_r0, f'({b},{v}): r0={r0} want {exp_r0}'
         assert got_v == exp_v, f'({b},{v}): u32@8={got_v} want {exp_v}'
-t(0x17524, 'E2-b55: 0x17524 boot-wait предикат: byte@FD3>0x1e->reset u32@8,ret0; u32@8<0x10e0->ret0; иначе clamp=0x10e0,ret1')(_t_17524)
+t(0x17524, 'E2-b55: 0x17524 boot-wait predicate: byte@FD3>0x1e->reset u32@8,ret0; u32@8<0x10e0->ret0; else clamp=0x10e0,ret1')(_t_17524)
 
-# --- E2-batch56: чистые предикаты/флаги + stateful-счётчики (pool-литералы эмпирически) ---
+# --- E2-batch56: pure predicates/flags + stateful counters (pool literals empirically) ---
 def _ref_44c0(gate, u_lo, u_hi, s8a, s8b):
     # 0x44c0: ret1 <=> byte[A73]!=0 && u16[F9B]>0x7D0 && u16[F9D]<0x1194 && s8[FC8]>(-0x28) && s8[FC9]<0x64
     return 1 if (gate != 0 and u_lo > 0x7D0 and u_hi < 0x1194 and s8a > -0x28 and s8b < 0x64) else 0
@@ -7022,12 +7022,12 @@ def _t_44c0(run, rng):
     def _s8(b): return b - 0x100 if b >= 0x80 else b
     cases = [(rng.randint(0, 0xFF), rng.randint(0, 0xFFFF), rng.randint(0, 0x2000),
               rng.randint(0, 0xFF), rng.randint(0, 0xFF)) for _ in range(20)]
-    cases += [(1, 0x7D1, 0x1193, -39 & 0xFF, 0x63),   # все границы pass
+    cases += [(1, 0x7D1, 0x1193, -39 & 0xFF, 0x63),   # all boundaries pass
               (0, 0x800, 0, 0, 0),                    # gate=0
-              (1, 0x7D0, 0, 0, 0),                    # lo==0x7D0 (не >)
-              (1, 0x800, 0x1194, 0, 0),               # hi==0x1194 (не <)
-              (1, 0x800, 0, -40 & 0xFF, 0),           # a==-0x28 (не >)
-              (1, 0x800, 0, 0, 0x64)]                 # b==0x64 (не <)
+              (1, 0x7D0, 0, 0, 0),                    # lo==0x7D0 (not >)
+              (1, 0x800, 0x1194, 0, 0),               # hi==0x1194 (not <)
+              (1, 0x800, 0, -40 & 0xFF, 0),           # a==-0x28 (not >)
+              (1, 0x800, 0, 0, 0x64)]                 # b==0x64 (not <)
     for g, lo, hi, a, b in cases:
         run.ram_write(0xA73, bytes([g]))
         run.ram_write(0xF9B, struct.pack('<H', lo))
@@ -7037,11 +7037,11 @@ def _t_44c0(run, rng):
         r0, _ = run.call(0x44C0, args=(), max_insn=20000)
         exp = _ref_44c0(g, lo, hi, _s8(a), _s8(b))
         assert r0 == exp, f'g={g:#x} lo={lo:#x} hi={hi:#x} a={_s8(a)} b={_s8(b)}: r0={r0} want {exp}'
-t(0x44C0, 'E2-b56: 0x44c0 предикат: byte@A73!=0 && u16@F9B>0x7d0 && u16@F9D<0x1194 && s8@FC8>-0x28 && s8@FC9<0x64 -> 1')(_t_44c0)
+t(0x44C0, 'E2-b56: 0x44c0 predicate: byte@A73!=0 && u16@F9B>0x7d0 && u16@F9D<0x1194 && s8@FC8>-0x28 && s8@FC9<0x64 -> 1')(_t_44c0)
 
 def _t_c4cc(run, rng):
-    # 0xc4cc: REG=u32[PERIPH+0x21000]: сброс бит 0x10000|0x40000; arg==0x10000 -> |=0x10000;
-    # arg==0x40000 -> |=0x50000 (оба бита!); иначе только сброс.
+    # 0xc4cc: REG=u32[PERIPH+0x21000]: clear bits 0x10000|0x40000; arg==0x10000 -> |=0x10000;
+    # arg==0x40000 -> |=0x50000 (both bits!); else clear only.
     from emulator.mcu_emu import PERIPH
     REG = PERIPH + 0x21000
     for _ in range(10):
@@ -7054,10 +7054,10 @@ def _t_c4cc(run, rng):
         elif arg == 0x40000: e |= 0x50000
         got = run.periph_read(REG)
         assert got == e, f'v={v:#x} arg={arg:#x}: {got:#x} want {e:#x}'
-t(0xC4CC, 'E2-b56: 0xc4cc бит-флаги @PERIPH+0x21000: сброс 0x10000|0x40000; arg=0x10000->|=0x10000, arg=0x40000->|=0x50000')(_t_c4cc)
+t(0xC4CC, 'E2-b56: 0xc4cc bit flags @PERIPH+0x21000: clear 0x10000|0x40000; arg=0x10000->|=0x10000, arg=0x40000->|=0x50000')(_t_c4cc)
 
 def _t_cc08(run, rng):
-    # 0xcc08: u32[PERIPH+0x280C] &= ~0x80 (in-place, оба литерала один адрес)
+    # 0xcc08: u32[PERIPH+0x280C] &= ~0x80 (in-place, both literals same address)
     from emulator.mcu_emu import PERIPH
     REG = PERIPH + 0x280C
     for v in [0xFF, 0x80, 0x81, 0x7F, 0xFFFFFFFF, 0]:
@@ -7069,7 +7069,7 @@ t(0xCC08, 'E2-b56: 0xcc08: u32[PERIPH+0x280C] &= ~0x80 (in-place)')(_t_cc08)
 
 def _ref_cc68(arg, v2840, v2808, v280c):
     # 0xcc68: arg∈{0x20000,0x40000,0x80000}: r3 = ((u32[2840]>>16)&0xFF)!=0;
-    # иначе r3 = u32[2808]&arg; r2 = u32[280C]&(arg>>4); ret = r3!=0 && (r2&0xFFFF)!=0
+    # else r3 = u32[2808]&arg; r2 = u32[280C]&(arg>>4); ret = r3!=0 && (r2&0xFFFF)!=0
     if arg in (0x20000, 0x40000, 0x80000):
         r3 = 1 if ((v2840 >> 16) & 0xFF) else 0
     else:
@@ -7090,10 +7090,10 @@ def _t_cc68(run, rng):
         r0, _ = run.call(0xCC68, args=(arg,), max_insn=20000)
         exp = _ref_cc68(arg, vA, vB, vC)
         assert r0 == exp, f'arg={arg:#x} A={vA:#x} B={vB:#x} C={vC:#x}: r0={r0} want {exp}'
-t(0xCC68, 'E2-b56: 0xcc68 канал-предикат: arg∈{2/4/8}0000 -> (u32@2840>>16)&0xff; иначе u32@2808&arg; && (u32@280C&(arg>>4))&0xffff')(_t_cc68)
+t(0xCC68, 'E2-b56: 0xcc68 channel predicate: arg in {2/4/8}0000 -> (u32@2840>>16)&0xff; else u32@2808&arg; && (u32@280C&(arg>>4))&0xffff')(_t_cc68)
 
 def _t_18b0(run, rng):
-    # 0x18b0: слияние struct(r0) <- src(r1): u32[s+4]=(old&0xFFF0FEFF)|src[0]<<8;
+    # 0x18b0: merge struct(r0) <- src(r1): u32[s+4]=(old&0xFFF0FEFF)|src[0]<<8;
     # u32[s+8]=(old&0xFFF1F7FD)|(u32[src+4]|u32[src+8]|src[1]<<1); u32[s+0x2C]=(old&~0xF00000)|((src[0xC]-1)&0xFF)<<20
     from emulator.mcu_emu import RAM as _R
     for _ in range(15):
@@ -7111,10 +7111,10 @@ def _t_18b0(run, rng):
         g8 = struct.unpack('<I', run.ram_read(0x408, 4))[0]
         g2c = struct.unpack('<I', run.ram_read(0x42C, 4))[0]
         assert (g4, g8, g2c) == (e4, e8, e2c), f'old=({old4:#x},{old8:#x},{old2c:#x}): got ({g4:#x},{g8:#x},{g2c:#x}) want ({e4:#x},{e8:#x},{e2c:#x})'
-t(0x18B0, 'E2-b56: 0x18b0 struct-слияние: маски 0xFFF0FEFF/0xFFF1F7FD; поля +4/+8/+0x2C из src[0],src[1],u32[src+4|8],src[0xC]-1')(_t_18b0)
+t(0x18B0, 'E2-b56: 0x18b0 struct-merge: masks 0xFFF0FEFF/0xFFF1F7FD; fields +4/+8/+0x2C from src[0],src[1],u32[src+4|8],src[0xC]-1')(_t_18b0)
 
 def _t_2d34(run, rng):
-    # 0x2d34: u16[RAM+0xB5C] = max(v-1, 0) — все 4 pool-литерала один и тот же адрес (эмпирически)
+    # 0x2d34: u16[RAM+0xB5C] = max(v-1, 0) — all 4 pool literals same address (empirically)
     from emulator.mcu_emu import RAM as _R
     for v in [0, 1, 2, 3, 0xFFFF, 0x7FFF] + [rng.randint(0, 0xFFFF) for _ in range(10)]:
         run.ram_write(0xB5C, struct.pack('<H', v))
@@ -7122,12 +7122,12 @@ def _t_2d34(run, rng):
         got = struct.unpack('<H', run.ram_read(0xB5C, 2))[0]
         exp = max(v - 1, 0)
         assert got == exp, f'v={v:#x}: {got:#x} want {exp:#x}'
-t(0x2D34, 'E2-b56: 0x2d34 saturating-decrement u16[RAM+0xB5C] = max(v-1, 0) (все литералы один адрес)')(_t_2d34)
+t(0x2D34, 'E2-b56: 0x2d34 saturating-decrement u16[RAM+0xB5C] = max(v-1, 0) (all literals same address)')(_t_2d34)
 
 def _ref_f304(pause, gate2, gate3, gate4, cnt):
-    # 0xf304: pause=bit3(byte@F72) -> без изменений;
-    # если bit0(byte@F71) или byte@80!=1 или u32@FBF<0x3E8 -> u16[A30]=0 (reset);
-    # иначе u16+=1; при u16>=0x12C: toggle bit3(byte@F72), u16=0.
+    # 0xf304: pause=bit3(byte@F72) -> unchanged;
+    # if bit0(byte@F71) or byte@80!=1 or u32@FBF<0x3E8 -> u16[A30]=0 (reset);
+    # else u16+=1; when u16>=0x12C: toggle bit3(byte@F72), u16=0.
     if pause:
         return cnt, False
     if gate2 or gate3 != 1 or gate4 < 0x3E8:
@@ -7157,11 +7157,11 @@ def _t_f304(run, rng):
         exp_pause = (pause ^ 1) if toggled else pause
         assert got_cnt == e_cnt, f'cnt={cnt:#x} g=({pause},{g2},{g3},{g4:#x}): {got_cnt:#x} want {e_cnt:#x}'
         assert got_pause == exp_pause, f'cnt={cnt:#x}: pause {got_pause} want {exp_pause}'
-t(0xF304, 'E2-b56: 0xf304 gated-счётчик u16@A30: pause=bit3(byte@F72); reset при gate2/3/4 fail; +1; >=0x12c -> toggle bit3(F72)+reset')(_t_f304)
+t(0xF304, 'E2-b56: 0xf304 gated counter u16@A30: pause=bit3(byte@F72); reset on gate2/3/4 fail; +1; >=0x12c -> toggle bit3(F72)+reset')(_t_f304)
 
 def _t_cbb8(run, rng):
-    # 0xcbb8: REG=u32[PERIPH+0x280C]; если REG&0x40 -> ret1 (быстро);
-    # иначе REG=0x80, спин до 0x2000 итераций ждёт REG&0x40, ret = (REG&0x40)!=0 (в эмуляторе 0)
+    # 0xcbb8: REG=u32[PERIPH+0x280C]; if REG&0x40 -> ret1 (fast);
+    # else REG=0x80, spin up to 0x2000 iterations waits for REG&0x40, ret = (REG&0x40)!=0 (in emulator 0)
     from emulator.mcu_emu import PERIPH
     REG = PERIPH + 0x280C
     for v in [0x40, 0x41, 0x1234, 0x540, 0]:
@@ -7172,12 +7172,12 @@ def _t_cbb8(run, rng):
         got_reg = run.periph_read(REG)
         assert r0 == exp_r0, f'v={v:#x}: r0={r0} want {exp_r0}'
         assert got_reg == exp_reg, f'v={v:#x}: REG={got_reg:#x} want {exp_reg:#x}'
-t(0xCBB8, 'E2-b56: 0xcbb8: u32@PERIPH+0x280C&0x40 -> ret1; иначе REG=0x80 + спин 0x2000 итераций, ret0')(_t_cbb8)
+t(0xCBB8, 'E2-b56: 0xcbb8: u32@PERIPH+0x280C&0x40 -> ret1; else REG=0x80 + spin 0x2000 iterations, ret0')(_t_cbb8)
 
-# --- E2-batch57: предикаты/валидаторы/NVIC-сеты/пороговые счётчики (pool-литералы эмпирически) ---
+# --- E2-batch57: predicates/validators/NVIC sets/threshold counters (pool literals empirically) ---
 def _t_12804(run, rng):
     # 0x12804: ret = (arg <= u16[FLASH+0x19B3C]) ? 0x65 : -31.
-    # Блок бинарного поиска (0x1282c..) — мёртвый код для этой таблицы (first<last).
+    # Binary search block (0x1282c..) — dead code for this table (first<last).
     from emulator.mcu_emu import FLASH0
     img = open('D:/SCOOTER_5_PRO/research/images/mcu_0007.bin', 'rb').read()
     first = struct.unpack_from('<H', img, 0x19B3C)[0]
@@ -7185,19 +7185,19 @@ def _t_12804(run, rng):
         r0, _ = run.call(0x12804, args=(arg,), max_insn=20000)
         exp = 0x65 if arg <= first else (-31 & 0xFFFFFFFF)
         assert r0 == exp, f'arg={arg:#x}: r0={r0:#x} want {exp:#x}'
-t(0x12804, 'E2-b57: 0x12804 порог: arg<=u16[FLASH+0x19B3C](=0x1980) -> 0x65; иначе -31 (блок поиска мёртв)')(_t_12804)
+t(0x12804, 'E2-b57: 0x12804 threshold: arg<=u16[FLASH+0x19B3C](=0x1980) -> 0x65; else -31 (search block is dead)')(_t_12804)
 
 def _t_b978(run, rng):
     # 0xb978: q = u32[orig_sp+4] (stack-arg!); u32[q]==0 -> ret1; byte[q+0x13]!=0 -> ret0;
-    # иначе init-путь: u16[q+0x36]=0 + запись флагов, ret3. Запускаем на отдельном McuEmu
-    # (Run.call ставит SP=STACK_TOP, и [SP+4] уже вне RAM).
+    # else init path: u16[q+0x36]=0 + write flags, ret3. Run on dedicated McuEmu
+    # (Run.call sets SP=STACK_TOP, and [SP+4] is already outside RAM).
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
     Q = 0x400
     sp0 = STACK_TOP - 0x80
     for _ in range(12):
         q0 = rng.choice([0, 1, rng.randint(1, 0xFFFF)])
-        b13 = rng.choice([0, 0, 2, 3, 0xFF])   # b13==1 — handler-путь (blx в ноль), не проверяем
+        b13 = rng.choice([0, 0, 2, 3, 0xFF])   # b13==1 — handler path (blx to zero), do not test
         emu = McuEmu(max_insn=50000)
         uc = emu.uc
         uc.mem_write(RAM, bytes(0x20000))
@@ -7222,15 +7222,15 @@ def _t_b978(run, rng):
             exp = 3
             u36 = struct.unpack('<H', bytes(uc.mem_read(RAM + Q + 0x36, 2)))[0]
             assert u36 == 0, f'q0={q0:#x}: u16[q+0x36]={u36:#x} want 0'
-        else:   # b13 >= 2 — активное состояние
+        else:   # b13 >= 2 — active state
             exp = 0
         assert r0 == exp, f'q0={q0:#x} b13={b13}: r0={r0} want {exp}'
-t(0xB978, 'E2-b57: 0xb978 очередь (stack-arg q=[sp+4]): u32[q]==0->1; byte[q+0x13]>=2->0; ==0 -> init u16[q+0x36]=0->3')(_t_b978)
+t(0xB978, 'E2-b57: 0xb978 queue (stack-arg q=[sp+4]): u32[q]==0->1; byte[q+0x13]>=2->0; ==0 -> init u16[q+0x36]=0->3')(_t_b978)
 
 def _ref_bcc0(type_, val, b1, e0_lo, p0a, p0h, e1_lo, p1a, p1h):
-    # 0xbcc0: type/val = u16_be[f+2]/[f+4]; local=(val<<1)&0xFFFF; если b1==6: local=2;
-    # range-поиск 0xbeec по таблице @RAM+0x7C4 (out/gate=@RAM+0x7D4);
-    # при match: (byte[ptr+8]*byte[ptr+1]) >= local && lo+H >= val+type -> success.
+    # 0xbcc0: type/val = u16_be[f+2]/[f+4]; local=(val<<1)&0xFFFF; if b1==6: local=2;
+    # range search 0xbeec across table @RAM+0x7C4 (out/gate=@RAM+0x7D4);
+    # on match: (byte[ptr+8]*byte[ptr+1]) >= local && lo+H >= val+type -> success.
     local = (val << 1) & 0xFFFF
     if b1 == 6:
         local = 2
@@ -7266,15 +7266,15 @@ def _t_bcc0(run, rng):
         got_f6 = run.ram_read(0x406, 1)[0]
         assert r0 == exp_r0, f'type={type_} val={val} b1={b1}: r0={r0} want {exp_r0}'
         assert got_f6 == exp_f6, f'type={type_} val={val}: f[6]={got_f6:#x} want {exp_f6:#x}'
-t(0xBCC0, 'E2-b57: 0xbcc0 frame-валидатор: u16_BE type/val; range-поиск 0xbeec (gate@RAM+0x7D4); H*A>=local && lo+H>=val+type -> f[6]=local,f[7]=0,ret1')(_t_bcc0)
+t(0xBCC0, 'E2-b57: 0xbcc0 frame-validator: u16_BE type/val; range search 0xbeec (gate@RAM+0x7D4); H*A>=local && lo+H>=val+type -> f[6]=local,f[7]=0,ret1')(_t_bcc0)
 
 def _t_22b7c(run, rng):
-    # 0x22b7c: k=byte[r1+4]∈{0..4}, j=byte[r1+0xC]∈{0..2} (иначе спин);
-    # k>=2: u32[base]=(old&~0x60)|((k-2)<<6); иначе u32[base]&=~0x70;
+    # 0x22b7c: k=byte[r1+4] in {0..4}, j=byte[r1+0xC] in {0..2} (else spin);
+    # k>=2: u32[base]=(old&~0x60)|((k-2)<<6); else u32[base]&=~0x70;
     # base∈{0x40000000,TIM4..}: u32[base]=(old&~0x300)|(j<<8);
     # u32[base+0x3C]=u32[r1+8]; u32[base+0x38]=u32[r1+0];
     # base∈{TIM4..,TIM2}: u32[base+0x40]=(old&0xFF00FF)|(u32[r1+0x10]&0xFF); u32[base+0x24]|=1
-    # base — абсолютные адреса регистров TIM (PERIPH-диапазон); эмпирика:
+    # base — absolute addresses of TIM registers (PERIPH range); empirical:
     VJ = {0x40000000, 0x40000400, 0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
     V40 = {0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
     for _ in range(15):
@@ -7289,8 +7289,8 @@ def _t_22b7c(run, rng):
         run.periph_write(base, old)
         run.call(0x22B7C, args=(base, RAM + 0x400), max_insn=20000)
         e = old
-        if k >= 2: e = (e & ~0x60) | ((k << 5) - 0x20)   # биты[7:6] = k-1
-        else: e = (e & ~0x70) | (k << 4)                 # k=0/1: свой путь (0x22c3a), j-блок всё же применяется
+        if k >= 2: e = (e & ~0x60) | ((k << 5) - 0x20)   # bits[7:6] = k-1
+        else: e = (e & ~0x70) | (k << 4)                 # k=0/1: own path (0x22c3a), j-block is still applied
         if base in VJ: e = (e & ~0x300) | (j << 8)
         g = run.periph_read(base)
         assert g == e, f'k={k} j={j} base={base:#x} old={old:#x}: {g:#x} want {e:#x}'
@@ -7299,7 +7299,7 @@ def _t_22b7c(run, rng):
         if base in V40:
             assert (run.periph_read(base + 0x40) & 0xFF) == f10, 'field+0x40'
         assert run.periph_read(base + 0x24) & 1, 'bit0 @+0x24'
-    # спин при k>4 / j>2: на отдельном McuEmu — дошёл до лимита инструкций
+    # spin when k>4 / j>2: on dedicated McuEmu — reached instruction limit
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
     for bad in ((5, 0), (0, 3)):
@@ -7318,18 +7318,18 @@ def _t_22b7c(run, rng):
         emu.insn = 0
         try: uc.emu_start(0x22B7C | 1, 0, count=2000)
         except UcError as e: pass
-        assert emu.insn >= 1990, f'k={bad[0]} j={bad[1]}: insn={emu.insn} (ожидался спин)'
-t(0x22B7C, 'E2-b57: 0x22b7c TIM-CR1 сеттер: k=byte[r1+4]∈0..4,j=byte[r1+0xC]∈0..2 (иначе спин); k≥2: биты[7:6]=k-1; k∈{0,1}: чистит[7:5], k=1 ставит бит5; j-блок (7 баз): биты[9:8]=j; поля +0x3C/+0x38/+0x40')(_t_22b7c)
+        assert emu.insn >= 1990, f'k={bad[0]} j={bad[1]}: insn={emu.insn} (expected spin)'
+t(0x22B7C, 'E2-b57: 0x22b7c TIM-CR1 setter: k=byte[r1+4] in 0..4,j=byte[r1+0xC] in 0..2 (else spin); k>=2: bits[7:6]=k-1; k in {0,1}: clears[7:5], k=1 sets bit5; j-block (7 bases): bits[9:8]=j; fields +0x3C/+0x38/+0x40')(_t_22b7c)
 
-# --- пороговые счётчики #5/#2/#6 (общий паттерн: фаза A считает, latch-бит, фаза B) ---
+# --- threshold counters #5/#2/#6 (general pattern: phase A counts, latch bit, phase B) ---
 def _s8(b): return b - 0x100 if b >= 0x80 else b
 
 def _ref_10468(mode, b5, v, c1, c2):
     # 0x10468: b5=bit5(byte@FCD); V=s8[FC8];
-    # фаза A (gate byte@80∈{1,2} и b5==0): s8[F+0x19E3A]=10, cap u16[F+0x19E3B]=0xAAE:
-    #   v>10 -> c1=0; иначе c1+=1; c1>=cap -> b5=1, c1=0.
-    # фаза B (b5==1) — ВСЕГДА (gate не влияет): s8[F+0x19E3D]=-32, cap u16[F+0x19E3F]=0x5F:
-    #   v<-32 -> c2=0; иначе c2+=1; c2>=cap -> b5=0, c2=0.
+    # phase A (gate byte@80 in {1,2} and b5==0): s8[F+0x19E3A]=10, cap u16[F+0x19E3B]=0xAAE:
+    #   v>10 -> c1=0; else c1+=1; c1>=cap -> b5=1, c1=0.
+    # phase B (b5==1) — ALWAYS (gate has no effect): s8[F+0x19E3D]=-32, cap u16[F+0x19E3F]=0x5F:
+    #   v<-32 -> c2=0; else c2+=1; c2>=cap -> b5=0, c2=0.
     if mode in (1, 2) and b5 == 0:
         if v > 10: c1 = 0
         else:
@@ -7361,12 +7361,12 @@ def _t_10468(run, rng):
         g2 = struct.unpack('<H', run.ram_read(0x9EC, 2))[0]
         gb5 = (run.ram_read(0xFCD, 1)[0] >> 5) & 1
         assert (g1, g2, gb5) == (e1, e2, eb5), f'mode={mode} b5={b5} v={v}: got ({g1},{g2},{gb5}) want ({e1},{e2},{eb5})'
-t(0x10468, 'E2-b57: 0x10468 порог #5: gate byte@80∈{1,2}; bit5(byte@FCD); s8[FC8] vs flash 10/-32; счётчики @9EE/@9EC, latch-бит5')(_t_10468)
+t(0x10468, 'E2-b57: 0x10468 threshold #5: gate byte@80 in {1,2}; bit5(byte@FCD); s8[FC8] vs flash 10/-32; counters @9EE/@9EC, latch bit5')(_t_10468)
 
 def _ref_10524(b1, v, c1, c2):
-    # 0x10524: b1=bit1(byte@FD0); V=s8[FCF]; фаза A (b1==0): s8[F+0x19E4C]=-86, cap u16[F+0x19E4D]=0x7C18:
-    #   v<-86 -> c1=0; иначе c1+=1; c1>=cap -> b1=1, c1=0. Фаза B (b1==1): s8[F+0x19E4F]=65, cap u16[F+0x19E50]=0x1C49:
-    #   v>65 -> c2=0; иначе c2+=1; c2>=cap -> b1=0, c2=0.
+    # 0x10524: b1=bit1(byte@FD0); V=s8[FCF]; phase A (b1==0): s8[F+0x19E4C]=-86, cap u16[F+0x19E4D]=0x7C18:
+    #   v<-86 -> c1=0; else c1+=1; c1>=cap -> b1=1, c1=0. Phase B (b1==1): s8[F+0x19E4F]=65, cap u16[F+0x19E50]=0x1C49:
+    #   v>65 -> c2=0; else c2+=1; c2>=cap -> b1=0, c2=0.
     if b1 == 0:
         if v < -86: c1 = 0
         else:
@@ -7395,15 +7395,15 @@ def _t_10524(run, rng):
         g2 = struct.unpack('<H', run.ram_read(0x9E6, 2))[0]
         gb1 = (run.ram_read(0xFD0, 1)[0] >> 1) & 1
         assert (g1, g2, gb1) == (e1, e2, eb1), f'b1={b1} v={v}: got ({g1},{g2},{gb1}) want ({e1},{e2},{eb1})'
-t(0x10524, 'E2-b57: 0x10524 порог #2: bit1(byte@FD0); s8[FCF] vs flash -86/65; счётчики @9E4/@9E6, latch-бит1')(_t_10524)
+t(0x10524, 'E2-b57: 0x10524 threshold #2: bit1(byte@FD0); s8[FCF] vs flash -86/65; counters @9E4/@9E6, latch bit1')(_t_10524)
 
 def _ref_105c4(mode, b6, v, cA, cB, fb):
-    # 0x105c4: b6=bit6(byte@FA1); V=u16[F99] (беззнак);
-    # фаза A (gate byte@80∈{1,2} и b6==0): v>u16[F+0x19DDC](=0x849) -> cA=0; иначе cA+=1;
+    # 0x105c4: b6=bit6(byte@FA1); V=u16[F99] (unsigned);
+    # phase A (gate byte@80 in {1,2} and b6==0): v>u16[F+0x19DDC](=0x849) -> cA=0; else cA+=1;
     #   cA>u16[F+0x19DE0](=0x9909) -> b6=1, cA=0.
-    # фаза B (b6==1) — ВСЕГДА (gate не влияет):
-    #   доп. сброс: byte@80==0 и u32[RAM+0xFBF]>=0x64 -> b6=0, cB=0;
-    #   иначе v<u16[F+0x19DDE](=0x910B) -> cB=0; иначе cB+=1; cB>u16[F+0x19DE2](=0x9808) -> b6=0, cB=0.
+    # phase B (b6==1) — ALWAYS (gate has no effect):
+    #   extra reset: byte@80==0 and u32[RAM+0xFBF]>=0x64 -> b6=0, cB=0;
+    #   else v<u16[F+0x19DDE](=0x910B) -> cB=0; else cB+=1; cB>u16[F+0x19DE2](=0x9808) -> b6=0, cB=0.
     if mode in (1, 2) and b6 == 0:
         if v > 0x849: cA = 0
         else:
@@ -7425,7 +7425,7 @@ def _t_105c4(run, rng):
         v = rng.choice([0, 0x849, 0x84A, 0x910A, 0x910B, rng.randint(0, 0xFFFF)])
         cA = rng.choice([0, 1, 0x9908, 0x9909, 0x990A])
         cB = rng.choice([0, 1, 0x9807, 0x9808, 0x9809])
-        fb = rng.choice([0, 0x63, 0x64, rng.randint(0, 0xFFFFFFFF)])   # u32[RAM+0xFBF] (лит. @FBB + 4)
+        fb = rng.choice([0, 0x63, 0x64, rng.randint(0, 0xFFFFFFFF)])   # u32[RAM+0xFBF] (literal @FBB + 4)
         run.ram_write(0x80, bytes([mode]))
         run.ram_write(0xFA1, bytes([b6 << 6]))
         run.ram_write(0xF99, struct.pack('<H', v))
@@ -7438,10 +7438,10 @@ def _t_105c4(run, rng):
         gB = struct.unpack('<H', run.ram_read(0x9FA, 2))[0]
         gb6 = (run.ram_read(0xFA1, 1)[0] >> 6) & 1
         assert (gA, gB, gb6) == (eA, eB, eb6), f'mode={mode} b6={b6} v={v:#x}: got ({gA},{gB},{gb6}) want ({eA},{eB},{eb6})'
-t(0x105C4, 'E2-b57: 0x105c4 порог #6: gate byte@80∈{1,2}; bit6(byte@FA1); u16[F99] vs flash 0x849/0x910B; счётчики @9F8/@9FA; доп. сброс b6 при mode==0 и u32[FBB]>=0x64')(_t_105c4)
+t(0x105C4, 'E2-b57: 0x105c4 threshold #6: gate byte@80 in {1,2}; bit6(byte@FA1); u16[F99] vs flash 0x849/0x910B; counters @9F8/@9FA; extra reset b6 when mode==0 and u32[FBB]>=0x64')(_t_105c4)
 
 def _t_23544(run, rng):
-    # 0x23544: r2∈{0,1}, r1<4 (иначе спин). mode0: r0>=0 -> u32[SYS+0xE180]=1<<(r0&31) (ICER0).
+    # 0x23544: r2 in {0,1}, r1<4 (else spin). mode0: r0>=0 -> u32[SYS+0xE180]=1<<(r0&31) (ICER0).
     # mode1: r0>=0: u32[SYS+0xE100]=u32[SYS+0xE280]=1<<(r0&31); u32[SYS+0xE400+(r0>>2)*4] |= (r1&3)<<((r0&3)*8+6);
     # r0<0: u32[SYS+0xED24+(r0>>2)*4] = (r1&3)<<((r0&3)*8+6).
     from emulator.mcu_emu import SYS as _S
@@ -7456,7 +7456,7 @@ def _t_23544(run, rng):
         else:
             if idx >= 0:
                 m = 1 << (idx & 31)
-                # ISER0/E280 — assignment (эмпирика); ITNS/SHPR — OR
+                # ISER0/E280 — assignment (empirical); ITNS/SHPR — OR
                 assert run.periph_read(_S + 0xE100) == m, f'ISER idx={idx}: {run.periph_read(_S+0xE100):#x}'
                 assert run.periph_read(_S + 0xE280) == m, f'E280 idx={idx}'
                 w = _S + 0xE400 + (idx >> 2) * 4
@@ -7466,7 +7466,7 @@ def _t_23544(run, rng):
                 w = _S + 0xED24 + (idx >> 2) * 4
                 if r1 & 3:
                     assert run.periph_read(w) & ((r1 & 3) << ((idx & 3) * 8 + 6)), f'SHPR idx={idx} r1={r1}'
-    # спин: r2=5 / r1=4 — на отдельном McuEmu дошёл до лимита
+    # spin: r2=5 / r1=4 — reached limit on dedicated McuEmu
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
     for bad in ((0, 0, 5), (0, 4, 1)):
@@ -7483,18 +7483,18 @@ def _t_23544(run, rng):
         emu.insn = 0
         try: uc.emu_start(0x23544 | 1, 0, count=2000)
         except UcError as e: pass
-        assert emu.insn >= 1990, f'args={bad}: insn={emu.insn} (ожидался спин)'
-t(0x23544, 'E2-b57: 0x23544 NVIC-сеттер: mode0 r0>=0 -> ICER0=1<<(r0&31); mode1 r0>=0 -> ISER0+E280=маска, ITNS|=(r1&3)<<((r0&3)*8+6); r0<0 -> SHPR; r2∉{0,1}/r1>=4 -> спин')(_t_23544)
+        assert emu.insn >= 1990, f'args={bad}: insn={emu.insn} (expected spin)'
+t(0x23544, 'E2-b57: 0x23544 NVIC setter: mode0 r0>=0 -> ICER0=1<<(r0&31); mode1 r0>=0 -> ISER0+E280=mask, ITNS|=(r1&3)<<((r0&3)*8+6); r0<0 -> SHPR; r2 not in {0,1}/r1>=4 -> spin')(_t_23544)
 
 
 # ===========================================================================
-# E2-b58: 8 leaf-функций (bl==0) — packer/getter/flag-setter/spin/countdown
+# E2-b58: 8 leaf functions (bl==0) — packer/getter/flag-setter/spin/countdown
 # ===========================================================================
 
 def _t_ded4(run, rng):
-    # 0xded4: push{r0..r3}; если byte1(r0)==3:
-    #   u32[RAM+0xFE9] = (r0>>24)<<24 | (byte0(r1)<<16) | (byte1(r1)<<8) | byte2(r1)  (байты r1 в перевёрнутом порядке!)
-    #   ret 1; иначе ret 0.
+    # 0xded4: push{r0..r3}; if byte1(r0)==3:
+    #   u32[RAM+0xFE9] = (r0>>24)<<24 | (byte0(r1)<<16) | (byte1(r1)<<8) | byte2(r1)  (r1 bytes reversed!)
+    #   ret 1; else ret 0.
     for _ in range(12):
         hit = rng.getrandbits(1)
         b1 = 3 if hit else rng.choice([0, 1, 2, 4, 0xFF])
@@ -7507,7 +7507,7 @@ def _t_ded4(run, rng):
             assert r0v == 1 and got == want, f'r0={r0a:#x} r1={r1a:#x}: ret={r0v} u32@FE9={got:#x} want {want:#x}'
         else:
             assert r0v == 0, f'r0={r0a:#x} (byte1={b1}): ret={r0v} want 0'
-t(0xDed4, 'E2-b58: 0xded4 stack-packer: byte1(r0)==3 -> u32[RAM+0xFE9]=(r0>>24)<<24|(b0<<16|b1<<8|b2) r1 (байты r1 перевёрнуты), ret1; иначе ret0')(_t_ded4)
+t(0xDed4, 'E2-b58: 0xded4 stack-packer: byte1(r0)==3 -> u32[RAM+0xFE9]=(r0>>24)<<24|(b0<<16|b1<<8|b2) r1 (r1 bytes reversed), ret1; else ret0')(_t_ded4)
 
 def _t_164f8(run, rng):
     # 0x164f8: ret = s16[RAM+0x13A4] (sign-extend)
@@ -7548,10 +7548,10 @@ def _t_12fe0(run, rng):
 t(0x12FE0, 'E2-b58: 0x12fe0 flag-setter: type=(r1>>5)&7 -> off +0xC/+0x10/+0x14; mask=1<<(r1&0x1F); r2 ? |= : &=~; ret=ptr+off')(_t_12fe0)
 
 def _t_c2a8(run, rng):
-    # 0xc2a8: спин до u32[PERIPH+0x7010]&2==2 (seed в тесте); затем:
+    # 0xc2a8: spin until u32[PERIPH+0x7010]&2==2 (seed in test); then:
     #   u32[P+0x7008] = (old & ~0x3000) | r1; u32[P+0x7000] = (old & ~7)|2 -> ret;
-    #   u32[SYS+0xED10] |= 4; arg==1: WFI, иначе SEV+WFE — эмулятор останавливается на WFI/WFE,
-    #   финальный ED10 &= ~4 НЕ выполняется.
+    #   u32[SYS+0xED10] |= 4; arg==1: WFI, else SEV+WFE — emulator stops on WFI/WFE,
+    #   final ED10 &= ~4 is NOT executed.
     from emulator.mcu_emu import PERIPH as _P, SYS as _S
     for _ in range(10):
         arg = rng.choice([0, 1, 5])
@@ -7567,33 +7567,33 @@ def _t_c2a8(run, rng):
         assert run.periph_read(_P + 0x7000) == w, 'P+7000'
         assert r0v == w, f'ret={r0v:#x} want {w:#x}'
         assert run.periph_read(_S + 0xED10) & 4, 'ED10 bit2'
-t(0xC2A8, 'E2-b58: 0xc2a8: спин u32[P+7010]&2; P+7008=(old&~0x3000)|r1; P+7000=(old&~7)|2->ret; ED10|=4; стоп на WFI/WFE (clear не достигается)')(_t_c2a8)
+t(0xC2A8, 'E2-b58: 0xc2a8: spin u32[P+7010]&2; P+7008=(old&~0x3000)|r1; P+7000=(old&~7)|2->ret; ED10|=4; stop on WFI/WFE (clear not reached)')(_t_c2a8)
 
 def _t_b860(run, rng):
     # 0xb860: u32[RAM+0xEFC]=0x10000; byte=byte[arg+0x10C];
-    #   byte==3: wait-цикл (bl 0x9874 -> в эмуляторе сразу 0) -> ret0, u32[EFC]=0x10000;
-    #   иначе: цикл old=u32[EFC]; u32[EFC]=old-1; old==0 -> ret3; byte!=0 -> повтор.
-    #   byte=0: 1 итерация (0x10000->0xFFFF), ret3; byte∈{1,2}: полный отсчёт ~721K инстр. -> wrap 0xFFFFFFFF, ret3.
+    #   byte==3: wait loop (bl 0x9874 -> in emulator returns 0 immediately) -> ret0, u32[EFC]=0x10000;
+    #   else: loop old=u32[EFC]; u32[EFC]=old-1; old==0 -> ret3; byte!=0 -> repeat.
+    #   byte=0: 1 iteration (0x10000->0xFFFF), ret3; byte in {1,2}: full countdown ~721K insns -> wrap 0xFFFFFFFF, ret3.
     for _ in range(6):
         run.ram_write(0x50C, b'\x00')
         r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=5000)
         efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
         assert r0v == 3 and efc == 0xFFFF, f'ret={r0v} u32@EFC={efc:#x}'
-    # byte=3: wait-путь; опрашивает (u32[PERIPH+0x5818] & 2) — константа за цикл!
-    #   bit==0 -> сразу ret0, u32[EFC]=0x10000; bit==1 -> спин до wrap счётчика.
+    # byte=3: wait-path; polls (u32[PERIPH+0x5818] & 2) — constant during loop!
+    #   bit==0 -> immediate ret0, u32[EFC]=0x10000; bit==1 -> spin until counter wraps.
     from emulator.mcu_emu import PERIPH as _P
     run.ram_write(0x50C, b'\x03')
     run.periph_write(_P + 0x5818, 0)
     r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=5000)
     efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
     assert r0v == 0 and efc == 0x10000, f'byte=3: ret={r0v} u32@EFC={efc:#x}'
-    # bit==1: спин — счётчик падает, возврат не достигается за лимит
+    # bit==1: spin — counter decreases, return is not reached within limit
     run.ram_write(0x50C, b'\x03')
     run.periph_write(_P + 0x5818, 2)
     r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=3000)
     efc = struct.unpack('<I', run.ram_read(0xEFC, 4))[0]
-    assert efc < 0x10000, f'byte=3 спин: u32@EFC={efc:#x} (ожид. декремент)'
-    # медленный путь — отдельный эмулятор с большим лимитом
+    assert efc < 0x10000, f'byte=3 spin: u32@EFC={efc:#x} (expected decrement)'
+    # slow path — dedicated emulator with large limit
     emu = McuEmu(max_insn=800000)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -7611,13 +7611,13 @@ def _t_b860(run, rng):
     except UcError as e: pass
     r0v = uc.reg_read(UC_ARM_REG_R0)
     efc = struct.unpack('<I', bytes(uc.mem_read(RAM + 0xEFC, 4)))[0]
-    assert r0v == 3 and efc == 0xFFFFFFFF, f'ret={r0v} u32@EFC={efc:#x} (полный отсчёт)'
-t(0xB860, 'E2-b58: 0xb860 countdown/wait: u32[RAM+0xEFC]=0x10000; byte==3 -> wait-цикл ret0; иначе декр. пока byte[arg+0x10C]!=0 и old!=0; ret3')(_t_b860)
+    assert r0v == 3 and efc == 0xFFFFFFFF, f'ret={r0v} u32@EFC={efc:#x} (full countdown)'
+t(0xB860, 'E2-b58: 0xb860 countdown/wait: u32[RAM+0xEFC]=0x10000; byte==3 -> wait loop ret0; else decr while byte[arg+0x10C]!=0 and old!=0; ret3')(_t_b860)
 
 def _t_7e98(run, rng):
     # 0x7e98(arg): (arg&0x7FF)!=0 -> 0; arg>=0x0801FFFF -> 0; arg<0x08003000 -> 0;
-    # в диапазоне: bl 0x6378 (u32[PERIPH+0x22004] <- константы, fingerprint 0xCDEF89AB после полного пути)
-    # + 0x6230(arg) — flash-зависимый код; эмпирика на mcu_0007: всегда !=6 -> ret 0.
+    # in range: bl 0x6378 (u32[PERIPH+0x22004] <- constants, fingerprint 0xCDEF89AB after full path)
+    # + 0x6230(arg) — flash-dependent code; empirically on mcu_0007: always !=6 -> ret 0.
     from emulator.mcu_emu import PERIPH as _P
     CANARY = 0x5A5A5A5A
     for _ in range(12):
@@ -7632,18 +7632,18 @@ def _t_7e98(run, rng):
             arg = rng.choice([0x08003000, 0x08003800, 0x08010000, 0x0801F800])
         run.periph_write(_P + 0x22004, CANARY)
         if kind == 'in':
-            # статусное слово P+0x2200C: 0x61d4 ставит 0x7C, затем 0x6284 читает его -> детерм. ret3!=6
+            # status word P+0x2200C: 0x61d4 sets 0x7C, then 0x6284 reads it -> determ. ret3!=6
             run.periph_write(_P + 0x2200C, 0)
         r0v, _ = run.call(0x7E98, args=(arg,), max_insn=50000)
         fp = run.periph_read(_P + 0x22004)
         if kind == 'in':
             assert r0v == 0 and fp == 0xCDEF89AB, f'arg={arg:#x}: ret={r0v} fp={fp:#x}'
         else:
-            assert r0v == 0 and fp == CANARY, f'arg={arg:#x} ({kind}): ret={r0v} fp={fp:#x} (ожид. gate-reject)'
-t(0x7E98, 'E2-b58: 0x7e98 flash-range предикат: arg∈[0x08003000,0x0801FFFF), align 0x800 -> bl-путь (fp P+22004=0xCDEF89AB), ret эмпирически 0; иначе gate->0')(_t_7e98)
+            assert r0v == 0 and fp == CANARY, f'arg={arg:#x} ({kind}): ret={r0v} fp={fp:#x} (expected gate-reject)'
+t(0x7E98, 'E2-b58: 0x7e98 flash-range predicate: arg in [0x08003000,0x0801FFFF), align 0x800 -> bl path (fp P+22004=0xCDEF89AB), ret empirically 0; else gate->0')(_t_7e98)
 
 def _t_2359c(run, rng):
-    # 0x2359c(base, idx, val): r0 = base + (idx<<4) + 0x100; цикл записи u32[r0+8]=val с read-back до совпадения
+    # 0x2359c(base, idx, val): r0 = base + (idx<<4) + 0x100; write loop u32[r0+8]=val with read-back until match
     B = 0x600
     for _ in range(12):
         idx = rng.randint(0, 15)
@@ -7652,18 +7652,18 @@ def _t_2359c(run, rng):
         off = B + (idx << 4) + 0x108
         got = struct.unpack('<I', run.ram_read(off, 4))[0]
         assert got == val, f'idx={idx} val={val:#x}: u32[{off:#x}]={got:#x}'
-t(0x2359C, 'E2-b58: 0x2359c store-with-readback: u32[base+(idx<<4)+0x108]=val (цикл до совпадения)')(_t_2359c)
+t(0x2359C, 'E2-b58: 0x2359c store-with-readback: u32[base+(idx<<4)+0x108]=val (loop until match)')(_t_2359c)
 
 
-# E2-b59: 8 state/compute-функций (bl==0) — пороговые счётчики, спин-вейт, чистые вычисления
+# E2-b59: 8 state/compute functions (bl==0) — threshold counters, spin-wait, pure computation
 def _t_19f4(run, rng):
-    # 0x19f4: A=RAM+0xF95 (gate byte[A+0xC]=byte[0xFA1] bit1, блок2 byte[A+0x17]=byte[0xFAC] bit0),
-    #   B=RAM+0x15F7 (byte[B+0x11]=byte[0x1608] bit2, byte[B+3]=byte[0x15FA] bit3), C=RAM+0xA41 счётчик
+    # 0x19f4: A=RAM+0xF95 (gate byte[A+0xC]=byte[0xFA1] bit1, block2 byte[A+0x17]=byte[0xFAC] bit0),
+    #   B=RAM+0x15F7 (byte[B+0x11]=byte[0x1608] bit2, byte[B+3]=byte[0x15FA] bit3), C=RAM+0xA41 counter
     #   CAP=byte[flash+0x19E6B]=219
     #   if byte[A+0xC]&2:
     #     if byte[B+0x11]&4: C=0
     #     else: C+=1; if C>=CAP: byte[A+0xC]&=~2; C=0
-    #   блок 2 (всегда): if byte[A+0x17]&1 and not byte[B+3]&8: byte[A+0x17]&=~1
+    #   block 2 (always): if byte[A+0x17]&1 and not byte[B+3]&8: byte[A+0x17]&=~1
     CAP = 219
     cases = [rng.randint(0, 255) for _ in range(10)] + [CAP - 2, CAP - 1, CAP, CAP + 1, 255]
     for c in cases:
@@ -7690,7 +7690,7 @@ def _t_19f4(run, rng):
         got = (run.ram_read(0xFA1, 1)[0], run.ram_read(0xA41, 1)[0], run.ram_read(0xFAC, 1)[0])
         assert got[0] == exp_ac and got[1] == exp_c and got[2] == exp_a17, \
             f'c={c} ac={ac} b11={b11} b3={b3}: got={got} want ac={exp_ac} c={exp_c} a17={exp_a17}'
-t(0x19F4, 'E2-b59: 0x19f4 state-машина: gate byte[0xFA1]&2; бит2 byte[0x1608] -> C(0xA41)=0; иначе C+=1, C>=CAP=219(flash) -> сброс gate+C; блок2: бит0 0xFAC (если не бит3 0x15FA)')(_t_19f4)
+t(0x19F4, 'E2-b59: 0x19f4 state machine: gate byte[0xFA1]&2; bit2 byte[0x1608] -> C(0xA41)=0; else C+=1, C>=CAP=219(flash) -> reset gate+C; block2: bit0 0xFAC (if not bit3 0x15FA)')(_t_19f4)
 
 def _t_1a68(run, rng):
     # 0x1a68: A=RAM+0xF95 (gate bit4 byte[A+0xC]), C=RAM+0xA40; TH=u16[flash+0x19E76]=0x9000, CAP=byte[flash+0x19E79]=155
@@ -7719,25 +7719,25 @@ def _t_1a68(run, rng):
         got_gate = run.ram_read(0xFA1, 1)[0]
         assert got_c == exp_c and got_gate == exp_gate, \
             f'gate={gate:#x} v={v:#x} c={c}: C={got_c} want {exp_c}, gate={got_gate:#x} want {exp_gate:#x}'
-t(0x1A68, 'E2-b59: 0x1a68 state-машина: gate bit4 byte[0xFA1]; u16[0xF9B]>=TH=0x9000(flash) -> счётчик 0xA40 vs CAP=155; сброс gate+счётчика')(_t_1a68)
+t(0x1A68, 'E2-b59: 0x1a68 state machine: gate bit4 byte[0xFA1]; u16[0xF9B]>=TH=0x9000(flash) -> counter 0xA40 vs CAP=155; reset gate+counter')(_t_1a68)
 
 def _t_ce70(run, rng):
-    # 0xce70: u32[P+0x2824]=0xCA; =0x53; u32[P+0x280C]&=~0x20 (сначала clear!);
-    #   спин до bit5(P+0x280C) или 0x8000 итераций; ret = bit5?1:0; u32[P+0x2824]=0xFF.
-    #   В эмуляторе bit5 никто не ставит -> полный спин ~98K инстр, всегда ret 0.
+    # 0xce70: u32[P+0x2824]=0xCA; =0x53; u32[P+0x280C]&=~0x20 (clear first!);
+    #   spin until bit5(P+0x280C) or 0x8000 iterations; ret = bit5?1:0; u32[P+0x2824]=0xFF.
+    #   In emulator nobody sets bit5 -> full spin ~98K insns, always ret 0.
     from emulator.mcu_emu import PERIPH as _P
     for seed in [0, 0x20, 0x7F, 0xFF, rng.randint(0, 0xFFFFFFFF), rng.randint(0, 0xFFFFFFFF)]:
         run.periph_write(_P + 0x280C, seed)
         r0v, _ = run.call(0xCE70, max_insn=400000)
-        assert r0v == 0, f'seed={seed:#x}: ret={r0v} want 0 (bit5 сначала чистится)'
+        assert r0v == 0, f'seed={seed:#x}: ret={r0v} want 0 (bit5 cleared first)'
         assert run.periph_read(_P + 0x2824) == 0xFF, 'u32[P+0x2824] != 0xFF'
-        assert run.emu.insn > 90000, f'seed={seed:#x}: insn={run.emu.insn} (ожид. полный спин ~98K)'
-t(0xCE70, 'E2-b59: 0xce70 spin-wait: P+0x2824=0xCA/0x53; clear bit5 P+0x280C; полный спин 0x8000 (~98K инстр) -> ret0; P+0x2824=0xFF')(_t_ce70)
+        assert run.emu.insn > 90000, f'seed={seed:#x}: insn={run.emu.insn} (expected full spin ~98K)'
+t(0xCE70, 'E2-b59: 0xce70 spin-wait: P+0x2824=0xCA/0x53; clear bit5 P+0x280C; full spin 0x8000 (~98K insns) -> ret0; P+0x2824=0xFF')(_t_ce70)
 
 def _t_f290(run, rng):
-    # 0xf290: гейты: byte[0xF72]&4 (выход БЕЗ сброса) / byte[0xF71]&2 / byte[0x80]!=0 /
+    # 0xf290: gates: byte[0xF72]&4 (exit WITHOUT reset) / byte[0xF71]&2 / byte[0x80]!=0 /
     #   u32[0xFBF]<0x3E8 / byte[0x107]!=1 -> C(0xA2E)=0
-    #   иначе C+=1; if C>=0x12C: byte[0xF72]^=4 (toggle); C=0
+    #   else C+=1; if C>=0x12C: byte[0xF72]^=4 (toggle); C=0
     for _ in range(15):
         f72 = rng.choice([0, 4, 5, rng.randint(0, 255)])
         b81 = rng.choice([0, 2, 3, rng.randint(0, 255)])
@@ -7752,7 +7752,7 @@ def _t_f290(run, rng):
         run.ram_write(0x107, struct.pack('<B', b107))
         run.ram_write(0xA2E, struct.pack('<H', c))
         run.call(0xF290, max_insn=2000)
-        # гейт1 (f72&4) выходит БЕЗ сброса; остальные гейты -> C=0
+        # gate1 (f72&4) exits WITHOUT reset; other gates -> C=0
         exp_c, exp_f72 = c, f72
         if f72 & 4:
             pass
@@ -7767,12 +7767,12 @@ def _t_f290(run, rng):
         got_f72 = run.ram_read(0xF72, 1)[0]
         assert got_c == exp_c and got_f72 == exp_f72, \
             f'f72={f72} b81={b81} b80={b80} fbb={fbb:#x} b107={b107} c={c:#x}: C={got_c:#x} want {exp_c:#x}, f72={got_f72} want {exp_f72}'
-t(0xF290, 'E2-b59: 0xf290 threshold-counter: гейт1 0xF72&4 (без сброса), гейты 0xF71&2/0x80!=0/u32[0xFBF]<0x3E8/0x107!=1 -> C=0; иначе C+=1, C>=0x12C -> toggle bit2 0xF72, C=0')(_t_f290)
+t(0xF290, 'E2-b59: 0xf290 threshold-counter: gate1 0xF72&4 (without reset), gates 0xF71&2/0x80!=0/u32[0xFBF]<0x3E8/0x107!=1 -> C=0; else C+=1, C>=0x12C -> toggle bit2 0xF72, C=0')(_t_f290)
 
 def _t_f36c(run, rng):
     # 0xf36c: mode = bit3 byte[RAM+0xFD0]; x = s8[RAM+0xFCF]
-    #   A (bit3=0): x<-30 or x>100 -> C(0xA36)+=1; C>=0x32 -> toggle bit3, C=0; иначе C=0
-    #   B (bit3=1): -30<=x<=100 -> C(0xA38)+=1; C>=0x32 -> clear bit3, C=0; иначе C=0
+    #   A (bit3=0): x<-30 or x>100 -> C(0xA36)+=1; C>=0x32 -> toggle bit3, C=0; else C=0
+    #   B (bit3=1): -30<=x<=100 -> C(0xA38)+=1; C>=0x32 -> clear bit3, C=0; else C=0
     for _ in range(15):
         m = rng.choice([0, 8, 9, rng.randint(0, 255)])
         x = rng.choice([-128, -31, -30, -29, 0, 99, 100, 101, 127, rng.randint(-128, 127)])
@@ -7805,10 +7805,10 @@ def _t_f36c(run, rng):
         got_m = run.ram_read(0xFD0, 1)[0]
         assert got_ca == exp_ca and got_cb == exp_cb and got_m == exp_m, \
             f'm={m:#x} x={x} ca={ca:#x} cb={cb:#x}: CA={got_ca:#x}/{exp_ca:#x} CB={got_cb:#x}/{exp_cb:#x} m={got_m:#x}/{exp_m:#x}'
-t(0xF36C, 'E2-b59: 0xf36c dual-threshold: bit3 0xFD0 выбирает блок; x=s8[0xFCF]; A: вне[-30,100] -> C(0xA36), latch 0x32 toggle; B: внутри -> C(0xA38), latch clear')(_t_f36c)
+t(0xF36C, 'E2-b59: 0xf36c dual-threshold: bit3 0xFD0 selects block; x=s8[0xFCF]; A: outside[-30,100] -> C(0xA36), latch 0x32 toggle; B: inside -> C(0xA38), latch clear')(_t_f36c)
 
 def _t_1093c(run, rng):
-    # 0x1093c: src=RAM+0x4A, dst=RAM+0xFC7 (dst[6]=0xFCD гейт, dst[5]=0xFCC ввод b),
+    # 0x1093c: src=RAM+0x4A, dst=RAM+0xFC7 (dst[6]=0xFCD gate, dst[5]=0xFCC input b),
     #   cnt=byte[RAM+0x60], U=u32[RAM+0x8C]
     #   dst[0..4]=src[0..4]; if bit6(dst[6]): cnt=0
     #   elif s8(dst[2])<=s8(dst[5]): cnt=0
@@ -7846,11 +7846,11 @@ def _t_1093c(run, rng):
         assert got_dst == bytes(exp_dst), f'src={src.hex()} d6={d6:#x}: dst={got_dst.hex()} want {bytes(exp_dst).hex()}'
         assert got_cnt == exp_cnt, f'cnt: got={got_cnt} want {exp_cnt} (src={src.hex()} d6={d6:#x})'
         assert got_u8c == exp_u8c, f'u32[0x8C]: got={got_u8c:#x} want {exp_u8c:#x}'
-t(0x1093C, 'E2-b59: 0x1093c copy+counter: dst[0..4]=src[0..4] (0xFC7<-0x4A); гейты bit6(dst[6])/s8(dst[2])<=s8(dst[5]); счётчик 0x60, latch>10 -> dst[5]=dst[2], u32[0x8C]|=0x1000')(_t_1093c)
+t(0x1093C, 'E2-b59: 0x1093c copy+counter: dst[0..4]=src[0..4] (0xFC7<-0x4A); gates bit6(dst[6])/s8(dst[2])<=s8(dst[5]); counter 0x60, latch>10 -> dst[5]=dst[2], u32[0x8C]|=0x1000')(_t_1093c)
 
 def _t_11350(run, rng):
-    # 0x11350: if bit7(byte[RAM+0xFA1]): byte[0xA55]=0; u16[0xA56]=0; byte[0xA59]=0; byte[0xA5A]=0 (чистый возврат);
-    #   else: fall-through в соседнюю state-машину @0x1136e (insn > 20, память не проверяем)
+    # 0x11350: if bit7(byte[RAM+0xFA1]): byte[0xA55]=0; u16[0xA56]=0; byte[0xA59]=0; byte[0xA5A]=0 (clean return);
+    #   else: fall-through to adjacent state machine @0x1136e (insn > 20, memory not checked)
     for _ in range(12):
         gate = rng.choice([0, 0x80, 0xFF, rng.randint(0, 255)])
         seed = bytes([rng.randint(1, 255) for _ in range(6)])
@@ -7859,38 +7859,38 @@ def _t_11350(run, rng):
         r0v, _ = run.call(0x11350, max_insn=2000)
         if gate & 0x80:
             got = bytearray(run.ram_read(0xA55, 6))
-            # чистятся 0xA55, 0xA56-0xA57 (u16), 0xA59, 0xA5A; 0xA58 нетронут
+            # cleared: 0xA55, 0xA56-0xA57 (u16), 0xA59, 0xA5A; 0xA58 untouched
             want = bytearray([0, 0, 0, seed[3], 0, 0])
             assert bytes(got) == bytes(want), f'gate={gate:#x} seed={seed.hex()}: got={bytes(got).hex()} want={bytes(want).hex()}'
         else:
-            assert run.emu.insn > 20, f'gate={gate:#x}: insn={run.emu.insn} (ожид. fall-through в 0x1136e)'
-t(0x11350, 'E2-b59: 0x11350 gated-clear: bit7(byte[RAM+0xFA1]) -> byte[0xA55]=u16[0xA56]=byte[0xA59]=byte[0xA5A]=0; иначе fall-through в state-машину @0x1136e')(_t_11350)
+            assert run.emu.insn > 20, f'gate={gate:#x}: insn={run.emu.insn} (expected fall-through to 0x1136e)'
+t(0x11350, 'E2-b59: 0x11350 gated-clear: bit7(byte[RAM+0xFA1]) -> byte[0xA55]=u16[0xA56]=byte[0xA59]=byte[0xA5A]=0; else fall-through to state machine @0x1136e')(_t_11350)
 
 def _t_22a48(run, rng):
-    # 0x22a48(r0) — валидатор-трамплин: arg==0 -> ret1; v=u32[arg];
-    #   v НЕ в множестве 10 TIM-баз -> бесконечный спин (cpsid i; b .);
-    #   v в множестве -> переход в тело @0x22a96 (r4=arg): проверки byte[arg+8]∈{0..4},
-    #   byte[arg+0x10]∈{0..2} (иначе спин), byte[arg+0x1A]=0 -> strb 0 [arg+0x19];
+    # 0x22a48(r0) — validator trampoline: arg==0 -> ret1; v=u32[arg];
+    #   v NOT in set of 10 TIM bases -> infinite spin (cpsid i; b .);
+    #   v in set -> jump to body @0x22a96 (r4=arg): checks byte[arg+8] in {0..4},
+    #   byte[arg+0x10] in {0..2} (else spin), byte[arg+0x1A]=0 -> strb 0 [arg+0x19];
     #   byte[arg+0x1A]=2; bl 0x22b7c(arg+4, 2); byte[arg+0x1A]=1; ret 0.
     TIMS = {0x40012C00, 0x40001000, 0x40014000, 0x40014400, 0x40014800, 0x40014C00,
             0x40000400, 0x40000800, 0x40000C00, 0x40000000}
     r0v, _ = run.call(0x22A48, args=(0,), max_insn=2000)
     assert r0v == 1 and run.emu.insn < 50, f'arg=0: ret={r0v} insn={run.emu.insn}'
-    # невалидные значения -> спин
+    # invalid values -> spin
     bad = rng.getrandbits(32)
     while bad in TIMS:
         bad = rng.getrandbits(32)
     for v in [0x12345678, 0xDEADBEEF, 1, 0x40015000, bad]:
         run.ram_write(0x300, struct.pack('<I', v))
         r0v, _ = run.call(0x22A48, args=(RAM + 0x300,), max_insn=3000)
-        assert run.emu.insn >= 2900, f'v={v:#x}: не спин (insn={run.emu.insn})'
-    # валидные базы: чистый путь (ret0) и спин-путь (byte[arg+8]>4)
+        assert run.emu.insn >= 2900, f'v={v:#x}: not spin (insn={run.emu.insn})'
+    # valid bases: clean path (ret0) and spin path (byte[arg+8]>4)
     for v in sorted(TIMS):
         run.ram_write(0x300, struct.pack('<I', v))
         run.ram_write(0x308, b'\x00')
         run.ram_write(0x310, b'\x00')
         run.ram_write(0x31A, b'\x00')
-        # bl 0x22b7c(r1=2) читает k=byte[RAM+6], j=byte[RAM+0xE] — сидим валидные
+        # bl 0x22b7c(r1=2) reads k=byte[RAM+6], j=byte[RAM+0xE] — seed valid
         run.ram_write(0x6, b'\x00')
         run.ram_write(0xE, b'\x00')
         r0v, _ = run.call(0x22A48, args=(RAM + 0x300,), max_insn=5000)
@@ -7900,8 +7900,8 @@ def _t_22a48(run, rng):
     run.ram_write(0x300, struct.pack('<I', 0x40012C00))
     run.ram_write(0x308, b'\x05')
     r0v, _ = run.call(0x22A48, args=(RAM + 0x300,), max_insn=3000)
-    assert run.emu.insn >= 2900, f'byte[arg+8]=5: не спин (insn={run.emu.insn})'
-t(0x22A48, 'E2-b59: 0x22a48(r0) валидатор-трамплин: arg==0 -> ret1; u32[arg] вне 10 TIM-баз -> спин; валидная база + нулевые байты -> тело @0x22a96 (bl 0x22b7c), byte[+0x1A]=1, ret0; byte[+8]>4 -> спин')(_t_22a48)
+    assert run.emu.insn >= 2900, f'byte[arg+8]=5: not spin (insn={run.emu.insn})'
+t(0x22A48, 'E2-b59: 0x22a48(r0) validator trampoline: arg==0 -> ret1; u32[arg] outside 10 TIM bases -> spin; valid base + zero bytes -> body @0x22a96 (bl 0x22b7c), byte[+0x1A]=1, ret0; byte[+8]>4 -> spin')(_t_22a48)
 
 
 if __name__ == '__main__':

@@ -16,7 +16,7 @@ const prevValueText = {};   // key -> последний отрендеренн�
 // вписывается). С input:true работает как prompt(): резолвится строкой или
 // null при отмене; без input — как confirm(): true/false. ----
 function showModal(title, message, opts = {}) {
-  const { danger = false, okText = "Подтвердить", input = false, inputPlaceholder = "", inputType = "text", inputValue = "" } = opts;
+  const { danger = false, okText = "Confirm", input = false, inputPlaceholder = "", inputType = "text", inputValue = "" } = opts;
   return new Promise((resolve) => {
     const overlay = $("modal-overlay");
     const okBtn = $("modal-ok");
@@ -70,17 +70,20 @@ function hasPin() { return Boolean(localStorage.getItem(PIN_KEY)); }
 function updatePinButton() {
   const btn = $("pin-toggle");
   btn.classList.toggle("on", hasPin());
-  btn.title = hasPin() ? "PIN на разблокировку включён (клик — изменить/убрать)" : "PIN на разблокировку выключен (клик — включить)";
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  btn.title = hasPin()
+    ? (isEn ? "Unlock PIN enabled (click to change/disable)" : "PIN на разблокировку включён (клик — изменить/убрать)")
+    : (isEn ? "Unlock PIN disabled (click to enable)" : "PIN на разблокировку выключен (клик — включить)");
 }
 
 async function verifyPin() {
   if (!hasPin()) return true;
   const entered = await showModal(
-    "PIN для разблокировки", "Введите PIN, чтобы разблокировать самокат.",
-    { input: true, inputPlaceholder: "PIN", inputType: "password", okText: "Разблокировать" });
+    "Unlock PIN", "Enter PIN to unlock the scooter.",
+    { input: true, inputPlaceholder: "PIN", inputType: "password", okText: "Unlock" });
   if (!entered) return false;
   if ((await sha256Hex(entered)) !== localStorage.getItem(PIN_KEY)) {
-    alert("Неверный PIN.");
+    alert("Incorrect PIN.");
     return false;
   }
   return true;
@@ -89,15 +92,15 @@ async function verifyPin() {
 async function managePin() {
   if (hasPin()) {
     const cur = await showModal(
-      "Изменить PIN", "Введите текущий PIN, чтобы изменить или отключить защиту.",
-      { input: true, inputPlaceholder: "текущий PIN", inputType: "password", okText: "Далее" });
+      "Change PIN", "Enter current PIN to change or disable protection.",
+      { input: true, inputPlaceholder: "current PIN", inputType: "password", okText: "Next" });
     if (!cur) return;
     if ((await sha256Hex(cur)) !== localStorage.getItem(PIN_KEY)) { alert("Неверный PIN."); return; }
   }
   const next = await showModal(
-    hasPin() ? "Новый PIN" : "Установить PIN на разблокировку",
-    `Минимум 4 цифры. ${hasPin() ? "Оставьте пустым, чтобы отключить защиту." : "Потребуется при каждой разблокировке."}`,
-    { input: true, inputPlaceholder: "новый PIN", inputType: "password", okText: "Далее" });
+    hasPin() ? "New PIN" : "Set Unlock PIN",
+    `Minimum 4 digits. ${hasPin() ? "Leave empty to disable protection." : "Required for every unlock."}`,
+    { input: true, inputPlaceholder: "new PIN", inputType: "password", okText: "Next" });
   if (next === null) return;
   if (!next) {
     if (hasPin()) {
@@ -106,11 +109,11 @@ async function managePin() {
     }
     return;
   }
-  if (!/^\d{4,}$/.test(next)) { alert("PIN должен быть числом из минимум 4 цифр."); return; }
+  if (!/^\d{4,}$/.test(next)) { alert("PIN must be a number with at least 4 digits."); return; }
   const repeat = await showModal(
-    "Повторите PIN", "Введите тот же PIN ещё раз для подтверждения.",
-    { input: true, inputPlaceholder: "повтор PIN", inputType: "password", okText: "Сохранить" });
-  if (repeat !== next) { alert("PIN не совпадает — попробуйте снова."); return; }
+    "Confirm PIN", "Re-enter the same PIN to confirm.",
+    { input: true, inputPlaceholder: "repeat PIN", inputType: "password", okText: "Save" });
+  if (repeat !== next) { alert("PIN does not match — try again."); return; }
   localStorage.setItem(PIN_KEY, await sha256Hex(next));
   updatePinButton();
 }
@@ -127,7 +130,8 @@ function isSelected(mac) {
 
 function updateScooterButton() {
   const cur = scooters.find((s) => isSelected(s.mac));
-  $("scooter-toggle").textContent = "📡 " + (cur ? cur.name : "выбрать");
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  $("scooter-toggle").textContent = "📡 " + (cur ? cur.name : (isEn ? "select" : "выбрать"));
 }
 
 async function loadScooters() {
@@ -147,7 +151,7 @@ function renderScootersList() {
   if (!scooters.length) {
     const empty = document.createElement("div");
     empty.className = "scooter-mac";
-    empty.textContent = "Пока нет сохранённых самокатов — добавьте сканом рядом или вручную.";
+    empty.textContent = "No saved scooters yet — add via nearby scan or manually.";
     box.appendChild(empty);
     return;
   }
@@ -172,7 +176,7 @@ function renderScootersList() {
     selectBtn.type = "button";
     selectBtn.className = "modal-btn scooter-select";
     const active = isSelected(s.mac);
-    selectBtn.textContent = active ? "Активен" : "Выбрать";
+    selectBtn.textContent = active ? "Active" : "Select";
     selectBtn.disabled = active;
     selectBtn.onclick = () => {
       selectedMac = s.mac;
@@ -186,7 +190,7 @@ function renderScootersList() {
     ltmkBtn.type = "button";
     ltmkBtn.className = "modal-btn scooter-ltmk";
     ltmkBtn.textContent = "🔑";
-    ltmkBtn.title = "Получить LTMK через Mi Cloud";
+    ltmkBtn.title = "Get LTMK via Mi Cloud";
     ltmkBtn.onclick = () => openLtmkFlow(s.mac, s.name);
     actions.appendChild(ltmkBtn);
 
@@ -194,15 +198,15 @@ function renderScootersList() {
     delBtn.type = "button";
     delBtn.className = "modal-btn scooter-del";
     delBtn.textContent = "✕";
-    delBtn.title = "Удалить";
+    delBtn.title = "Delete";
     delBtn.onclick = async () => {
-      if (!(await showModal("Удалить самокат?", `«${s.name}» (${s.mac}) будет удалён из списка сохранённых.`, { danger: true, okText: "Удалить" }))) return;
+      if (!(await showModal("Delete scooter?", `"${s.name}" (${s.mac}) will be removed from saved profiles.`, { danger: true, okText: "Delete" }))) return;
       const r = await fetch("/api/scooters/delete", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mac: s.mac }),
       });
       const j = await r.json();
-      if (!j.ok) { alert(j.error || "не удалось удалить"); return; }
+      if (!j.ok) { alert(j.error || "failed to delete"); return; }
       scooters = j.scooters;
       if (isSelected(s.mac)) {
         selectedMac = scooters[0] ? scooters[0].mac : "";
@@ -237,7 +241,7 @@ async function addScooterProfile(name, mac) {
     body: JSON.stringify({ name, mac }),
   });
   const j = await r.json();
-  if (!j.ok) { alert(j.error || "не удалось добавить"); return false; }
+  if (!j.ok) { alert(j.error || "failed to add"); return false; }
   scooters = j.scooters;
   selectedMac = mac.toUpperCase();
   localStorage.setItem(SELECTED_MAC_KEY, selectedMac);
@@ -247,9 +251,9 @@ async function addScooterProfile(name, mac) {
 }
 
 $("scooters-add").onclick = async () => {
-  const name = await showModal("Новый самокат", "Название для удобства (например «мой» или «рабочий»).", { input: true, inputPlaceholder: "название", okText: "Далее" });
+  const name = await showModal("New scooter", "Friendly name (e.g. 'mine' or 'work').", { input: true, inputPlaceholder: "name", okText: "Next" });
   if (!name) return;
-  const mac = await showModal("MAC самоката", "Формат AA:BB:CC:DD:EE:FF.", { input: true, inputPlaceholder: "AA:BB:CC:DD:EE:FF", okText: "Сохранить" });
+  const mac = await showModal("Scooter MAC", "Format AA:BB:CC:DD:EE:FF.", { input: true, inputPlaceholder: "AA:BB:CC:DD:EE:FF", okText: "Save" });
   if (!mac) return;
   await addScooterProfile(name, mac);
 };
@@ -261,7 +265,7 @@ function renderScanResults(devices) {
   if (!devices.length) {
     const empty = document.createElement("div");
     empty.className = "scooter-mac";
-    empty.textContent = "Рядом ничего не найдено — самокат должен быть включён и не подключён к телефону/другому устройству.";
+    empty.textContent = "No devices found nearby — make sure scooter is powered on and not connected to a phone/other device.";
     box.appendChild(empty);
     return;
   }
@@ -277,7 +281,7 @@ function renderScanResults(devices) {
     name.textContent = (d.likely ? "🛴 " : "") + d.name;
     const meta = document.createElement("div");
     meta.className = "scooter-mac";
-    meta.textContent = `${d.mac} · RSSI ${d.rssi} дБм`;
+    meta.textContent = `${d.mac} · RSSI ${d.rssi} dBm`;
     info.append(name, meta);
 
     const actions = document.createElement("div");
@@ -285,15 +289,15 @@ function renderScanResults(devices) {
     if (savedMacs.has(d.mac.toUpperCase())) {
       const tag = document.createElement("span");
       tag.className = "scooter-mac";
-      tag.textContent = "уже сохранён";
+      tag.textContent = "already saved";
       actions.appendChild(tag);
     } else {
       const addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "modal-btn scooter-select";
-      addBtn.textContent = "+ Добавить";
+      addBtn.textContent = "+ Add";
       addBtn.onclick = async () => {
-        const name2 = await showModal("Название самоката", `MAC ${d.mac}`, { input: true, inputValue: d.name, okText: "Сохранить" });
+        const name2 = await showModal("Scooter Name", `MAC ${d.mac}`, { input: true, inputValue: d.name, okText: "Save" });
         if (!name2) return;
         if (await addScooterProfile(name2, d.mac)) renderScanResults(devices);
       };
@@ -309,7 +313,7 @@ $("scooters-scan-btn").onclick = async () => {
   const btn = $("scooters-scan-btn");
   const orig = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Сканирую (5с)…";
+  btn.textContent = "Scanning (5s)…";
   $("scooters-scan-results").hidden = false;
   $("scooters-scan-results").innerHTML = "";
   try {
@@ -318,10 +322,10 @@ $("scooters-scan-btn").onclick = async () => {
       body: JSON.stringify({ timeout: 5 }),
     });
     const j = await r.json();
-    if (!j.ok) { alert(j.error || "скан не удался"); return; }
+    if (!j.ok) { alert(j.error || "scan failed"); return; }
     renderScanResults(j.devices || []);
   } catch (e) {
-    alert(`скан не удался: ${e.message}`);
+    alert(`scan failed: ${e.message}`);
   } finally {
     btn.disabled = false;
     btn.textContent = orig;
@@ -346,26 +350,26 @@ $("ltmk-overlay").addEventListener("click", (e) => {
 });
 
 async function ltmkStepLogin(mac, name) {
-  ltmkSetBody(`<div class="scooter-mac">Проверяю сессию Mi Cloud…</div>`);
+  ltmkSetBody(`<div class="scooter-mac">Checking Mi Cloud session…</div>`);
   const st = await (await fetch("/api/ltmk/status")).json();
   if (st.logged_in) { await ltmkStepDevices(mac, name); return; }
 
   ltmkSetBody(
-    `<div class="scooter-mac">Вход в Mi Cloud нужен один раз — сессия сохранится локально (без пароля, по QR).</div>
-     <button id="ltmk-qr-start" type="button" class="modal-btn scooter-select">Показать QR для входа</button>
+    `<div class="scooter-mac">Mi Cloud login is required once — session is stored locally (no password, via QR).</div>
+     <button id="ltmk-qr-start" type="button" class="modal-btn scooter-select">Show QR for login</button>
      <div id="ltmk-qr-box"></div>`);
   $("ltmk-qr-start").onclick = async () => {
     $("ltmk-qr-start").disabled = true;
     const r = await fetch("/api/ltmk/qr_start", { method: "POST" });
     const j = await r.json();
-    if (!j.ok) { alert(j.error || "не удалось начать вход"); $("ltmk-qr-start").disabled = false; return; }
+    if (!j.ok) { alert(j.error || "failed to start login"); $("ltmk-qr-start").disabled = false; return; }
     const linkHtml = j.login_url
-      ? `<div class="scooter-mac">Или, если в браузере на этом компьютере уже открыт аккаунт Xiaomi:
-           <a href="${esc(j.login_url)}" target="_blank" rel="noopener">войти по ссылке</a>, без сканирования.</div>`
+      ? `<div class="scooter-mac">Or, if Xiaomi account is already open in this computer's browser:
+           <a href="${esc(j.login_url)}" target="_blank" rel="noopener">log in via link</a> without scanning.</div>`
       : "";
     $("ltmk-qr-box").innerHTML =
       `<img class="ltmk-qr-img" src="data:image/png;base64,${j.qr_png_b64}" alt="QR для входа в Mi Cloud">
-       <div class="scooter-mac">Отсканируйте в приложении Mi Home / Xiaomi Home…</div>
+       <div class="scooter-mac">Scan in Mi Home / Xiaomi Home app…</div>
        ${linkHtml}`;
     pollLtmkQrLogin(mac, name);
   };
@@ -377,17 +381,17 @@ async function pollLtmkQrLogin(mac, name) {
     if ($("ltmk-overlay").hidden) return;   // модалку закрыли — прекращаем поллинг
     const j = await (await fetch("/api/ltmk/qr_status")).json();
     if (j.status === "done") { await ltmkStepDevices(mac, name); return; }
-    if (j.status === "error") { ltmkSetBody(`<div class="scooter-mac">Ошибка входа: ${esc(j.error || "?")}</div>`); return; }
+    if (j.status === "error") { ltmkSetBody(`<div class="scooter-mac">Login error: ${esc(j.error || "?")}</div>`); return; }
   }
 }
 
 async function ltmkStepDevices(mac, name) {
-  ltmkSetBody(`<div class="scooter-mac">Загружаю список устройств аккаунта…</div>`);
+  ltmkSetBody(`<div class="scooter-mac">Loading account device list…</div>`);
   const r = await fetch("/api/ltmk/devices");
   const j = await r.json();
-  if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Ошибка: ${esc(j.error || "?")}</div>`); return; }
+  if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Error: ${esc(j.error || "?")}</div>`); return; }
   const devices = j.devices || [];
-  if (!devices.length) { ltmkSetBody(`<div class="scooter-mac">В аккаунте не нашлось устройств.</div>`); return; }
+  if (!devices.length) { ltmkSetBody(`<div class="scooter-mac">No devices found in this account.</div>`); return; }
 
   const box = document.createElement("div");
   box.className = "scooters-list";
@@ -399,7 +403,7 @@ async function ltmkStepDevices(mac, name) {
     info.className = "scooter-info";
     const dname = document.createElement("div");
     dname.className = "scooter-name";
-    dname.textContent = d.name + (match ? " · это устройство" : "");
+    dname.textContent = d.name + (match ? " · this device" : "");
     const dmeta = document.createElement("div");
     dmeta.className = "scooter-mac";
     dmeta.textContent = [d.model, d.mac].filter(Boolean).join(" · ");
@@ -407,7 +411,7 @@ async function ltmkStepDevices(mac, name) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "modal-btn scooter-select";
-    btn.textContent = "Выбрать";
+    btn.textContent = "Select";
     btn.onclick = () => ltmkStepFetch(d.did, d.country, mac || d.mac);
     row.append(info, btn);
     box.appendChild(row);
@@ -417,7 +421,7 @@ async function ltmkStepDevices(mac, name) {
 }
 
 async function ltmkStepFetch(did, country, mac, pin) {
-  ltmkSetBody(`<div class="scooter-mac">Получаю ключ…</div>`);
+  ltmkSetBody(`<div class="scooter-mac">Fetching key…</div>`);
   const r = await fetch("/api/ltmk/fetch", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ did, country, mac, pin: pin || undefined }),
@@ -425,18 +429,18 @@ async function ltmkStepFetch(did, country, mac, pin) {
   const j = await r.json();
   if (r.status === 428 || j.error === "PIN_REQUIRED") {
     const enteredPin = await showModal(
-      "Нужен PIN",
-      "На этом аккаунте ключ защищён PIN'ом шаринга Bluetooth (задан в Mi Home при привязке самоката). Введите его.",
-      { input: true, inputType: "password", inputPlaceholder: "PIN", okText: "Далее" });
-    if (!enteredPin) { ltmkSetBody(`<div class="scooter-mac">Отменено.</div>`); return; }
+      "PIN Required",
+      "This key is protected by a Bluetooth sharing PIN (configured in Mi Home). Enter it.",
+      { input: true, inputType: "password", inputPlaceholder: "PIN", okText: "Next" });
+    if (!enteredPin) { ltmkSetBody(`<div class="scooter-mac">Canceled.</div>`); return; }
     await ltmkStepFetch(did, country, mac, enteredPin);
     return;
   }
   if (!j.ok) { ltmkSetBody(`<div class="scooter-mac">Ошибка: ${esc(j.error || "?")}</div>`); return; }
 
   ltmkSetBody(
-    `<div class="scooter-mac">Готово: LTMK сохранён для ${esc(mac)} (${j.length} байт).</div>
-     <button id="ltmk-reveal" type="button" class="modal-btn scooter-select">Показать QR для телефона</button>
+    `<div class="scooter-mac">Done: LTMK saved for ${esc(mac)} (${j.length} bytes).</div>
+     <button id="ltmk-reveal" type="button" class="modal-btn scooter-select">Show QR for phone</button>
      <div id="ltmk-reveal-box"></div>`);
   $("ltmk-reveal").onclick = async () => {
     const rr = await fetch("/api/ltmk/reveal_qr", {
@@ -444,10 +448,10 @@ async function ltmkStepFetch(did, country, mac, pin) {
       body: JSON.stringify({ mac }),
     });
     const jj = await rr.json();
-    if (!jj.ok) { alert(jj.error || "не удалось показать QR"); return; }
+    if (!jj.ok) { alert(jj.error || "failed to show QR"); return; }
     $("ltmk-reveal-box").innerHTML =
-      `<img class="ltmk-qr-img" src="data:image/png;base64,${jj.qr_png_b64}" alt="QR с LTMK">
-       <div class="scooter-mac">Отсканируйте в PWA при добавлении этого самоката. Не показывайте этот экран посторонним.</div>`;
+      `<img class="ltmk-qr-img" src="data:image/png;base64,${jj.qr_png_b64}" alt="LTMK QR code">
+       <div class="scooter-mac">Scan in PWA when adding this scooter. Keep this screen confidential.</div>`;
   };
 }
 
@@ -456,6 +460,8 @@ function esc(s) {
 }
 
 function shortName(key, state) {
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  if (isEn && state.labels_en && state.labels_en[key]) return state.labels_en[key];
   return (state.labels && state.labels[key]) || (state.names && state.names[key]) || key;
 }
 
@@ -494,24 +500,26 @@ function renderHero(state) {
   const dash = (pct / 100) * C;
   const col = batteryColor(bat);
 
+  const isEn = window.I18N && window.I18N.getLang() === "en";
   const tiles = [
-    ["Ср. скорость", speed == null ? "—" : `${speed.toFixed(1)}`, "км/ч"],
-    ["Запас хода", range == null ? "—" : `${range.toFixed(1)}`, "км"],
-    ["Мощность", power == null ? "—" : `${Math.round(power)}`, "Вт"],
-    ["Напряжение", volt == null ? "—" : `${volt.toFixed(1)}`, "В"],
-    ["Ток", curr == null ? "—" : `${curr.toFixed(1)}`, "А"],
+    [isEn ? "Avg speed" : "Ср. скорость", speed == null ? "—" : `${speed.toFixed(1)}`, isEn ? "km/h" : "км/ч"],
+    [isEn ? "Range" : "Запас хода", range == null ? "—" : `${range.toFixed(1)}`, isEn ? "km" : "км"],
+    [isEn ? "Power" : "Мощность", power == null ? "—" : `${Math.round(power)}`, isEn ? "W" : "Вт"],
+    [isEn ? "Voltage" : "Напряжение", volt == null ? "—" : `${volt.toFixed(1)}`, isEn ? "V" : "В"],
+    [isEn ? "Current" : "Ток", curr == null ? "—" : `${curr.toFixed(1)}`, isEn ? "A" : "А"],
   ].map(([l, v, u]) => `<div class="stat-item">
       <div class="sl">${l}</div>
       <div class="sv">${v}<span class="su">${u}</span></div>
     </div>`).join("");
 
   const chips = [];
-  const modeTxt = modeP && modeP.text ? esc(String(modeP.text).replace(/\s*\(raw.*\)/, "")) : null;
+  const rawMode = modeP ? ((isEn && modeP.text_en) ? modeP.text_en : modeP.text) : null;
+  const modeTxt = rawMode ? esc(String(rawMode).replace(/\s*\(raw.*\)/, "")) : null;
   if (modeTxt) chips.push(`<span class="chip mode">${modeTxt}</span>`);
-  if (locked != null) chips.push(`<span class="chip ${locked ? "bad" : "ok"}">${locked ? "🔒 Заблокирован" : "🔓 Разблокирован"}</span>`);
-  if (riding) chips.push(`<span class="chip ok">🛴 Движение</span>`);
-  if (charging) chips.push(`<span class="chip warn">⚡ Зарядка</span>`);
-  if (fault != null) chips.push(`<span class="chip ${fault ? "bad" : "ok"}">${fault ? "⚠ Ошибка " + fault : "✓ Без ошибок"}</span>`);
+  if (locked != null) chips.push(`<span class="chip ${locked ? "bad" : "ok"}">${locked ? (isEn ? "🔒 Locked" : "🔒 Заблокирован") : (isEn ? "🔓 Unlocked" : "🔓 Разблокирован")}</span>`);
+  if (riding) chips.push(`<span class="chip ok">${isEn ? "🛴 Riding" : "🛴 Движение"}</span>`);
+  if (charging) chips.push(`<span class="chip warn">${isEn ? "⚡ Charging" : "⚡ Зарядка"}</span>`);
+  if (fault != null) chips.push(`<span class="chip ${fault ? "bad" : "ok"}">${fault ? (isEn ? "⚠ Fault " + fault : "⚠ Ошибка " + fault) : (isEn ? "✓ No faults" : "✓ Без ошибок")}</span>`);
 
   host.innerHTML = `
     <div class="hero-battery">
@@ -578,12 +586,13 @@ function renderRideMode(state) {
   batEl.textContent = bat == null ? "—" : `${Math.round(bat)}%`;
   batEl.style.color = bat == null ? "#fff" : batteryColor(bat);
 
-  $("rm-range").textContent = range == null ? "—" : `${range.toFixed(1)} км`;
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  $("rm-range").textContent = range == null ? "—" : `${range.toFixed(1)} ${isEn ? "km" : "км"}`;
 
   const tripDist = pnum(state, "1.9");                 // CURRENT_MILEAGE (сессия)
-  $("rm-trip-dist").textContent = tripDist == null ? "—" : `${tripDist.toFixed(1)} км`;
+  $("rm-trip-dist").textContent = tripDist == null ? "—" : `${tripDist.toFixed(1)} ${isEn ? "km" : "км"}`;
   const tripTimeP = prop(state, "2.8");                 // RIDING_TIME — берём уже отформатированный текст
-  $("rm-trip-time").textContent = tripTimeP && tripTimeP.text ? tripTimeP.text : "—";
+  $("rm-trip-time").textContent = tripTimeP ? ((isEn && tripTimeP.text_en) ? tripTimeP.text_en : tripTimeP.text) : "—";
 
   const modeTxt = modeP && modeP.text ? esc(String(modeP.text).replace(/\s*\(raw.*\)/, "")) : null;
   const modeEl = $("rm-mode");
@@ -607,14 +616,14 @@ function renderRideMode(state) {
     lockBtn.classList.toggle("bad", Boolean(locked));
     lockBtn.classList.toggle("ok", !locked);
     if (!lockBtn.classList.contains("holding")) {
-      lockBtn.textContent = locked ? "🔒 Заблокирован" : "🔓 Разблокирован";
+      lockBtn.textContent = locked ? (isEn ? "🔒 Locked" : "🔒 Заблокирован") : (isEn ? "🔓 Unlocked" : "🔓 Разблокирован");
     }
   }
 
   const banner = $("rm-fault-banner");
   if (fault) {
     banner.hidden = false;
-    banner.textContent = `⚠ ОШИБКА ${fault}`;
+    banner.textContent = isEn ? `⚠ FAULT ${fault}` : `⚠ ОШИБКА ${fault}`;
   } else {
     banner.hidden = true;
   }
@@ -690,7 +699,9 @@ const GROUP_ICONS = {
 function buildGroups(state) {
   const container = $("groups");
   container.innerHTML = "";
-  for (const g of state.groups || []) {
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  const groupsList = (isEn && state.groups_en) ? state.groups_en : (state.groups || []);
+  for (const g of groupsList) {
     const sec = document.createElement("section");
     sec.className = "panel group";
 
@@ -744,16 +755,23 @@ function renderRideLog(state) {
   const wrap = document.querySelector('.ridelog[data-group="logs"]');
   if (!wrap) return;
   const rides = [];
+  const isEn = window.I18N && window.I18N.getLang() === "en";
   for (let i = 1; i <= 5; i++) {
     const p = (state.properties || {})["6." + i];
-    if (p && Array.isArray(p.rides)) rides.push(...p.rides);
+    if (p) {
+      const list = (isEn && p.rides_en) ? p.rides_en : p.rides;
+      if (Array.isArray(list)) rides.push(...list);
+    }
   }
   if (!rides.length) {
-    wrap.innerHTML = '<div class="ride-empty">нет записей о поездках</div>';
+    wrap.innerHTML = `<div class="ride-empty">${window.I18N ? window.I18N.t("no_trip_records") : "нет записей о поездках"}</div>`;
     return;
   }
-  const head = '<div class="ride-row ride-head"><span>#</span><span>Длительность</span>'
-    + '<span>Дистанция</span><span>Ср. скорость</span><span>Макс.</span></div>';
+  const durH = window.I18N ? window.I18N.t("table_dur") : "Длительность";
+  const distH = window.I18N ? window.I18N.t("table_dist") : "Дистанция";
+  const avgH = window.I18N ? window.I18N.t("table_avg") : "Ср. скорость";
+  const maxH = window.I18N ? window.I18N.t("table_max") : "Макс.";
+  const head = `<div class="ride-row ride-head"><span>#</span><span>${durH}</span><span>${distH}</span><span>${avgH}</span><span>${maxH}</span></div>`;
   const rows = rides.map((r, i) =>
     `<div class="ride-row"><span class="ride-idx">${i + 1}</span>`
     + `<span>${esc(r.dur)}</span><span>${esc(r.dist)}</span>`
@@ -781,10 +799,11 @@ function updateProps(state) {
     }
 
     card.classList.add("has-data");
-    const newText = p.text || "—";
+    const isEn = window.I18N && window.I18N.getLang() === "en";
+    const newText = (isEn && p.text_en) ? p.text_en : (p.text || "—");
     value.textContent = newText;
-    card.classList.toggle("bool-on", p.text === "вкл");
-    card.classList.toggle("bool-off", p.text === "выкл");
+    card.classList.toggle("bool-on", p.text === "вкл" || p.text === "on");
+    card.classList.toggle("bool-off", p.text === "выкл" || p.text === "off");
     // длинные/описательные строки — мельче и с переносом, числа остаются крупными
     value.classList.toggle("val-text", Boolean(p.text) && p.text.length > 14);
     // живой индикатор: вспышка при РЕАЛЬНОЙ смене значения (не при первом заполнении)
@@ -838,7 +857,8 @@ function updateHistory(state) {
 
   while (box.children.length > 150) box.removeChild(box.firstChild);
   box.scrollTop = box.scrollHeight;
-  $("histcount").textContent = (state.history || []).length ? `${lastHistId} раунд(ов)` : "";
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  $("histcount").textContent = (state.history || []).length ? `${lastHistId} ${isEn ? "round(s)" : "раунд(ов)"}` : "";
 }
 
 function updateEvents(state) {
@@ -884,12 +904,15 @@ function updateControls(state) {
     ? rxEntries.map(([k, v]) => `${k}:${v}`).join("  ")
     : "∅";
 
+  const isEn = window.I18N && window.I18N.getLang() === "en";
   writeEnabled = Boolean(state.write_enabled);
   stateWritable = new Set(state.writable || []);
-  stateConfirm = state.writable_confirm || {};
-  stateWritableValues = state.writable_values || {};
+  stateConfirm = (isEn && state.writable_confirm_en) ? state.writable_confirm_en : (state.writable_confirm || {});
+  stateWritableValues = (isEn && state.writable_values_en) ? state.writable_values_en : (state.writable_values || {});
   const wb = $("write-toggle");
-  wb.textContent = writeEnabled ? "🔓 Управление вкл" : "🔒 Только чтение";
+  wb.textContent = writeEnabled
+    ? (isEn ? "🔓 Control on" : "🔓 Управление вкл")
+    : (isEn ? "🔒 Read only" : "🔒 Только чтение");
   wb.classList.toggle("on", writeEnabled);
   document.body.classList.toggle("write-on", writeEnabled);
 }
@@ -900,12 +923,13 @@ async function tick() {
     const r = await fetch("/api/state", { cache: "no-store" });
     state = await r.json();
   } catch (e) {
-    $("conn").textContent = "нет связи с сервером";
+    $("conn").textContent = "no connection to server";
     $("conn").className = "conn bad";
     return;
   }
 
-  $("conn").textContent = `связь OK · ${state.last_update}`;
+  const isEn = window.I18N && window.I18N.getLang() === "en";
+  $("conn").textContent = `${isEn ? "comm OK" : "связь OK"} · ${state.last_update}`;
   $("conn").className = "conn";
 
   lastState = state;
@@ -955,8 +979,8 @@ $("ridemode-exit").onclick = exitRideMode;
 $("write-toggle").onclick = async () => {
   const enabled = !writeEnabled;
   if (enabled && !(await showModal(
-    "Включить режим управления?",
-    "Клик по функции будет менять настройку самоката (SET), пока не выключите обратно."))) {
+    "Enable control mode?",
+    "Clicking a setting will change the scooter configuration (SET) until toggled off."))) {
     return;
   }
   await fetch("/api/write_mode", {
@@ -1015,3 +1039,20 @@ loadScooters();
 
 setInterval(tick, 1000);
 tick();
+
+// Re-render and re-apply translations when language toggles
+if (window.I18N) {
+  window.I18N.onLanguageChange(() => {
+    groupsBuilt = false;
+    if (lastState) {
+      updateControls(lastState);
+      renderHero(lastState);
+      renderRideMode(lastState);
+      buildGroups(lastState);
+      updateProps(lastState);
+      renderRideLog(lastState);
+    }
+    updatePinButton();
+    updateScooterButton();
+  });
+}

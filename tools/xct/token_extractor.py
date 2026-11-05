@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 from PIL import Image
 
 if sys.platform != "win32":
-    import readline  # noqa: F401 — включает историю ввода в консоли (side effect)
+    import readline  # noqa: F401 — enables console input history (side effect)
 
 SERVERS = ["cn", "de", "us", "ru", "tw", "sg", "in", "i2"]
 NAME_TO_LEVEL = {

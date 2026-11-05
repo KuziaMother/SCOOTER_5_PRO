@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Диагностика: handshake, затем nvm_write БЕЗ ожидания ответа (гипотеза: молчит по
-дизайну), пауза под эрейз, потом ОДИН чанк данных (128Б) — смотрим, придёт ли ACK 0x06.
-Дальше (второй чанк, wr_info, dfu) не идёт — только один чанк для проверки гипотезы.
+"""Diagnostics: handshake, then nvm_write without awaiting reply, pause for erase,
+then single chunk (128B) — verifies ACK 0x06 reception.
 
-Запуск: python tools/mcu_chunk_sniff.py --port COM3 --fw firmware_ota/<mcu>.bin
+Usage: python tools/mcu_chunk_sniff.py --port COM3 --fw firmware_ota/<mcu>.bin
 """
 import argparse
 import os
@@ -74,7 +73,7 @@ def main():
     a = ap.parse_args()
 
     fw = open(a.fw, "rb").read()
-    log(f"образ: {a.fw} ({len(fw)} Б)")
+    log(f"image: {a.fw} ({len(fw)} B)")
 
     s = serial.Serial(a.port, 19200, timeout=0.3)
     time.sleep(0.3)
@@ -93,7 +92,7 @@ def main():
             uid = d[i + 3:i + 3 + 16]
             break
     if uid is None:
-        sys.exit("ABORT: UID не получен")
+        sys.exit("ABORT: UID not received")
     log(f"UID: {uid.hex()}")
 
     # --- rd_info ---
@@ -101,7 +100,7 @@ def main():
     s.write(b"down rd_info\r\x00\x00\x00")
     o = strip_push(read_for(s, 2.0))
     if not o.startswith(b"ok"):
-        sys.exit(f"ABORT: rd_info не ok: {o[:20]!r}")
+        sys.exit(f"ABORT: rd_info not ok: {o[:20]!r}")
     log(f"rd_info: {o[:40]!r}")
 
     # --- ble_rand ---
@@ -113,8 +112,8 @@ def main():
     if not o.startswith(b"ok "):
         sys.exit(f"ABORT: ble_rand: {o[:20]!r}")
     if o[3:19] != bytes(sign_rand(bytearray(uid), bytearray(rand), fw, 0x24187, 0x24387)):
-        sys.exit("ABORT: sign_rand не совпал")
-    log("ble_rand: крипто совпала")
+        sys.exit("ABORT: sign_rand mismatch")
+    log("ble_rand: crypto matched")
 
     # --- mcu_rand ---
     s.reset_input_buffer()
@@ -131,19 +130,19 @@ def main():
     s.write(b"down mcu_key " + key + b"\r")
     o = strip_push(read_for(s, 2.0))
     if not o.startswith(b"ok"):
-        sys.exit(f"ABORT: mcu_key отклонён: {o[:20]!r}")
-    log("mcu_key: принят")
+        sys.exit(f"ABORT: mcu_key rejected: {o[:20]!r}")
+    log("mcu_key: accepted")
 
-    # --- nvm_write БЕЗ ожидания ответа (гипотеза: молчит по дизайну) ---
+    # --- nvm_write WITHOUT waiting for response (hypothesis: silent by design) ---
     s.reset_input_buffer()
     s.write(b"down nvm_write 00000000\r")
-    log("nvm_write отправлен, НЕ жду ответа — пауза 5с под эрейз сектора...")
+    log("nvm_write sent, NOT awaiting reply — 5s pause for sector erase...")
     time.sleep(5.0)
     leftover = strip_push(s.read(s.in_waiting or 1))
     if leftover:
-        log(f"(за время паузы всё же пришло что-то небросовое: {leftover[:60]!r})")
+        log(f"(during pause non-discarded bytes received: {leftover[:60]!r})")
 
-    # --- один чанк данных (128Б), ждём ACK 0x06 ---
+    # --- one data chunk (128B), wait for ACK 0x06 ---
     chunk = fw[0:128]
     if len(chunk) < 128:
         chunk += b"\xFF" * (128 - len(chunk))
@@ -156,15 +155,15 @@ def main():
         ack = read_until_byte(s, 0x06, timeout=2.0)
         if ack:
             break
-        log(f"попытка {attempt+1}/3 — ACK не пришёл, повтор...")
+        log(f"attempt {attempt+1}/3 — ACK not received, retrying...")
     if ack:
-        log(">>> ЕСТЬ ACK 0x06 на первый чанк! Гипотеза подтверждена: nvm_write молчит по дизайну.")
+        log(">>> ACK 0x06 RECEIVED on first chunk! Hypothesis confirmed: nvm_write is silent by design.")
     else:
-        log(">>> ACK на чанк НЕ пришёл. Гипотеза не подтверждена — проблема глубже, чем отсутствие ACK на nvm_write.")
+        log(">>> ACK for chunk NOT received. Hypothesis rejected.")
 
     raw_dir = "uart_raw"
     os.makedirs(raw_dir, exist_ok=True)
-    log("Диагностика завершена (только 1 чанк, дальше НЕ иду). Закрываю сессию.")
+    log("Diagnostics complete (1 chunk only, stopping). Closing session.")
     s.close()
 
 

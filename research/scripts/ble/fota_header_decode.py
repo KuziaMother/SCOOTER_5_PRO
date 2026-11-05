@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-§62 — Декодер FOTA-хедеров BLE-образа (Realtek RTL8762C) по SDK-структурам.
+Section 62 - Decoder of FOTA headers of BLE image (Realtek RTL8762C) based on SDK structures.
 
-Структуры взяты из zip_archives/rtl8762c-sdk-full/inc/platform/patch_header_check.h
-(#pragma pack(1)). Пакет = два 1KB-хедера (ic_type=5, общий uuid) + payload'ы + cert-trailer.
+Structures taken from zip_archives/rtl8762c-sdk-full/inc/platform/patch_header_check.h
+(#pragma pack(1)). Package = two 1KB headers (ic_type=5, shared uuid) + payloads + cert trailer.
 
-Запуск:  python -X utf8 scripts/ble/fota_header_decode.py [path-to-ble.bin]
+Run: python -X utf8 scripts/ble/fota_header_decode.py [path-to-ble.bin]
 """
 import os
 import struct
@@ -27,7 +27,7 @@ def ctrl_flag_bits(v):
 
 
 def decode_ctrl(img, off):
-    """T_IMG_CTRL_HEADER_FORMAT (12 Б)."""
+    """T_IMG_CTRL_HEADER_FORMAT (12 B)."""
     return dict(
         ic_type=img[off], secure_version=img[off + 1],
         ctrl_flag=struct.unpack_from('<H', img, off + 2)[0],
@@ -38,7 +38,7 @@ def decode_ctrl(img, off):
 
 
 def decode_img_header(img, off):
-    """T_IMG_HEADER_FORMAT (ключевые поля; magic@0x30, dec_key@0x34)."""
+    """T_IMG_HEADER_FORMAT (key fields; magic@0x30, dec_key@0x34)."""
     c = decode_ctrl(img, off)
     d = dict(c)
     d['ctrl_flag_bits'] = ctrl_flag_bits(c['ctrl_flag'])
@@ -53,7 +53,7 @@ def decode_img_header(img, off):
 
 
 def find_headers(img):
-    """1KB-выровненные хедеры с ic_type==5."""
+    """1KB-aligned headers with ic_type==5."""
     out = []
     for off in range(0, max(0, len(img) - 0x400), 0x400):
         if img[off] == 5:
@@ -65,9 +65,9 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_IMG
     with open(path, 'rb') as f:
         img = f.read()
-    print(f"Образ: {os.path.basename(path)} ({len(img)} Б = {len(img):#x}), flash base {FLASH_BASE:#x}")
+    print(f"Image: {os.path.basename(path)} ({len(img)} B = {len(img):#x}), flash base {FLASH_BASE:#x}")
     hdrs = find_headers(img)
-    print(f"Хедеры (ic_type=5, 1KB-aligned): {[hex(h) for h in hdrs]}")
+    print(f"Headers (ic_type=5, 1KB-aligned): {[hex(h) for h in hdrs]}")
     uuids = set()
     for i, off in enumerate(hdrs, 1):
         d = decode_img_header(img, off)
@@ -80,7 +80,7 @@ def main():
         print(f"  exe_base={d['exe_base']:#x} load_base={d['load_base']:#x} "
               f"load_len={d['load_len']} ({d['load_len']:#x}) img_base={d['img_base']:#x}")
         print(f"  magic_pattern={d['magic_pattern']:#x} dec_key[16]={d['dec_key'].hex()}")
-    print(f"\nУникальных uuid: {len(uuids)} -> {[u for u in uuids]}")
+    print(f"\nUnique uuids: {len(uuids)} -> {[u for u in uuids]}")
 
 
 if __name__ == '__main__':

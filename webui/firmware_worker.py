@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-BLE-заливка прошивки — оркестрация поверх dreame_flasher.py, с прогрессом для
-веб-интерфейса. Держит собственный поток+event loop, как WebState._worker в
-app.py — заливка не может идти одновременно с обычной поллинг-сессией (одно
-BLE-соединение на процесс), взаимное исключение обеспечивает app.py ДО
-вызова start_flash() (проверка STATE.running).
+BLE firmware flashing — orchestration over dreame_flasher.py with progress
+reporting for web UI. Runs its own thread + event loop, like WebState._worker
+in app.py — flashing cannot run concurrently with a normal polling session
+(one BLE connection per process); mutual exclusion is enforced by app.py
+BEFORE calling start_flash() (STATE.running check).
 
-commit=True — тем же вызовом flash(): если фрагменты уже загружены (резюм по
-CRC, см. dreame_flasher.flash), заливка пропускается и сразу уходит в
-switchFirmware. Поэтому "Прошить" и "Переключить прошивку" в UI — это ДВА
-РАЗНЫХ явных запуска (start_flash(commit=False), потом start_flash(commit=True)),
-каждый — новое BLE-подключение; резюм делает повторную заливку дешёвой.
+commit=True uses the same flash() call: if fragments are already uploaded
+(CRC resume, see dreame_flasher.flash), uploading is skipped and jumps straight
+to switchFirmware. Therefore "Flash" and "Commit Firmware" in UI are TWO
+SEPARATE explicit launches (start_flash(commit=False), then start_flash(commit=True)),
+each being a new BLE connection; resume makes repeat flashing fast.
 
-switchFirmware НЕОБРАТИМ (риск кирпича) — commit=True должен запускаться
-только по явному подтверждению пользователя в UI (§5 CLAUDE.md).
+switchFirmware is IRREVERSIBLE (brick risk) — commit=True must be triggered
+only upon explicit user confirmation in the UI (§5 CLAUDE.md).
 """
 import asyncio
 import json
@@ -32,9 +32,8 @@ _log_lock = threading.Lock()
 
 
 def _log_event(**fields):
-    """Дописывает одну строку JSONL — переживает перезапуск сервера (FLASH_STATE
-    в памяти не переживает; см. обсуждение — раньше лога не было вовсе,
-    из-за этого реальная попытка прошивки была потеряна после рестарта)."""
+    """Appends one JSONL line — survives server restart (in-memory FLASH_STATE
+    does not survive; previously without log a flash attempt was lost on restart)."""
     fields["ts"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = json.dumps(fields, ensure_ascii=False)
     with _log_lock:
@@ -61,7 +60,7 @@ def read_log(limit=200):
 
 
 class FlashError(Exception):
-    """Ожидаемая отказная ветка (уже идёт заливка, файл не найден и т.п.)."""
+    """Expected failure branch (upload already in progress, file not found, etc.)."""
 
 
 class FlashState:
@@ -77,7 +76,7 @@ class FlashState:
             self.mac = None
             self.target = None
             self.filename = None
-            self.commit = False   # False = просто заливка, True = запущено с переключением (switchFirmware)
+            self.commit = False   # False = upload only, True = launched with firmware switch (switchFirmware)
             self.index = 0
             self.total = 0
             self.ok = 0
@@ -113,8 +112,8 @@ FLASH_STATE = FlashState()
 
 
 def _update_and_log(**kw):
-    """Единая точка обновления состояния — каждое изменение сразу и в
-    памяти (для живого поллинга UI), и на диске (переживает рестарт)."""
+    """Single state update point — each change is reflected both in
+    memory (for live UI polling) and on disk (survives restart)."""
     if kw.get("phase") == "error" and "error" not in kw:
         kw["error"] = kw.get("message")
     FLASH_STATE.update(**kw)
@@ -136,15 +135,15 @@ async def _run(mac, path, target, commit):
             ltmk = bytes.fromhex(f.read().strip())
     except Exception as e:
         _update_and_log(phase="error", success=False,
-                        error=f"нет/не читается {ltmk_path}: {type(e).__name__}")
+                        error=f"missing or unreadable {ltmk_path}: {type(e).__name__}")
         return
 
-    _update_and_log(phase="connecting", message="подключение к самокату…")
+    _update_and_log(phase="connecting", message="connecting to scooter…")
     t = da.Transport(mac)
     try:
         await df.login(t, ltmk)
     except Exception as e:
-        _update_and_log(phase="error", success=False, error=f"логин не удался: {e}")
+        _update_and_log(phase="error", success=False, error=f"login failed: {e}")
         try:
             await t.close()
         except Exception:
@@ -176,16 +175,16 @@ def _thread_main(mac, path, target, commit):
 
 def start_flash(mac, filename, target, commit=False):
     if FLASH_STATE.running:
-        raise FlashError("заливка уже идёт")
+        raise FlashError("flashing already in progress")
     if target not in ("ble", "mcu"):
-        raise FlashError("target должен быть ble или mcu")
+        raise FlashError("target must be ble or mcu")
     path = os.path.join(FIRMWARE_DIR, filename)
     if not os.path.isfile(path):
-        raise FlashError(f"файл не найден: {filename}")
+        raise FlashError(f"file not found: {filename}")
 
     FLASH_STATE.reset()
     FLASH_STATE.update(mac=mac, target=target, filename=filename, commit=commit)
-    _update_and_log(phase="starting", message="запуск…")
+    _update_and_log(phase="starting", message="starting…")
     FLASH_STATE.thread = threading.Thread(
         target=_thread_main, args=(mac, path, target, commit), daemon=True)
     FLASH_STATE.thread.start()

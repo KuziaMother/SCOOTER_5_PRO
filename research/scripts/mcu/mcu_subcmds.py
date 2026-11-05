@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Динамический маппинг подкоманд данных-канала (кадры 0x51..0x54).
+Dynamic mapping of data channel subcommands (frames 0x51..0x54).
 
-Форматы (выведены из состояний 0..5 агрегатора 0x1f71c):
+Formats (derived from states 0..5 of aggregator 0x1f71c):
   Path A (subcmd 0x10..0x1b, 0x53):
       HDR SUB LEN DATA×LEN CHK TRAILER
-      CHK = sum(frame[0..LEN+2]) & FF          (проверка в state 2)
+      CHK = sum(frame[0..LEN+2]) & FF          (check in state 2)
       TRAILER = 0xFF - HDR                     (frame[LEN+4], state 3)
   Path B (subcmd 0x20..0x2f, 0x35, 0x36, 0x50, 0x51):
       HDR SUB CHK TRAILER [DATA...]
       CHK = (HDR + SUB) & FF                   (frame[2], state 4)
       TRAILER = 0xFF - HDR                     (frame[3], state 5)
 
-Для каждой подкоманды: строим валидный кадр, гоняем 0x1f71c по циклу
-состояний, ловим ВСЕ записи в RAM → получаем «subcmd → поля».
+For each subcommand: build valid frame, run 0x1f71c over state
+cycle, catch ALL writes to RAM -> obtain "subcmd -> fields".
 
-Запуск:  python research/mcu_subcmds.py [--hdr 51] [--data 0102030405060708]
+Usage:  python research/mcu_subcmds.py [--hdr 51] [--data 0102030405060708]
 """
 import argparse
 import struct
@@ -55,7 +55,7 @@ def run_subcmd(frame, max_calls=8):
     uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
     uc.mem_write(SYS, bytes(SYS_SIZE))
     uc.mem_write(0x200002c8, b"\x00")   # slot A = 0
-    uc.mem_write(0x200002c7, b"\x01")   # flag B = 1 (гейт открыт)
+    uc.mem_write(0x200002c7, b"\x01")   # flag B = 1 (gate open)
     uc.mem_write(0x200002c9, b"\x00")   # slot B = 0
     uc.mem_write(0x20000180, b"\x00")   # state = 0
     uc.mem_write(0x20000182, b"\x00")   # off = 0
@@ -82,15 +82,15 @@ def run_subcmd(frame, max_calls=8):
             break
         st_out = struct.unpack("<B", uc.mem_read(CTX + 0x180 - 0x170, 1))[0]
         states_seen.append((st_in, st_out))
-        # если слот сдвинули (0x2c8 стал == 0x2c7) — кадр обработан
+        # if slot advanced (0x2c8 became == 0x2c7) - frame processed
         s = struct.unpack("<B", uc.mem_read(0x200002c8, 1))[0]
         if s == 1:
             break
 
-    # записи в RAM (кроме CTX-служебных 0x170..0x190 и счётчиков слотов)
+    # writes to RAM (except CTX service 0x170..0x190 and slot counters)
     data_w = {}
     for pc, a, sz, v in writes:
-        if 0x180 <= a <= 0x190:      # CTX служебные
+        if 0x180 <= a <= 0x190:      # CTX service
             continue
         if a in (0x2c7, 0x2c8, 0x2c9):
             continue
@@ -105,7 +105,7 @@ def run_subcmd(frame, max_calls=8):
             pcs = sorted(set(hex(p) for p, _, _ in recs))
             print(f"  [0x{a:05x}] {vals}   (pc={','.join(pcs[:4])})")
     else:
-        print("  записей в RAM-поля: НЕТ")
+        print("  writes to RAM fields: NONE")
     if emu.usart_out:
         print(f"  USART3: {bytes(emu.usart_out).hex(' ')}")
     return data_w
@@ -120,7 +120,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hdr", type=lambda x: int(x, 16), default=0x51)
     ap.add_argument("--data", default="0102030405060708",
-                    help="payload для path A (hex)")
+                    help="payload for path A (hex)")
     a = ap.parse_args()
     data = bytes.fromhex(a.data)
 

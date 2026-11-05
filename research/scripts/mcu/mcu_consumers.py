@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Потребители (readers) RAM-адресов RX-телеметрии — кто читает поля ответов BLE→MCU.
+Consumers (readers) of RX telemetry RAM addresses - who reads BLE->MCU response fields.
 
-Цель: физическая семантика полей из карты §16.4.4 («поле кадра -> адрес RAM»).
-Для каждого целевого диапазона в RAM находим функции, которые его ЧИТАЮТ:
+Goal: physical semantics of fields from map §16.4.4 ("frame field -> RAM address").
+For each target range in RAM find functions that READ it:
 
-  1) СТАТИКА: литеральные пулы — все `ldr rX,[pc,#imm]` (16- и 32-битные), чьё
-     слово пула попадает в целевой диапазон. Даёт кандидата + PC загрузки.
-  2) ДИНАМИКА (read-taint): прогон всех функций под Unicorn с READ-хуком на
-     диапазонах; фиксируем реально исполняемые чтения (pc, addr, size).
-     Ловит и вычисляемые доступы (база+смещение), если они исполняются при RAM=0.
+  1) STATIC: literal pools - all `ldr rX,[pc,#imm]` (16- and 32-bit) whose
+     pool word falls into target range. Gives candidate + load PC.
+  2) DYNAMIC (read-taint): run all functions under Unicorn with READ-hook on
+     ranges; record actually executed reads (pc, addr, size).
+     Also catches computed accesses (base+offset) if executed with RAM=0.
 
-Результат: для каждого поля — список потребительских функций + окно дизассемблера
-вокруг точки чтения (что делается со значением: cmp/mul/shift/clamp).
+Result: for each field - list of consumer functions + disassembler window
+around read point (what is done with value: cmp/mul/shift/clamp).
 
-Запуск:  python research/mcu_consumers.py [--dynamic] [--win 24]
+Usage:  python research/mcu_consumers.py [--dynamic] [--win 24]
 """
 import argparse
 import os
@@ -30,28 +30,28 @@ from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 FW = os.path.join(RES, "images", "mcu_0007.bin")
 RAM = 0x20000000
 
-# Кодовые секции (из functions_mcu/README.md)
+# Code sections (from functions_mcu/README.md)
 CODE = [(0x01200, 0x02400), (0x02600, 0x10200), (0x10400, 0x10e00),
         (0x11000, 0x12400), (0x12800, 0x13e00), (0x14200, 0x14400),
         (0x14600, 0x17a00), (0x18e00, 0x19200), (0x19a00, 0x24200),
         (0x24400, 0x24600)]
 
-# Целевые диапазоны: RAM-офсеты полей из §16.4.4 (карта «поле -> RAM»)
+# Target ranges: RAM offsets of fields from §16.4.4 ("field -> RAM" map)
 TARGETS = [
-    # (имя, lo_o, hi_o) — офсеты ОТ 0x20000000, диапазон включительно..исключительно
-    ("C41",   0x2b0, 0x2ba),   # CMD 0x41: u16 BE + байты
-    ("C41M",  0x2e8, 0x2f2),   # CMD 0x41 зеркало
-    ("C42",   0x2cb, 0x2d2),   # CMD 0x42: 7 байт
-    ("C43",   0x2d2, 0x2d9),   # CMD 0x43: 7 байт
+    # (name, lo_o, hi_o) - offsets FROM 0x20000000, range inclusive..exclusive
+    ("C41",   0x2b0, 0x2ba),   # CMD 0x41: u16 BE + bytes
+    ("C41M",  0x2e8, 0x2f2),   # CMD 0x41 mirror
+    ("C42",   0x2cb, 0x2d2),   # CMD 0x42: 7 bytes
+    ("C43",   0x2d2, 0x2d9),   # CMD 0x43: 7 bytes
     ("C45",   0x2da, 0x2e6),   # CMD 0x45: 6x u16 LE
     ("C44a",  0x2e6, 0x2e8),   # CMD 0x44: byte @0x2e6
-    ("C46",   0x2f2, 0x306),   # CMD 0x46: буфер (len cap 0x14)
+    ("C46",   0x2f2, 0x306),   # CMD 0x46: buffer (len cap 0x14)
     ("C44b",  0x306, 0x310),   # CMD 0x44: 0x306..0x30f
-    ("C48",   0x354, 0x358),   # CMD 0x48: 4 байта
+    ("C48",   0x354, 0x358),   # CMD 0x48: 4 bytes
     ("C49",   0x36a, 0x36c),   # CMD 0x49: u16 LE
     ("C4A",   0x36c, 0x36e),   # CMD 0x4A: u16 LE
-    ("B49",   0x1585, 0x1607), # CMD 0x49: буфер данных
-    ("B4A",   0x1607, 0x1690), # CMD 0x4A: буфер данных
+    ("B49",   0x1585, 0x1607), # CMD 0x49: data buffer
+    ("B4A",   0x1607, 0x1690), # CMD 0x4A: data buffer
 ]
 
 
@@ -63,7 +63,7 @@ def target_of(off):
 
 
 def load_funcs():
-    """Список подтверждённых функций из справочника (имена файлов)."""
+    """List of confirmed functions from reference (file names)."""
     d = os.path.join(RES, "functions_mcu")
     out = []
     for fn in sorted(os.listdir(d)):
@@ -73,8 +73,8 @@ def load_funcs():
 
 
 def func_of(pc, funcs):
-    """Функция, содержащая pc (по началу; границы из справочника не нужны —
-    для атрибуции достаточно ближайшего старта <= pc)."""
+    """Function containing pc (by start; boundaries from reference not needed -
+    nearest start <= pc is sufficient for attribution)."""
     best = None
     for f in funcs:
         if f <= pc:
@@ -85,11 +85,11 @@ def func_of(pc, funcs):
 
 
 def static_scan(d, funcs):
-    """Все ldr rX,[pc,#imm] со словом пула в целевых диапазонах.
+    """All ldr rX,[pc,#imm] with pool word in target ranges.
 
-    ВАЖНО: sequential-декод целых регионов десинхронизируется на встроенных
-    данных (см. README functions_mcu), поэтому деассемблируем ОКНА каждой
-    функции (skipdata=True) — так же, как gen_functions_mcu.py."""
+    IMPORTANT: sequential decode of entire regions desynchronizes on embedded
+    data (see README functions_mcu), so disassemble WINDOWS of each
+    function (skipdata=True) - same as gen_functions_mcu.py."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "gen_fm", os.path.join(os.path.dirname(HERE), "gen_functions_mcu.py"))
@@ -106,7 +106,7 @@ def static_scan(d, funcs):
                 continue
             imm_s = ops.split("[pc,#")[1][:-1]
             imm = int(imm_s, 16) if imm_s.startswith("0x") else int(imm_s)
-            # 16-битная форма: (addr+4)&~3 ; 32-битная: (addr+8)&~3
+            # 16-bit form: (addr+4)&~3 ; 32-bit: (addr+8)&~3
             base = (ins.address + (4 if len(ins.bytes) == 2 else 8)) & ~3
             pool = base + imm
             if not (0 <= pool < len(d) - 3):
@@ -122,7 +122,7 @@ def static_scan(d, funcs):
 
 
 def dynamic_scan(funcs, cap=20000):
-    """Read-taint: прогнать все функции, хук чтения на целевых диапазонах."""
+    """Read-taint: run all functions, read hook on target ranges."""
     from mcu_emu import (McuEmu, PERIPH, SYS, PERIPH_SIZE, SYS_SIZE, STACK_TOP)
     from unicorn import UC_HOOK_MEM_READ
     from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC
@@ -156,12 +156,12 @@ def dynamic_scan(funcs, cap=20000):
             results[f] = rec
         del emu
         if (i + 1) % 100 == 0:
-            print(f"  ...{i+1}/{len(funcs)} функций", flush=True)
+            print(f"  ...{i+1}/{len(funcs)} functions", flush=True)
     return results
 
 
 def disasm_window(d, pc, win=24):
-    """Окно дизассемблера вокруг pc (по 2 инструкции назад, win вперёд)."""
+    """Disassembler window around pc (2 instructions back, win forward)."""
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
     start = max(a for a, _ in CODE if a <= pc)
     end = min(b for _, b in CODE if b > pc)
@@ -180,18 +180,18 @@ def disasm_window(d, pc, win=24):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dynamic", action="store_true", help="read-taint по всем функциям")
-    ap.add_argument("--win", type=int, default=24, help="размер окна дизассемблера")
-    ap.add_argument("--only", default="", help="только эти имена целей: C42,C43,...")
+    ap.add_argument("--dynamic", action="store_true", help="read-taint across all functions")
+    ap.add_argument("--win", type=int, default=24, help="disassembler window size")
+    ap.add_argument("--only", default="", help="only these target names: C42,C43,...")
     a = ap.parse_args()
 
     d = open(FW, "rb").read()
     funcs = load_funcs()
-    print(f"функций в справочнике: {len(funcs)}")
+    print(f"functions in reference: {len(funcs)}")
 
     only = set(a.only.split(",")) if a.only else None
 
-    # ---- статика ----
+    # ---- static ----
     hits = static_scan(d, funcs)
     if only:
         hits = [h for h in hits if h[4] in only]
@@ -199,40 +199,40 @@ def main():
     for pc, f, reg, v, tname in hits:
         by_t.setdefault(tname, []).append((pc, f, reg, v))
 
-    print(f"\n=== СТАТИКА: ldr-ссылок на целевые диапазоны: {len(hits)} ===")
+    print(f"\n=== STATIC: ldr-references to target ranges: {len(hits)} ===")
     for tname, lo, hi in TARGETS:
         if only and tname not in only:
             continue
         hs = by_t.get(tname, [])
         fs = sorted(set(f for _, f, _, _ in hs))
-        print(f"\n[{tname}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: {len(hs)} ссылок, функций: "
+        print(f"\n[{tname}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: {len(hs)} references, functions: "
               + ", ".join(f"0x{x:05x}" for x in fs))
         for pc, f, reg, v in sorted(hs):
             print(f"    pc=0x{pc:05x} (func 0x{f:05x}) {reg} <- [pool] = 0x{v:08x}")
 
-    # ---- динамика ----
+    # ---- dynamic ----
     if a.dynamic:
-        print(f"\n=== ДИНАМИКА: read-taint по {len(funcs)} функциям ===")
+        print(f"\n=== DYNAMIC: read-taint across {len(funcs)} functions ===")
         dyn = dynamic_scan(funcs)
         by_t2 = {}
         for f, rec in dyn.items():
             for pc, addr, size in rec:
                 tname = target_of(addr - RAM)
                 by_t2.setdefault(tname, []).append((f, pc, addr, size))
-        print(f"функций с реальными чтениями: {len(dyn)}")
+        print(f"functions with actual reads: {len(dyn)}")
         for tname, lo, hi in TARGETS:
             if only and tname not in only:
                 continue
             recs = by_t2.get(tname, [])
             fs = sorted(set(f for f, _, _, _ in recs))
-            print(f"\n[{tname}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: функций-читателей: "
+            print(f"\n[{tname}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: reader functions: "
                   + ", ".join(f"0x{x:05x}" for x in fs))
             for f, pc, addr, size in sorted(recs):
                 print(f"    func 0x{f:05x} pc=0x{pc:05x} read {size}B @0x{addr:08x}")
 
-    # ---- окна дизассемблера вокруг статических точек чтения ----
+    # ---- disassembler windows around static read points ----
     if not a.dynamic:
-        print("\n=== ОКНА ДИЗАССЕМБЛЕРА (статические точки) ===")
+        print("\n=== DISASSEMBLER WINDOWS (static points) ===")
         seen = set()
         for tname, lo, hi in TARGETS:
             if only and tname not in only:
@@ -242,7 +242,7 @@ def main():
                 if key in seen:
                     continue
                 seen.add(key)
-                print(f"\n--- [{tname}] func 0x{f:05x}, точка чтения pc=0x{pc:05x} "
+                print(f"\n--- [{tname}] func 0x{f:05x}, read point pc=0x{pc:05x} "
                       f"({reg} <- 0x{v:08x}) ---")
                 for line in disasm_window(d, pc, a.win):
                     print(line)
