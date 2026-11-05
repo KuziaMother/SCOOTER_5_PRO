@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Проверка: дизассембляция в md func_0x1e9e0 против СВЕЖЕГО декода тех же байтов.
-Находит первую точку дессинхронизации последовательного декода."""
+"""Check: disassembly in md func_0x1e9e0 against FRESH decode of same bytes.
+Finds first desynchronization point of sequential decode."""
 import os, re, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
@@ -12,7 +12,7 @@ cs.detail = False
 
 t = open(os.path.join(os.path.dirname(__file__), '..', '..', 'functions_mcu', 'func_0x1e9e0.md'), encoding='utf-8').read()
 lines = t.splitlines()
-# показать fence-строки и строку 1ea0e
+# show fence lines and line 1ea0e
 for i, l in enumerate(lines):
     if l.strip().startswith('```'):
         print('fence line %d: %r' % (i, l))

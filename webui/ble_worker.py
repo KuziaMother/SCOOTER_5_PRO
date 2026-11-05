@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-BLE-воркер для модульного web UI: login, paced read-only опрос, push-слушатель.
+BLE worker for modular web UI: login, paced read-only polling, push listener.
 
-Правила безопасности:
-  * только чтение spec-свойств (op=2 из probes/spec_read.py); set/запись здесь нет;
-  * одно свойство на запрос (устройство обслуживает только первый объект);
-  * паузы между запросами, без циклов перебора и спам-повторов;
-  * при обрыве — максимум одна повторная попытка переподключения;
-  * секреты не логируются (props.format_property маскирует SENSITIVE).
+Safety rules:
+  * read-only spec properties (op=2 from probes/spec_read.py); no set/write here;
+  * single property per request (device only handles first object);
+  * pacing between requests, no brute-force loops or repeat spamming;
+  * on disconnect — at most one reconnect attempt;
+  * secrets never logged (props.format_property masks SENSITIVE).
 """
 import asyncio
 import struct
@@ -21,15 +21,15 @@ import props
 CH_WRITE = sr.CH_WRITE
 CH_NOTIFY = sr.CH_NOTIFY
 
-# Имена, по которым узнаём "наши" устройства среди шума эфира — показываем
-# их первыми в списке скана (§4: сам скан ничего не пишет на устройство,
-# только слушает рекламные пакеты — безопасен для повтора).
+# Names identifying "our" devices among ambient noise — displayed
+# first in scan list (§4: scan writes nothing to device,
+# only listens to advertisements — safe to repeat).
 LIKELY_NAME_HINTS = ("scooter", "dreame", "xiaomi", "ninebot", "mi ")
 
 
 async def scan_devices(timeout=5.0):
-    """Пассивный скан эфира — список рядом стоящих BLE-устройств (имя+MAC+RSSI).
-    Не подключается и не отправляет ничего устройству, только слушает рекламу."""
+    """Passive air scan — list of nearby BLE devices (name+MAC+RSSI).
+    Does not connect or send anything to device, only listens to advertisements."""
     found = await BleakScanner.discover(timeout=timeout, return_adv=True)
     devices = []
     for mac, (dev, adv) in found.items():
@@ -43,11 +43,11 @@ async def scan_devices(timeout=5.0):
 
 
 class WorkerError(Exception):
-    """Ожидаемая отказная ветка (login/refused, нет ключа и т.п.)."""
+    """Expected failure branch (login/refused, missing key, etc.)."""
 
 
 def parse_spec_payload(pt):
-    """Открытый spec-кадр -> список объектов + op из заголовка."""
+    """Plaintext spec frame -> list of objects + op from header."""
     if not pt or len(pt) < 6:
         return [], None
     try:
@@ -71,20 +71,20 @@ def parse_spec_payload(pt):
 
 
 async def establish(mac, on_event):
-    """connect + A4 + stage A/B. Возвращает (Transport, sk)."""
+    """connect + A4 + stage A/B. Returns (Transport, sk)."""
     ltmk_path = da.ltmk_path_for_mac(mac)
     try:
         with open(ltmk_path, "r", encoding="utf-8") as f:
             ltmk = bytes.fromhex(f.read().strip())
     except Exception as e:
-        raise WorkerError(f"нет/не читается {ltmk_path}: {type(e).__name__}")
+        raise WorkerError(f"missing or unreadable {ltmk_path}: {type(e).__name__}")
 
-    on_event({"type": "status", "status": "connecting", "message": "подключение к самокату…"})
+    on_event({"type": "status", "status": "connecting", "message": "connecting to scooter…"})
     t = da.Transport(mac)
     try:
         await t.connect()
         if not await t.a4_handshake():
-            raise WorkerError("транспорт не поднялся (A4 handshake fail)")
+            raise WorkerError("transport failed (A4 handshake fail)")
         for s, b in await t.drain(1.0):
             if s == da.CH_LOGIN and len(b) >= 3 and b[2] == da.PKT_MNG:
                 await t.write(
@@ -92,16 +92,16 @@ async def establish(mac, on_event):
                     struct.pack("<HBB", 0, da.PKT_MNG_ACK, 0) + bytes([t.pkg_num, t.dmtu]),
                 )
 
-        on_event({"type": "status", "status": "login", "message": "обмен ключами (stage A/B)…"})
+        on_event({"type": "status", "status": "login", "message": "key exchange (stage A/B)…"})
         priv, dev_pub = await da.stage_a_pubkey_exchange(t)
         if not (dev_pub and len(dev_pub) >= 64):
-            raise WorkerError("нет публичного ключа устройства")
+            raise WorkerError("device public key missing")
         if not await da.stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
-            raise WorkerError("login отказан устройством")
+            raise WorkerError("login refused by device")
         sk = da.LAST_SK
         if not sk:
-            raise WorkerError("session key не получен")
-        on_event({"type": "status", "status": "ready", "message": "LOGIN OK — сессия готова"})
+            raise WorkerError("session key not received")
+        on_event({"type": "status", "status": "ready", "message": "LOGIN OK — session ready"})
         return t, sk
     except WorkerError:
         try:
@@ -114,16 +114,16 @@ async def establish(mac, on_event):
             await t.close()
         except Exception:
             pass
-        raise WorkerError(f"ошибка транспорта при подключении: {type(e).__name__}: {e}")
+        raise WorkerError(f"transport error during connection: {type(e).__name__}: {e}")
 
 
 async def read_one(t, sk, key, app_cnt, on_event, unit_mult):
-    """Одно read-only spec-свойство. Возвращает текст для round или None."""
+    """Single read-only spec property. Returns text for round or None."""
     siid, piid = key
     pt = await sr.spec_request(t, sk, [key], app_cnt=app_cnt)
     if not pt:
         fmt = props.format_property(siid, piid, 0, b"", unit_mult[0])
-        fmt["text"] = "нет ответа"
+        fmt["text"] = "no response"
         on_event({"type": "property", "push": False, "data": fmt})
         return None
 
@@ -133,7 +133,7 @@ async def read_one(t, sk, key, app_cnt, on_event, unit_mult):
         item = items[0]
     if item is None:
         fmt = props.format_property(siid, piid, 0, b"", unit_mult[0])
-        fmt["text"] = "пустой ответ"
+        fmt["text"] = "empty response"
         on_event({"type": "property", "push": False, "data": fmt})
         return None
 
@@ -149,13 +149,12 @@ async def read_one(t, sk, key, app_cnt, on_event, unit_mult):
 
 async def read_props(t, sk, prop_list, on_event, unit_mult, app_cnt, should_stop,
                      emit_round=False, set_queue=None):
-    """Paced-чтение списка свойств по одному. Возвращает новый app_cnt.
+    """Paced polling of property list one by one. Returns updated app_cnt.
 
-    Если задан set_queue — подхватывает накопленные SET-команды ПЕРЕД каждым
-    отдельным чтением (не только в начале батча). Иначе клик по настройке
-    ждёт конца всего текущего батча чтений (~13 свойств × 0.35с ≈ 4.5с) —
-    заметная и ненужная задержка между нажатием и реальной отправкой на
-    самокат (проверено живьём — см. журнал реверса)."""
+    If set_queue is provided — processes accumulated SET commands BEFORE each
+    individual read (not only at batch start). Otherwise clicking a setting
+    waits for the full batch to complete (~13 properties × 0.35s ≈ 4.5s) —
+    noticeable and unnecessary latency before sending to scooter."""
     vals = {}
     for key in prop_list:
         if should_stop():
@@ -175,7 +174,7 @@ async def read_props(t, sk, prop_list, on_event, unit_mult, app_cnt, should_stop
 
 
 def _set_frame(siid, piid, type_code, value, tid=1):
-    """SET-кадр spec: op=0, объект [siid][piid][(type<<12)|vlen][value] (docs/FACTS.md)."""
+    """SET frame spec: op=0, object [siid][piid][(type<<12)|vlen][value] (docs/FACTS.md)."""
     vlen = len(value)
     obj = struct.pack("<BHH", siid & 0xFF, piid & 0xFFFF,
                       ((type_code & 0xF) << 12) | (vlen & 0xFFF)) + value
@@ -184,7 +183,7 @@ def _set_frame(siid, piid, type_code, value, tid=1):
 
 
 async def spec_write(t, sk, siid, piid, type_code, value, app_cnt, timeout=8.0):
-    """SET одного свойства (op=0). Возвращает (ok, status). Один кадр, без повторов."""
+    """SET single property (op=0). Returns (ok, status). Single frame, no retries."""
     frame = _set_frame(siid, piid, type_code, value)
     payload = sr.enc_app(sk, app_cnt, frame)
     fs = 18
@@ -238,14 +237,14 @@ async def spec_write(t, sk, siid, piid, type_code, value, app_cnt, timeout=8.0):
                 rpt = sr.dec_dev(sk, struct.unpack("<H", pl[:2])[0], pl[2:])
             except Exception:
                 return False, None
-            # ответ op=1: заголовок(6) + [siid][piid][status u16]
+            # response op=1: header(6) + [siid][piid][status u16]
             status = struct.unpack_from("<H", rpt, 9)[0] if len(rpt) >= 11 else None
             return (status == 0), status
     return False, None
 
 
 async def apply_pending_sets(t, sk, set_queue, on_event, unit_mult, app_cnt):
-    """Выполнить накопленные SET-команды из очереди (тред-безопасно). §5 — только whitelist."""
+    """Execute accumulated SET commands from queue (thread-safe). §5 — whitelist only."""
     if set_queue is None:
         return app_cnt
     while True:
@@ -255,19 +254,19 @@ async def apply_pending_sets(t, sk, set_queue, on_event, unit_mult, app_cnt):
             break
         key = (cmd["siid"], cmd["piid"])
         if not props.is_writable(key):
-            on_event({"type": "log", "message": f"SET {key} отклонён (не в whitelist)"})
+            on_event({"type": "log", "message": f"SET {key} rejected (not in whitelist)"})
             continue
         value = cmd["value"]
         name = props.LABELS.get(key, f"{key[0]}.{key[1]}")
-        vtxt = "вкл" if value == b"\x01" else "выкл"
+        vtxt = "on" if value == b"\x01" else "off"
         ok, status = await spec_write(t, sk, key[0], key[1], cmd["type"], value, app_cnt)
         app_cnt += 1
         if ok:
-            on_event({"type": "log", "message": f"SET {name} → {vtxt}: принято (status 0)"})
-            await read_one(t, sk, key, app_cnt, on_event, unit_mult)  # перечитать реальное состояние
+            on_event({"type": "log", "message": f"SET {name} → {vtxt}: accepted (status 0)"})
+            await read_one(t, sk, key, app_cnt, on_event, unit_mult)  # re-read actual state
             app_cnt += 1
         else:
-            on_event({"type": "log", "message": f"SET {name} → {vtxt}: ОТКАЗ (status={status})"})
+            on_event({"type": "log", "message": f"SET {name} → {vtxt}: REFUSED (status={status})"})
         await asyncio.sleep(0.3)
     return app_cnt
 
@@ -293,7 +292,7 @@ async def _emit_push_items(t, sk, pt, pushes, rx_counts, on_event, unit_mult):
 
 
 async def listen_push(t, sk, on_event, unit_mult, should_stop):
-    """Слушать notify 0x001b до СТОП (пуш приходит при изменении свойства)."""
+    """Listen for notify 0x001b until STOP (push arrives on property change)."""
     loop = asyncio.get_event_loop()
     pushes = 0
     rx_counts = {}
@@ -314,18 +313,18 @@ async def listen_push(t, sk, on_event, unit_mult, should_stop):
         if s != CH_NOTIFY or len(b) < 4:
             continue
 
-        # одиночный notify-кадр: [0000][02][00][cnt u16][ct]
+        # single notify frame: [0000][02][00][cnt u16][ct]
         if b[0] == 0 and b[1] == 0 and b[2] == 0x02 and len(b) >= 6:
             cnt = struct.unpack("<H", b[4:6])[0]
             await t.write(CH_NOTIFY, struct.pack("<HBB", 0, 0x03, 0))
             try:
                 pt = sr.dec_dev(sk, cnt, b[6:])
             except Exception as e:
-                on_event({"type": "log", "message": f"push не расшифрован (cnt={cnt}): {type(e).__name__}"})
+                on_event({"type": "log", "message": f"push decode failed (cnt={cnt}): {type(e).__name__}"})
                 continue
             pushes = await _emit_push_items(t, sk, pt, pushes, rx_counts, on_event, unit_mult)
 
-        # многокадровый notify: CTR от устройства [0000][00][ch][fc]
+        # multiframe notify: CTR from device [0000][00][ch][fc]
         elif b[0] == 0 and b[1] == 0 and b[2] == 0x00 and len(b) >= 6:
             fc = struct.unpack("<H", b[4:6])[0]
             if fc == 0:
@@ -351,11 +350,11 @@ async def listen_push(t, sk, on_event, unit_mult, should_stop):
                 try:
                     pt = sr.dec_dev(sk, cnt, payload[2:])
                 except Exception as e:
-                    on_event({"type": "log", "message": f"многокадровый push не расшифрован: {type(e).__name__}"})
+                    on_event({"type": "log", "message": f"multiframe push decode failed: {type(e).__name__}"})
                     continue
                 pushes = await _emit_push_items(t, sk, pt, pushes, rx_counts, on_event, unit_mult)
             else:
-                on_event({"type": "log", "message": f"push: получено {len(parts)}/{fc} кадров"})
+                on_event({"type": "log", "message": f"push: received {len(parts)}/{fc} frames"})
 
 
 async def _run_once(mac, mode, interval, static_interval, on_event, should_stop, set_queue=None):
@@ -368,7 +367,7 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
         while not t.rx.empty():
             t.rx.get_nowait()
 
-        # Сначала единицы — чтобы дальнейшие расстояния конвертировались правильно.
+        # Units first — so subsequent distances convert correctly.
         if not should_stop():
             app_cnt = await read_props(
                 t, sk, [(3, 5)], on_event, unit_mult, app_cnt, should_stop, emit_round=False
@@ -378,21 +377,21 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
         full_no_unit = [k for k in props.FULL_SAFE_SET if k != (3, 5)]
 
         if mode == "once":
-            on_event({"type": "status", "status": "reading", "message": "полный read-only снимок…"})
+            on_event({"type": "status", "status": "reading", "message": "full read-only snapshot…"})
             app_cnt = await read_props(
                 t, sk, full_no_unit, on_event, unit_mult, app_cnt, should_stop, emit_round=True
             )
-            on_event({"type": "status", "status": "done", "message": "снимок готов"})
+            on_event({"type": "status", "status": "done", "message": "snapshot complete"})
 
         elif mode == "poll":
             if not should_stop():
-                on_event({"type": "status", "status": "baseline", "message": "читаю журнал поездок один раз…"})
+                on_event({"type": "status", "status": "baseline", "message": "reading trip log baseline once…"})
                 app_cnt = await read_props(
                     t, sk, props.LOG_SET, on_event, unit_mult, app_cnt, should_stop
                 )
             on_event({
                 "type": "status", "status": "polling",
-                "message": f"поллинг каждые ~{interval:.0f} с; медленный набор ~{static_interval:.0f} с",
+                "message": f"polling every ~{interval:.0f} s; slow set ~{static_interval:.0f} s",
             })
             last_static = 0.0
             while not should_stop():
@@ -414,20 +413,20 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
                 wait = max(0.2, interval - elapsed)
                 end = loop.time() + wait
                 while not should_stop() and loop.time() < end:
-                    # простой между раундами — не ждать сложа руки, если за это
-                    # время накопился клик: сразу отправляем и завершаем простой.
+                    # idle between rounds — do not wait passively if a click
+                    # accumulated during this time: dispatch immediately and finish idle.
                     if set_queue is not None and not set_queue.empty():
                         app_cnt = await apply_pending_sets(
                             t, sk, set_queue, on_event, unit_mult, app_cnt
                         )
                         break
                     await asyncio.sleep(0.2)
-            on_event({"type": "status", "status": "done", "message": "поллинг остановлен"})
+            on_event({"type": "status", "status": "done", "message": "polling stopped"})
 
         elif mode == "push":
             if not should_stop():
                 on_event({"type": "status", "status": "baseline",
-                          "message": "baseline: полный read-only снимок…"})
+                          "message": "baseline: full read-only snapshot…"})
                 app_cnt = await read_props(
                     t, sk, full_no_unit, on_event, unit_mult, app_cnt, should_stop
                 )
@@ -436,13 +435,13 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
                     t.rx.get_nowait()
                 on_event({
                     "type": "status", "status": "listening",
-                    "message": "слушаю notify: пожайте газ / включите свет / покатитесь",
+                    "message": "listening to notify: press throttle / toggle lights / roll wheels",
                 })
                 await listen_push(t, sk, on_event, unit_mult, should_stop)
-            on_event({"type": "status", "status": "done", "message": "прослушивание остановлено"})
+            on_event({"type": "status", "status": "done", "message": "listening stopped"})
 
         else:
-            raise WorkerError(f"неизвестный режим: {mode}")
+            raise WorkerError(f"unknown mode: {mode}")
 
     finally:
         try:
@@ -452,9 +451,9 @@ async def _run_once(mac, mode, interval, static_interval, on_event, should_stop,
 
 
 async def run_session(mac, mode, interval, static_interval, on_event, should_stop, set_queue=None):
-    """Внешняя обёртка: одна попытка переподключения при необработанном обрыве."""
+    """Outer wrapper: single reconnect attempt on unhandled disconnect."""
     if mode not in {"once", "poll", "push"}:
-        raise WorkerError(f"неизвестный режим: {mode}")
+        raise WorkerError(f"unknown mode: {mode}")
 
     for attempt in range(2):
         if should_stop():
@@ -469,7 +468,7 @@ async def run_session(mac, mode, interval, static_interval, on_event, should_sto
             msg = f"{type(e).__name__}: {e}"
             on_event({"type": "status", "status": "error", "message": msg})
             if attempt == 0 and not should_stop():
-                on_event({"type": "log", "message": "обрыв сессии — одна попытка переподключения…"})
+                on_event({"type": "log", "message": "connection lost — attempting reconnect…"})
                 await asyncio.sleep(2.0)
                 continue
             return

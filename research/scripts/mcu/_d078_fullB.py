@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Полная верификация Phase B (ramp-core) 0x1d078: I-term + anti-windup tail.
-Контролируем ВСЕ внешние входы: u32[0x1760/0x1764/0x388/0x224], S+0x58 (old int),
-S+0x2e (counter). Проверяем S+0x58, S+0x60, S+0x64, S+0x2e."""
+"""Full verification of Phase B (ramp-core) 0x1d078: I-term + anti-windup tail.
+Control ALL external inputs: u32[0x1760/0x1764/0x388/0x224], S+0x58 (old int),
+S+0x2e (counter). Verify S+0x58, S+0x60, S+0x64, S+0x2e."""
 import struct
 import sys
 
@@ -30,10 +30,10 @@ def s32(x):
 def model_phaseB(V, F, mode, f339, c326, m2t,
                  acc1, out1, acc2, out2, old_int, s2e_old,
                  u1760, u1764, u388, u224):
-    """Возвращает (S58, S60, S64, S2e) после Phase B."""
+    """Returns (S58, S60, S64, S2e) after Phase B."""
     # --- common: val, out1_new, out2_new, target ---
     val = 0 if F == 0 else s16(sdiv(48000, V))
-    # ВАЖНО: после asrs идёт sxth (1d098/1d0ac) → out1/out2 = s16, НЕ s32!
+    # IMPORTANT: asrs is followed by sxth (1d098/1d0ac) -> out1/out2 = s16, NOT s32!
     o1n = s16(s32(acc1 + val - out1) >> 5)                  # asr5 + sxth
     o2n = max(0, s16(s32(acc2 + val - out2) >> 3))          # asr3 + sxth + clamp>=0
     flag = f339 & 0xFF
@@ -55,8 +55,8 @@ def model_phaseB(V, F, mode, f339, c326, m2t,
     integral = s32(interim - adj)
 
     # --- Step 3: clamp integral to [8000, 131040] ---
-    # integral>131040 → прыжок на 1d230 с r3=131040 (8000 не присваивается!);
-    # integral<8000 → 1d230 с r3=8000; иначе keep. Т.е. обычный clamp.
+    # integral>131040 -> jump to 1d230 with r3=131040 (8000 is not assigned!);
+    # integral<8000 -> 1d230 with r3=8000; otherwise keep. I.e. standard clamp.
     S58 = max(8000, min(integral, 131040))
 
     # --- Step 4: S+0x60 = asr(S58, 2) ---
@@ -169,12 +169,12 @@ def main():
             S2c = err2 if err2 <= 300 else 300
             P = s16(S2c & 0xFFFF) << 7
             step6 = (P + e60) if br == 'INC' else (e60 - P)
-            print("=== ПЕРВЫЙ S64-СБОЙ: полные входы ===")
+            print("=== FIRST S64 FAILURE: full inputs ===")
             print(f"V={V} F={F} mode={mode} f339={f339} c326={c326} m2t={m2t}")
             print(f"acc1={acc1} out1={out1} acc2={acc2} out2={out2}")
             print(f"old_int={old_int} s2e_old={s2e_old}")
             print(f"u1760={u1760} u1764={u1764} u388={u388} u224={u224}")
-            print(f"модель: o1n={o1n} o2n={o2n} tgt={tsgn} br={br}")
+            print(f"model: o1n={o1n} o2n={o2n} tgt={tsgn} br={br}")
             print(f"  err2={err2} S2c={S2c} P={P} S60={e60} step6={step6} "
                   f"clamp[1000,32760]={max(1000,min(32760,step6))}")
             print(f"  S64 got={g64} exp={e64} (slew-clamp u1760={u1760})")
@@ -189,7 +189,7 @@ def main():
                           f"o1n/o2n/tgt via V={V},F={F},mode={mode})")
                     shown += 1
 
-    print(f"\nPhase B полная модель ({N} итер):")
+    print(f"\nPhase B full model ({N} iter):")
     for f in ('S58', 'S60', 'S64', 'S2e'):
         print(f"  {f}: {N - bad[f]}/{N}")
 

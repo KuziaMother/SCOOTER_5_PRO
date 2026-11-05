@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-"""Проверка связи UART-линии: подключены ли RX и TX. Быстрый цикл ~4 с.
+"""UART link verification: tests RX and TX connectivity (~4 s rapid cycle).
 
-RX-статус:  читаем линию 1.5 с — есть байты => RX подключён (поток непрерывный,
-            ~218 Б/с; read(1) показывает, что «чанки по 4 КБ» — артефакт read(4096)).
-TX-статус:  две проверки:
-  1) wiring: 2 с burst DE AD параллельно с чтением — ловим только ОШИБКИ проводки:
-       - эхо DE AD в RX      => TX замкнут с RX (loopback)
-       - повреждённые кадры  => TX на шине TX MCU (конфликт)
-     Правильная проводка (TX → RX-пин MCU) здесь НЕ видна — это нормально.
-  2) функциональная: раз в 5 циклов шлём `down get_ver\r` и `53 2A 7D AC`
-     (DFU-консоль bw-flasher). Ответ (`ok`, версия, `64 2A … 9B`) =>
-     TX реально доходит до MCU и там есть DFU-консоль.
-
-Запуск в отдельном окне:
-  powershell -Command "Start-Process python -ArgumentList 'tools\\uart_link_check.py','--port','COM3'"
+Usage:
+  python tools/uart_link_check.py --port COM3
 """
 import argparse
 import sys
@@ -23,7 +12,7 @@ import serial
 
 
 def parse_61(d):
-    """Кадры 61 … с проверкой CHK. Возвращает (ok, bad)."""
+    """Frames 61 ... with CHK verification. Returns (ok, bad)."""
     i = 0
     ok = bad = 0
     while i + 5 <= len(d):
@@ -43,14 +32,14 @@ def parse_61(d):
 
 
 def open_port(port, baud):
-    """Открывает порт, дожидаясь подключения USB-TTL."""
+    """Opens port, waiting for USB-TTL connection."""
     while True:
         try:
             s = serial.Serial(port, baud, timeout=0.3)
-            print(f"[{time.strftime('%H:%M:%S')}] >>> {port} подключён", flush=True)
+            print(f"[{time.strftime('%H:%M:%S')}] >>> {port} connected", flush=True)
             return s
         except Exception:
-            print(f"[{time.strftime('%H:%M:%S')}] USB-TTL не найден — жду 2 с…", flush=True)
+            print(f"[{time.strftime('%H:%M:%S')}] USB-TTL not found — waiting 2 s...", flush=True)
             time.sleep(2)
 
 
@@ -61,7 +50,7 @@ def main():
     a = ap.parse_args()
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(f"=== UART link check: {a.port} @ {a.baud} ===  (цикл ~4 с, авто-переподключение)")
+    print(f"=== UART link check: {a.port} @ {a.baud} ===  (~4 s cycle, auto-reconnect)")
     print("-" * 72)
 
     s = open_port(a.port, a.baud)
@@ -72,7 +61,7 @@ def main():
             try:
                 run_cycle(s, n)
             except (serial.SerialException, OSError):
-                print(f"[{time.strftime('%H:%M:%S')}] !!! отсоединён — переподключение…", flush=True)
+                print(f"[{time.strftime('%H:%M:%S')}] !!! disconnected — reconnecting...", flush=True)
                 try:
                     s.close()
                 except Exception:
@@ -88,7 +77,7 @@ def main():
 
 
 def run_cycle(s, n):
-    # --- RX-фаза: 1.5 с чистого слушания ---
+    # --- RX-phase: 1.5s pure listening ---
     s.reset_input_buffer()
     rx_buf = bytearray()
     end = time.time() + 1.5
@@ -98,9 +87,9 @@ def run_cycle(s, n):
             rx_buf += d
     rx_d = bytes(rx_buf)
     rx_ok, _ = parse_61(rx_d)
-    rx_status = "OK" if rx_d else "НЕТ ДАННЫХ"
+    rx_status = "OK" if rx_d else "NO DATA"
 
-    # --- TX-wiring фаза: 2 с burst DE AD + параллельное чтение ---
+    # --- TX-wiring phase: 2s burst DE AD + parallel reading ---
     s.reset_input_buffer()
     tx_buf = bytearray()
     end = time.time() + 2.0
@@ -115,13 +104,13 @@ def run_cycle(s, n):
     tx_ok, tx_bad = parse_61(tx_d)
 
     if de_n > 20:
-        wire_status = "LOOPBACK (TX замкнут с RX!)"
+        wire_status = "LOOPBACK (TX shorted to RX!)"
     elif tx_bad > 3 and tx_bad > tx_ok:
-        wire_status = "НА ШИНЕ TX MCU (конфликт)"
+        wire_status = "ON MCU TX BUS (contention)"
     else:
-        wire_status = "ок (замыканий нет)"
+        wire_status = "ok (no shorts)"
 
-    # --- функциональная DFU-проба раз в 5 циклов ---
+    # --- functional DFU probe every 5 cycles ---
     dfu_status = "…"
     if n % 5 == 0:
         s.reset_input_buffer()
@@ -134,7 +123,7 @@ def run_cycle(s, n):
             d = s.read(256)
             if d:
                 dfu_buf += d
-        # ищем ответ: не push-кадры 61, а что-то другое (текст/64 2A)
+        # search for response: not push-frames 61, but something else (text/64 2A)
         other = bytearray()
         i = 0
         while i + 5 <= len(dfu_buf):
@@ -148,13 +137,13 @@ def run_cycle(s, n):
             i += 1
         other = bytes(other)
         if other:
-            dfu_status = f"ОТВЕТ DFU: {other[:32].hex(' ')}"
+            dfu_status = f"DFU REPLY: {other[:32].hex(' ')}"
         else:
-            dfu_status = "без ответа (консоли на линии нет или TX не доходит)"
+            dfu_status = "no response (no console on line or TX not reaching MCU)"
 
     ts = time.strftime("%H:%M:%S")
-    print(f"[{ts}] RX: {rx_status:<12} ({len(rx_d):4d} Б, {rx_ok} кадров)")
-    print(f"       TX-wiring: {wire_status} (эхо={de_n}, ok/bad={tx_ok}/{tx_bad})")
+    print(f"[{ts}] RX: {rx_status:<12} ({len(rx_d):4d} B, {rx_ok} frames)")
+    print(f"       TX-wiring: {wire_status} (echo={de_n}, ok/bad={tx_ok}/{tx_bad})")
     if dfu_status != "…":
         print(f"       {dfu_status}", flush=True)
 

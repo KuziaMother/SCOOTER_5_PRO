@@ -1,7 +1,6 @@
-"""Юнит-тесты эвристик research/decryptor.py. Проверяем именно то, из-за
-чего этот скрипт вообще имеет смысл: без калибровки эвристики ложно флагуют
-шифртекст как «похоже на плейнтекст» (см. docs/todo.md §A) — тест фиксирует,
-что базовые метрики ведут себя предсказуемо на контрольных данных."""
+"""Unit tests for research/decryptor.py heuristics. Validates key behaviors:
+without calibration, heuristics may falsely flag ciphertext as "looks like plaintext"
+(see docs/todo.md §A) — this test ensures baseline metrics behave predictably on control data."""
 import os
 
 import decryptor as dec
@@ -12,7 +11,7 @@ def test_entropy_zero_for_constant_data():
 
 
 def test_entropy_max_for_uniform_random():
-    # 256 разных байт по разу каждый -> максимальная энтропия (8 бит)
+    # 256 unique bytes once each -> maximum entropy (8 bits)
     data = bytes(range(256))
     assert abs(dec.entropy(data) - 8.0) < 1e-9
 
@@ -25,7 +24,7 @@ def test_ascii_strings_finds_embedded_text():
     data = b"\x00\x01xiaomi.scooter.5pro\x00\x02short\x03"
     found = dec.ascii_strings(data, min_len=8)
     assert "xiaomi.scooter.5pro" in found
-    assert "short" not in found  # короче min_len=8
+    assert "short" not in found  # shorter than min_len=8
 
 
 def test_ascii_strings_respects_min_len():
@@ -35,19 +34,19 @@ def test_ascii_strings_respects_min_len():
 
 
 def test_thumb_plausibility_range():
-    # эвристика должна возвращать долю в [0, 1] на любых данных
+    # heuristic must return ratio in [0, 1] on any data
     for data in (b"\x00" * 64, bytes(range(64)), os.urandom(64)):
         p = dec.thumb_plausibility(data)
         assert 0.0 <= p <= 1.0
 
 
 def test_try_one_ctr_is_reversible_with_correct_key():
-    """Собственная санити-проверка: CTR-режим с ПРАВИЛЬНЫМ ключом должен давать
-    ровно исходный plaintext обратно — иначе сломан сам механизм подбора."""
+    """Sanity check: CTR mode with CORRECT key must return exactly the original
+    plaintext back — otherwise the key candidate testing mechanism itself is broken."""
     key = b"\x00" * 16
     iv = b"\x11" * 16
     plaintext = b"A" * 32
-    # зашифровать тем же методом, что try_one использует для расшифровки (CTR симметричен)
+    # Encrypt using the same method that try_one uses for decryption (CTR is symmetric)
     enc_results = dec.try_one("zero128", key, plaintext, iv)
     ctr_result = next(pt for mode, pt, err in enc_results if mode == "CTR" and err is None)
     dec_results = dec.try_one("zero128", key, ctr_result, iv)

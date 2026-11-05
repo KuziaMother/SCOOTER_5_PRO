@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-READ-ONLY зонд MCU DFU-консоли по UART (19200 8N1) — НИЧЕГО не пишет.
+READ-ONLY probe of MCU DFU console over UART (19200 8N1) — writes NOTHING.
 ====================================================================
-Цель: live-подтверждение §70 (строковый пул команд DFU) без риска для устройства.
+Goal: live confirmation of §70 DFU command pool without risk to hardware.
 
-Делает ТОЛЬКО:
-  1. слушает спонтанный push-поток (кадры 0x61…chk 9E) — подтверждает baud/связь;
-  2. `down get_ver`  -> версия MCU (ожидается "0007");
-  3. `down rd_info`  -> состояние DFU/NVM-региона (ожидается "ok …").
+Performs ONLY:
+  1. listens to spontaneous push stream (0x61...chk 9E frames) — validates baud/link;
+  2. `down get_ver`  -> MCU version (expected "0007");
+  3. `down rd_info`  -> DFU/NVM state (expected "ok ...").
 
-НЕ шлёт: nvm_write / wr_info / dfu_verify / dfu_active / чанки FW — ничего не
-пишется в NVM/flash, мотор не трогается. Терминатор команды = \r (0x0d) — тот же,
-что в строках пула §70.
+Does NOT send: nvm_write / wr_info / dfu_verify / dfu_active / FW chunks — nothing
+is written to NVM/flash, motor untouched. Command terminator = \r (0x0d).
 
-Запуск:  python probes/mcu_uart_readonly.py [--port COM3] [--listen 2.0]
+Usage:  python probes/mcu_uart_readonly.py [--port COM3] [--listen 2.0]
 """
 import argparse
 import time
@@ -22,7 +21,7 @@ import serial
 
 
 class Reader:
-    """Копия push-фильтра из tools/mcu_uart_flash.py (валидные push-кадры отбрасываются)."""
+    """Copy of push filter from tools/mcu_uart_flash.py (valid push frames discarded)."""
 
     def __init__(self, s):
         self.s = s
@@ -80,7 +79,7 @@ class Reader:
 
 
 def listen(r, secs):
-    """Слушаем push-поток; возвращаем (кол-во push-кадров, пример raw hex)."""
+    """Listens to push stream; returns (push frame count, sample raw hex)."""
     end = time.time() + secs
     before = r.push_frames
     sample = bytearray()
@@ -92,7 +91,7 @@ def listen(r, secs):
 
 
 def cmd(r, payload, timeout=3.0):
-    """Drain → отправить → ждать строку до \\r (или None на таймаут)."""
+    """Drain -> send -> wait line up to \\r (or None on timeout)."""
     r.drain()
     r.s.write(payload)
     r.s.flush()
@@ -105,26 +104,26 @@ def cmd(r, payload, timeout=3.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
-    ap.add_argument("--listen", type=float, default=2.0, help="секунд слушать push-поток")
+    ap.add_argument("--listen", type=float, default=2.0, help="seconds to listen to push stream")
     a = ap.parse_args()
 
-    print(f"[*] открываю {a.port} @ 19200 8N1 (READ-ONLY)")
+    print(f"[*] opening {a.port} @ 19200 8N1 (READ-ONLY)")
     s = serial.Serial(a.port, 19200, timeout=0.2)
     r = Reader(s)
     try:
-        # 1) push-поток (валидация baud/связи)
+        # 1) push stream (baud/link validation)
         npush, sample = listen(r, a.listen)
-        print(f"[1] push-поток за {a.listen:.1f}с: валидных кадров 0x61…9E = {npush}")
+        print(f"[1] push stream in {a.listen:.1f}s: valid frames 0x61...9E = {npush}")
         if sample:
-            print(f"    пример raw: {sample.hex(' ')}")
+            print(f"    sample raw: {sample.hex(' ')}")
         if npush == 0:
-            print("    [!] push-кадров нет — проверь baud/подключение (самокат включён?). "
-                  "Продолжаю с запросами…")
+            print("    [!] no push frames — verify baud/connection (is scooter ON?). "
+                  "Continuing with queries...")
 
         # 2) get_ver
         line, raw = cmd(r, b"down get_ver\r", timeout=3.0)
         if line is None:
-            print(f"[2] get_ver: НЕТ ответа (raw={raw.hex(' ')})")
+            print(f"[2] get_ver: NO response (raw={raw.hex(' ')})")
         else:
             print(f"[2] down get_ver  -> {line.decode('ascii', 'replace')!r}")
 
@@ -132,11 +131,11 @@ def main():
         # 3) rd_info
         line, raw = cmd(r, b"down rd_info\r", timeout=3.0)
         if line is None:
-            print(f"[3] rd_info: НЕТ ответа (raw={raw.hex(' ')})")
+            print(f"[3] rd_info: NO response (raw={raw.hex(' ')})")
         else:
             print(f"[3] down rd_info  -> {line.decode('ascii', 'replace')!r}")
 
-        print("\n[+] готово. Ничего не записывалось.")
+        print("\n[+] complete. Nothing was written.")
     finally:
         s.close()
 

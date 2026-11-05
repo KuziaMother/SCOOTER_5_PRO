@@ -1,4 +1,10 @@
-# Справочник по функциям MCU-образа (mcu_0007.bin)
+# Справочник по функциям MCU-образа (mcu_0007.bin) / MCU Firmware Function Reference (mcu_0007.bin)
+
+> 📄 **Язык / Language:** [🇷🇺 Русский](#-русский) · [🇬🇧 English](#-english)
+
+---
+
+## 🇷🇺 Русский
 
 Образ: `mcu_0007.bin` (150841 Б) — контроллер мотора самоката, **Cortex-M4F** (GD32/STM32F1-class), HAL, **не зашифрован** (Mijia-подпись в хвосте). Векторной таблицы нет (только APP-регион OTA).
 
@@ -24,7 +30,39 @@
 
 Перегенерация: `$env:PYTHONIOENCODING="utf-8"; python research/scripts/gen_functions_mcu.py`.
 
-| offset | размер | регион | строки | callers |
+---
+
+## 🇬🇧 English
+
+Image: `mcu_0007.bin` (150,841 bytes) — scooter BLDC motor controller, **Cortex-M4F** (GD32/STM32F1-class), HAL-based, **unencrypted** (Mijia signature in trailer). No vector table is present (OTA APP payload region only).
+
+**Memory map:** Flash @ `0x00000000` (mirror `0x08000000` — pool literals reference both: 65 literal words via mirror), RAM @ `0x20000000` (128 KB), Peripherals @ `0x40000000`, SYS @ `0xE0000000`. Virtual address `vaddr` == file offset.
+
+**Detection algorithm:** Prologue scan: `push {..,lr}` (B5xx) ∪ `push.w {..,lr}` (T4, Capstone-verified) ∪ `bl` targets outside confirmed functions (no-prologue leaf functions / ISRs). Epilogue confirmation: `pop {..,pc}` / `bx lr` / "pop-lr"+b|bx / `bx rX` tail-call / `b` to trampoline (hot target >=3, block with epilogue, resolved chains; trampolines detected via byte scan + Capstone). Function bounds: BFS maximum reachable in verified window (capturing split-body and cold paths); literal pools excluded from bounds and printed in separate tables. Overlaps resolved via incoming xrefs.
+
+Confirmed functions: **678**; false candidates: 41; trampolines: 276.
+
+> **Notice:** The image contains virtually zero diagnostic strings (controller without debug logging). Function identification relies on peripheral/RAM literals, cross-references, and manual tracing. Key verified anchors: USART3 protocol ↔ BLE `0x1e480`/`0x1e9e0`/`0x1f600`/`0x1f6b4`, `HAL_UART_Transmit` `0x23188`, FLASH-OTA `0x06230`, ADC `0x1a31c`, and motor TIM1 PWM `0x22a48`–`0x22fac`.
+
+Code sections (regions separated by data/lookup tables):
+- `0x01200–0x02400` (4,608 B) — Code A
+- `0x02600–0x10200` (56,320 B) — Code B (FLASH-OTA: 0x06230/0x06304)
+- `0x10400–0x10e00` (2,560 B) — Code C
+- `0x11000–0x12400` (5,120 B) — Code D (0x11894 tbb state machine, 0x11cb4 OTA-init)
+- `0x12800–0x13e00` (5,632 B) — Code E (UART init / driver: 0x12d90/0x1302c)
+- `0x14200–0x14400` (512 B) — Code F
+- `0x14600–0x17a00` (13,312 B) — Code G
+- `0x18e00–0x19200` (1,024 B) — Code H
+- `0x19a00–0x24200` (43,008 B) — Code I (USART3 protocol, HAL_UART_Transmit, motor TIM1, ADC)
+- `0x24400–0x24600` (512 B) — Code J
+
+Regeneration script: `$env:PYTHONIOENCODING="utf-8"; python research/scripts/gen_functions_mcu.py`.
+
+---
+
+## Функции / Functions
+
+| offset | размер / size | регион / region | строки / strings | callers |
 |---|---|---|---|---|
 | [`0x01218`](func_0x01218.md) | 34 | код A | — | 1 |
 | [`0x0123e`](func_0x0123e.md) | 46 | код A | — | 0 |

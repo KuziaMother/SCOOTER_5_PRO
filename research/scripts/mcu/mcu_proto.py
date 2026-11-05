@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCU ч.4: протокол USART3 (заголовки/парсер/CRC) + признаки типа мотор-управления."""
+"""MCU part 4: USART3 protocol (headers/parser/CRC) + motor control type characteristics."""
 import os, struct, re, bisect
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
 IMG = os.path.join(os.path.dirname(__file__), "..", "..", "images", "mcu_0007.bin")
@@ -18,8 +18,8 @@ def func_of(o):
 def fend(f):
     i=bisect.bisect_right(fstarts,f); return fstarts[i] if i<len(fstarts) else f+400
 
-# ---- 1) поиск cmp с сигнатурами кадров ----
-print("=== сравнения с байтами-заголовками кадра (cmp rX,#imm) ===")
+# ---- 1) search for cmp with frame signatures ----
+print("=== comparisons with frame header bytes (cmp rX,#imm) ===")
 HDR={0x55,0xAA,0x5A,0xA5,0x5B,0xA5,0xf5,0x3e,0x23}
 hdrhits={}
 for a,b in CODE:
@@ -34,32 +34,32 @@ for f,hs in sorted(hdrhits.items()):
     vs=" ".join(f"0x{v:02x}@0x{a:x}" for a,v in hs)
     print(f"  func_0x{f:05x}: {vs}")
 
-# ---- 2) поиск байтовой сигнатуры 55 AA / 5A A5 в данных ----
-print("\n=== сигнатуры кадров в байтах образа ===")
+# ---- 2) search for byte signature 55 AA / 5A A5 in data ----
+print("\n=== frame signatures in image bytes ===")
 for sig in (b"\x55\xab",b"\x55\xaa",b"\x5a\xa5",b"\xa5\x5a",b"\xaa\x55"):
     i=d.find(sig)
-    print(f"  {sig.hex()}: {'@0x%x'%i if i>=0 else 'нет'}")
+    print(f"  {sig.hex()}: {'@0x%x'%i if i>=0 else 'none'}")
 
-# ---- 3) таблица синуса (FOC/SVPWM)? ищем массив int16 с синус-профилем ----
-print("\n=== поиск таблицы синуса (признак FOC) ===")
+# ---- 3) sine table (FOC/SVPWM)? search for int16 array with sine profile ----
+print("\n=== sine table search (FOC indication) ===")
 found_sin=False
 for base in range(0, N-256, 2):
     vals=[s16(base+2*k) for k in range(64)]
     if all(-32768<=v<=32767 for v in vals):
-        # монотонный рост затем спад, амплитуда большая
+        # monotonic rise then fall, large amplitude
         mx=max(vals); mn=min(vals)
         if mx>20000 and mn<-20000:
-            # проверим «гладкость»: соседние разности не скачут дико
+            # check smoothness: adjacent differences do not jump wildly
             diffs=[abs(vals[k+1]-vals[k]) for k in range(63)]
             if max(diffs)<4000 and vals[0] and abs(vals[0])<3000:
-                print(f"  возможная sin-LUT @0x{base:05x}: {vals[:8]} ... max={mx} min={mn}")
+                print(f"  possible sin-LUT @0x{base:05x}: {vals[:8]} ... max={mx} min={mn}")
                 found_sin=True
                 break
 if not found_sin:
-    print("  явной sin-LUT (int16) не найдено -> вероятно трапеция/Холл или таблица инче")
+    print("  no explicit sin-LUT (int16) found -> likely trapezoid/Hall or different table")
 
-# ---- 4) чтение датчиков Холла: частые чтения GPIO IDR ----
-print("\n=== обращения к GPIO IDR (датчики Холла?) ===")
+# ---- 4) Hall sensor reads: frequent GPIO IDR reads ----
+print("\n=== GPIO IDR accesses (Hall sensors?) ===")
 GP={0x40010800:"GPIOA",0x40010c00:"GPIOB",0x40011000:"GPIOC",0x40011400:"GPIOD"}
 idr=0
 for a,b in CODE:
@@ -70,4 +70,4 @@ for a,b in CODE:
                 imm=int(m.group(1),16) if m.group(1).startswith("0x") else int(m.group(1))
                 pool=((ins.address+4)&~3)+imm
                 if pool+4<=N and u32(pool) in GP: idr+=1
-print(f"  ссылок на GPIO-базы: {idr} (Холл читается как IDR смещение +0x08)")
+print(f"  references to GPIO bases: {idr} (Hall read as IDR offset +0x08)")

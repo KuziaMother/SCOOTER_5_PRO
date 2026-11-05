@@ -1,14 +1,14 @@
 {
   "name": "Scooter 5 Pro",
   "short_name": "Scooter 5 Pro",
-  "description": "Панель самоката Dreame/Xiaomi Scooter 5 Pro — BLE напрямую из браузера, без сервера",
+  "description": "Scooter 5 Pro Dashboard — Web Bluetooth directly from browser, no server needed",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0a0e14",
   "theme_color": "#0a0e14",
-  "lang": "ru",
+  "lang": "en",
   "icons": [
     { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }

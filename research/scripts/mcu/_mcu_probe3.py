@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Покрытие известных функций + bl-таргеты как старты."""
+"""Coverage of known functions + bl targets as starts."""
 import os, struct
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 
@@ -31,7 +31,7 @@ for (a, b) in CODE:
                 t = int(ins.op_str, 16)
             except ValueError:
                 continue
-            # Thumb-таргет: capstone пишет без бита T; в файле адрес = t & ~1
+            # Thumb target: capstone writes without T bit; in file address = t & ~1
             if any(a2 <= (t & ~1) < b2 for (a2, b2) in CODE):
                 bl_targets.add(t & ~1)
 
@@ -49,7 +49,7 @@ for a, name in sorted(known.items()):
     marks = ("B" if a in b5 else "-") + ("T" if a in t32 else "-") + ("L" if a in bl_targets else "-")
     print(f"   {a:05x} {marks}  {name}")
 
-# что за первые инструкции у 0x1e9e0 и других не-прологов?
+# what are the first instructions of 0x1e9e0 and other non-prologues?
 print("\n== first bytes of non-prologue known fns:")
 for a in sorted(known):
     if a not in b5 and a not in t32:
@@ -62,5 +62,5 @@ for a in sorted(known):
                 break
         print(f"   {a:05x}: {hexs} | {' ; '.join(dec)}")
 
-# топ bl-таргетов, которых нет в прологах (сколько уникальных, пример)
+# top bl targets not in prologues (how many unique, example)
 print(f"\n== sample new-from-bl (first 20): {[hex(x) for x in sorted(new_from_bl)[:20]]}")

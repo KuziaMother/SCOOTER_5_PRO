@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""§73.x FOC-интеграция в автономный контур.
+"""§73.x FOC integration into closed-loop simulation.
 
-Полная цепочка прошивки на каждом шаге (один McuEmu, общий RAM — как на реальном MCU):
+Full firmware pipeline on each step (single McuEmu, shared RAM — as on real MCU):
   target → PID 0x1d078 → throttle s16[RAM+0x42c]
-        → current-ref u16[RAM+0x224] = throttle   (связь найдена эмпирически, §73.x)
+        -> current-ref u16[RAM+0x224] = throttle   (relation found empirically, §73.x)
         → FOC 0x1a938 (R4=RAM+0x040) → PWM CCR (RAM+0x382/384/386 → 0x40012c44/48/4c)
         → plant(throttle→speed, first-order lag) → SpeedModel(speed→V) → PID ...
 
-FOC в контуре доказывает: реальный FOC исполняется каждый шаг и даёт throttle-коррелированный
-PWM (amp ≈ 0.0103·|ref|, center≈1125). Plant абстрагирует МЕХАНИЧЕСКИЙ отклик мотора на ток;
-электрический контур (токи→back-EMF) не live-калиброван → не моделируется явно.
+FOC in loop proves: real FOC executes every step and yields throttle-correlated
+PWM (amp ≈ 0.0103·|ref|, center≈1125). Plant abstracts motor MECHANICAL response to current;
+electrical loop (currents->back-EMF) is not live-calibrated -> not explicitly modeled.
 """
 import os, struct, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,11 +23,11 @@ FW_LEN = 0x25000
 
 
 def run_foc(emu, current_ref):
-    """Запустить FOC 0x1a938 с current-ref в u16[RAM+0x224]. Возвращает (ccr_a,ccr_b,ccr_c)."""
+    """Run FOC 0x1a938 with current-ref in u16[RAM+0x224]. Returns (ccr_a,ccr_b,ccr_c)."""
     uc = emu.uc
     r4 = RAM + 0x040
     uc.mem_write(r4, bytes(0x80))
-    uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — не управляет PWM
+    uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — does not control PWM
     uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
     def stop(uc_, a, s, u):
         aa = a & ~1
@@ -48,7 +48,7 @@ def run_foc(emu, current_ref):
 
 
 def run_pid(emu):
-    """Запустить PID 0x1d078. Возвращает throttle s16[RAM+0x42c]."""
+    """Run PID 0x1d078. Returns throttle s16[RAM+0x42c]."""
     uc = emu.uc
     def stop(uc_, a, s, u):
         aa = a & ~1
@@ -84,12 +84,12 @@ def run_loop(target, v_max=522.0, tau=15.0, tref=28624.0, iters=40, speed0=0.0):
     speed = speed0
     traj = []
     for it in range(iters):
-        sm.set_speed(int(speed))                              # speed → V (вход PID)
-        thr = run_pid(emu)                                    # PID (реальный) → throttle
-        ccr = run_foc(emu, thr & 0xFFFF)                      # FOC (реальный) → PWM
+        sm.set_speed(int(speed))                              # speed -> V (PID input)
+        thr = run_pid(emu)                                    # PID (real) -> throttle
+        ccr = run_foc(emu, thr & 0xFFFF)                      # FOC (real) -> PWM
         center = sum(ccr) / 3.0
         amp = max(abs(c - center) for c in ccr)
-        # plant: first-order lag к терминальной скорости для текущего throttle
+        # plant: first-order lag to terminal speed for current throttle
         tnorm = max(0.0, min(1.0, thr / tref)) if tref else 0.0
         v_term = v_max * tnorm
         speed += (1.0 / tau) * (v_term - speed)
@@ -101,7 +101,7 @@ def run_loop(target, v_max=522.0, tau=15.0, tref=28624.0, iters=40, speed0=0.0):
 
 def main():
     for target in (208, 300):
-        print(f'=== target={target} (FOC в контуре) ===')
+        print(f'=== target={target} (FOC in loop) ===')
         traj = run_loop(target, iters=40)
         print('  it   speed  throttle  FOC-amp')
         for it, sp, thr, amp in traj:

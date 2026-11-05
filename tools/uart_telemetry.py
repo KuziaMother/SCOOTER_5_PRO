@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
-"""Живая телеметрия MCU через USB-TTL (линия UART4, push-кадры 61 …).
+"""Live MCU telemetry via USB-TTL (UART4 line, push frames 61 ...).
 
-Проверено живым трафиком 2026-08-21 (docs/FACTS.md «Push 0x31»):
-  61 30 0A P0..P9 CHK 9E   — статус-пуш (режимы/флаги, §34 REPORT)
-  61 31 09 P0..P8 CHK 9E   — баттари-пуш:
-      P1 = SoC% (@0x306), P2P3 = сырой замер (@0x308, high,low),
-      P4P5 = флаг (@0x30a), P6..P8 = температура °C (@0x30c, low,high,low)
-  CHK = Σ(все предшествующие байты кадра) & 0xFF; 0x9E = ~0x61.
-
-Линия delivers bursts ~4 КБ с паузами — скрипт молчит, пока нет данных.
-
-Использование:
+Usage:
   python tools/uart_telemetry.py --port COM3 [--baud 19200] [--jsonl out.jsonl]
 """
 import argparse
@@ -22,7 +13,7 @@ import serial
 
 
 def parse_frames(buf):
-    """Генератор кадров (sub, payload, ok_chk) из буфера; возвращает consumed."""
+    """Generator of frames (sub, payload, ok_chk) from buffer; returns consumed count."""
     i = 0
     frames = []
     while i + 5 <= len(buf):
@@ -43,9 +34,9 @@ def decode(sub, p):
     if sub == 0x31 and len(p) >= 9:
         return {
             "soc_pct": p[1],
-            "raw_batt": (p[2] << 8) | p[3],   # u16, high,low на проводе
-            "flag": (p[4] << 8) | p[5],       # u16, high,low; бит15 переключается
-            "temp_c": (p[7] << 8) | p[6],     # на проводе low,high,low
+            "raw_batt": (p[2] << 8) | p[3],   # u16, high,low on wire
+            "flag": (p[4] << 8) | p[5],       # u16, high,low; bit15 toggles
+            "temp_c": (p[7] << 8) | p[6],     # on wire low,high,low
         }
     if sub == 0x30 and len(p) >= 10:
         return {
@@ -59,13 +50,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--baud", type=int, default=19200)
-    ap.add_argument("--jsonl", default="", help="дублировать кадры в JSONL-файл")
+    ap.add_argument("--jsonl", default="", help="mirror frames into JSONL file")
     a = ap.parse_args()
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     s = serial.Serial(a.port, a.baud, timeout=0.5)
     jf = open(a.jsonl, "a", encoding="utf-8") if a.jsonl else None
-    print(f"телеметрия: {a.port} @ {a.baud} — жду bursts… (Ctrl-C для выхода)", flush=True)
+    print(f"telemetry: {a.port} @ {a.baud} — waiting for bursts... (Ctrl-C to exit)", flush=True)
 
     last = {}
     try:
@@ -81,7 +72,7 @@ def main():
                 if jf:
                     jf.write(json.dumps(rec, ensure_ascii=False) + "\n")
                     jf.flush()
-                # печатаем только реальные изменения (джиттер raw_batt гасим)
+                # print only real changes (suppress raw_batt jitter)
                 key = dict(dec)
                 if sub == 0x31:
                     key["raw_batt"] //= 8

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Random-sweep: связка target (setpoint) / out2 (оценка скорости) → structB.
-Чистое состояние интеграторов (acc=out=0) + structB state=0 (init-путь).
-Цель: эмпирически определить structB[+0x2a] и structB[+0x2c] как функцию
-(target_clamped, out2_after), чтобы добавить перманентный тест."""
+"""Random-sweep: link target (setpoint) / out2 (speed estimate) -> structB.
+Clean integrator state (acc=out=0) + structB state=0 (init path).
+Goal: empirically determine structB[+0x2a] and structB[+0x2c] as a function
+(target_clamped, out2_after) to add a permanent test."""
 import struct
 import sys
 
@@ -30,11 +30,11 @@ def run_once(run, V, F, mode, f339, c326, m2t):
     run.ram_write(0x339, struct.pack('<H', f339))
     run.ram_write(0x324, struct.pack('<H', m2t))
     run.ram_write(0x326, struct.pack('<H', c326))
-    # чистые интеграторы + init-состояние structB
+    # clean integrators + init state of structB
     for off in range(0x1768, 0x1790):
         pass
     run.ram_write(0x1768, b'\x00' * 0x28)
-    run.ram_write(0x3C8, b'\x00' * 0x70)   # structB: state=0, всё 0
+    run.ram_write(0x3C8, b'\x00' * 0x70)   # structB: state=0, all 0
     run.call(0x1D078, (), max_insn=400000)
 
     val = 0 if F == 0 else s16(sdiv(48000, V))
@@ -77,23 +77,23 @@ def main():
         if g_2a != clamped:
             bad_2a += 1
             if bad_2a <= 5:
-                print(f"  МISMATCH +0x2a: got {g_2a} exp {clamped} "
+                print(f"  MISMATCH +0x2a: got {g_2a} exp {clamped} "
                       f"(mode={mode},flag={f339&0xFF},c326={c326},m2t={m2t})")
-        # ошибка = target - out2 (signed), ожидаем кламп к 300 сверху
+        # error = target - out2 (signed), expect clamp to 300 from above
         err = s16(clamped) - out2
         samples.append((s16(clamped), out2, g_2c, err))
 
-    print(f"\n[+0x2a == clamped target]: {N - bad_2a}/{N} совпало")
+    print(f"\n[+0x2a == clamped target]: {N - bad_2a}/{N} matched")
 
-    # эмпирика по +0x2c: как g_2c зависит от (target, out2)
-    print("\n=== выборка (target_s16, out2, got_2c, err=target-out2) ===")
+    # empirical data on +0x2c: how g_2c depends on (target, out2)
+    print("\n=== sample (target_s16, out2, got_2c, err=target-out2) ===")
     for t, o, g, e in samples[:40]:
         print(f"  tgt={t:>6} out2={o:>5}  +0x2c={g:>5}   err={e:>6}")
 
-    # гипотеза: +0x2c = clamp(err, lo, 300)? проверим диапазон got
+    # hypothesis: +0x2c = clamp(err, lo, 300)? check range of got
     vals = [s for _, _, s, _ in samples]
     print(f"\n  min(+0x2c)={min(vals)}  max(+0x2c)={max(vals)}")
-    # проверка: когда err в (0..300), +0x2c должен = err; когда err>300 → 300
+    # check: when err in (0..300), +0x2c should = err; when err>300 -> 300
     chk = sum(1 for t, o, g, e in samples if 0 < e <= 300 and g == e)
     tot = sum(1 for _, _, _, e in samples if 0 < e <= 300)
     print(f"  err∈(0,300] → +0x2c==err: {chk}/{tot}")

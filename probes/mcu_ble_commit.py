@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-ФИНАЛЬНЫЙ ШАГ: switchFirmware(MCU, опкод 6) — активация staged-образа по BLE.
+FINAL STEP: switchFirmware(MCU, opcode 6) — staged image activation over BLE.
 
-Явно одобрен пользователем (2026-08-22). Образ v0007 байт-в-байт идентичен
-работающему; MCU-таргет принятие той же версии задокументировано (UART dfu_active).
+Explicitly approved by user. Image v0007 is byte-for-byte identical to running one;
+MCU target accepting same version is documented (UART dfu_active).
 
-Ожидаемый сценарий: ответ status 0 -> MCU сам прошивает себя по USART3
-(асинхронно, до ~3 мин, как в Mi Home) -> ребут -> версия остаётся 0007,
-staging очищается. Для той же версии «смена» НЕ ожидается: корректный исход —
-таймаут опроса без смены (False) или тишина+возврат (None = ребут был).
+Expected scenario: status 0 response -> MCU flashes itself over USART3
+(async, up to ~3 min, matching Mi Home) -> reboot -> version remains 0007,
+staging is cleared. For same version no change is expected: correct outcome is
+poll timeout without change (False) or silence+return (None = reboot occurred).
 
-Одна команда; далее только read-only опрос версии ([01] на 0x001c).
+Single command; followed by read-only version polling ([01] on 0x001c).
 
-Запуск:  python probes/mcu_ble_commit.py
+Usage:  python probes/mcu_ble_commit.py
 """
 import asyncio
 import os
@@ -33,13 +33,13 @@ async def main():
     try:
         await login(t, ltmk)
 
-        print("\n>>> switchFirmware(6) — АКТИВАЦИЯ (необратимо, одобрено)...")
+        print("\n>>> switchFirmware(6) — ACTIVATION (irreversible, approved)...")
         frame = struct.pack("<HB", OPS["mcu"]["switch"], 4) + struct.pack("<I", 1)
         while not t.rx.empty():
             t.rx.get_nowait()
         await t.client.write_gatt_char(t.chars[CH_DFU_CMD], frame, response=True)
 
-        # Ответ может прийти не сразу (устройство начинает ретрансляцию) — ждём до 15 с.
+        # Response may take time (device begins relaying) — wait up to 15s.
         resp = None
         deadline = time.time() + 15.0
         while time.time() < deadline and resp is None:
@@ -49,18 +49,18 @@ async def main():
                     break
         if resp:
             st = resp[4] if len(resp) >= 5 else None
-            print(f"[i] ответ: {resp.hex()} -> status={st} "
-                  f"({'принято' if st == 0 else 'ОТКЛОНЕНО/неизвестно'})")
+            print(f"[i] response: {resp.hex()} -> status={st} "
+                  f"({'accepted' if st == 0 else 'REJECTED/unknown'})")
         else:
-            print("[!] ответа на switchFirmware за 15 с не было — продолжаю опрос версии")
+            print("[!] no switchFirmware response within 15s — proceeding with version polling")
 
         res = await poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
         meaning = {
-            True: "версия СМЕНИЛАСЬ (для той же версии неожиданно!)",
-            False: "версия не менялась — для переустановки той же версии ЭТО ОЖИДАЕМО",
-            None: "была тишина и возврат — MCU ребутнулся (активация шла)",
+            True: "version CHANGED (unexpected for same version!)",
+            False: "version did not change — EXPECTED for same version reflash",
+            None: "silence and return — MCU rebooted (activation occurred)",
         }[res]
-        print(f"\n[i] ИТОГ ОПРОСА: {meaning}")
+        print(f"\n[i] POLL SUMMARY: {meaning}")
         return 0
     finally:
         await t.close()

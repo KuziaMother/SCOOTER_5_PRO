@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 from PIL import Image
 
 if sys.platform != "win32":
-    import readline  # noqa: F401 — включает историю ввода в консоли (side effect)
+    import readline  # noqa: F401 — enables console input history (side effect)
 
 SERVERS = ["cn", "de", "us", "ru", "tw", "sg", "in", "i2"]
 NAME_TO_LEVEL = {
@@ -235,8 +235,11 @@ class XiaomiCloudConnector(ABC):
 
 class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
 
-    def __init__(self):
+    def __init__(self, username: str = None, password: str = None):
         super().__init__()
+        self._username = username
+        self._password = password
+        self._last_error = None
         self._sign = None
         self._cUserId = None
         self._passToken = None
@@ -244,16 +247,25 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         self._code = None
 
     def login(self) -> bool:
-        if args.username:
-            self._username = args.username
-        else:
-            print_if_interactive(f"Username {Fore.BLUE}(email, phone number or user ID){Style.RESET_ALL}:")
-            self._username = input()
-        if args.password:
-            self._password = args.password
-        else:
-            print_if_interactive(f"Password {Fore.BLUE}(not displayed for privacy reasons){Style.RESET_ALL}:")
-            self._password = getpass("")
+        if not self._username:
+            if hasattr(args, "username") and args.username:
+                self._username = args.username
+            elif not getattr(args, "non_interactive", False):
+                print_if_interactive(f"Username {Fore.BLUE}(email, phone number or user ID){Style.RESET_ALL}:")
+                self._username = input()
+            else:
+                self._last_error = "Username is required"
+                return False
+
+        if not self._password:
+            if hasattr(args, "password") and args.password:
+                self._password = args.password
+            elif not getattr(args, "non_interactive", False):
+                print_if_interactive(f"Password {Fore.BLUE}(not displayed for privacy reasons){Style.RESET_ALL}:")
+                self._password = getpass("")
+            else:
+                self._last_error = "Password is required"
+                return False
 
         print_if_interactive()
         print_if_interactive(f"{Fore.BLUE}Logging in...")
@@ -265,16 +277,25 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         self._session.cookies.set("deviceId", self._device_id, domain="xiaomi.com")
 
         if not self.login_step_1():
-            print_if_interactive(f"{Fore.RED}Invalid username.")
+            if not self._last_error:
+                self._last_error = "Invalid username or account not found"
+            print_if_interactive(f"{Fore.RED}{self._last_error}")
             return False
 
         if not self.login_step_2():
-            print_if_interactive(f"{Fore.RED}Invalid login or password.")
+            if not self._last_error:
+                self._last_error = "Invalid login or password"
+            print_if_interactive(f"{Fore.RED}{self._last_error}")
             return False
 
         if self._location and not self._serviceToken and not self.login_step_3():
-            print_if_interactive(f"{Fore.RED}Unable to get service token.")
+            if not self._last_error:
+                self._last_error = "Unable to get service token"
+            print_if_interactive(f"{Fore.RED}{self._last_error}")
             return False
+
+        if self._serviceToken:
+            self.install_service_token_cookies(self._serviceToken)
 
         return True
 
@@ -364,12 +385,21 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
                 self._code = json_resp.get("code", None)
             else:
                 if "notificationUrl" in json_resp:
-                    if args.non_interactive:
-                        parser.error("2FA solution required, rerun in interactive mode")
+                    if getattr(args, "non_interactive", False) or (self._username and self._password and not getattr(sys.stdin, "isatty", lambda: False)()):
+                        self._last_error = "2FA verification required. Please authenticate via QR code / web link."
+                        _LOGGER.error("login_step_2: 2FA required for non-interactive login")
+                        return False
                     verify_url = json_resp["notificationUrl"]
                     return self.do_2fa_email_flow(verify_url)
                 else:
-                    _LOGGER.error("login_step_2: Login failed, server returned: %s", json_resp)
+                    desc = json_resp.get("description") or json_resp.get("desc")
+                    if desc:
+                        self._last_error = f"Xiaomi login failed: {desc}"
+                    elif json_resp.get("code") == 70016:
+                        self._last_error = "Invalid username or password"
+                    else:
+                        self._last_error = f"Login failed (code {json_resp.get('code')})"
+                    _LOGGER.error("login_step_2: %s", self._last_error)
         else:
             _LOGGER.error("login_step_2: HTTP status: %s; Response: %s", response.status_code, response.text[:500])
         return valid
@@ -380,11 +410,24 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
             "User-Agent": self._agent,
             "Content-Type": "application/x-www-form-urlencoded"
         }
-        response = self._session.get(self._location, headers=headers)
+        try:
+            response = self._session.get(self._location, headers=headers, allow_redirects=True)
+        except Exception as e:
+            _LOGGER.error("login_step_3 error: %s", e)
+            return False
         _LOGGER.debug(response.text)
         if response.status_code == 200:
-            self._serviceToken = response.cookies.get("serviceToken")
-        return response.status_code == 200
+            token = response.cookies.get("serviceToken") or self._session.cookies.get("serviceToken")
+            if not token:
+                for c in self._session.cookies:
+                    if c.name == "serviceToken":
+                        token = c.value
+                        break
+            self._serviceToken = token
+            if token:
+                self.install_service_token_cookies(token)
+            return bool(self._serviceToken)
+        return False
 
     def handle_captcha(self, captcha_url: str) -> str:
         # Full URL in case it's relative
@@ -691,51 +734,52 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         _LOGGER.debug("login_step_3")
 
         url = self._long_polling_url
-        _LOGGER.debug("Long polling URL: " + url)
+        _LOGGER.debug("Long polling URL: %s", url)
 
         start_time = time.time()
-        # Start long polling
-        while True:
+        timeout_seconds = getattr(self, "_timeout", 300) or 300
+        response = None
+
+        while time.time() - start_time < timeout_seconds:
             try:
-                response = self._session.get(url, timeout=10)
+                response = self._session.get(url, timeout=(10, 75))
             except requests.exceptions.Timeout:
-                _LOGGER.debug("Long polling timed out, retrying...")
-                if time.time() - start_time > self._timeout:
-                    _LOGGER.debug("Long polling timed out after {} seconds.".format(self._timeout))
-                    break
+                _LOGGER.debug("Long polling read timed out, retrying...")
                 continue
             except requests.exceptions.RequestException as e:
-                _LOGGER.error(f"An error occurred: {e}")
-                break
+                _LOGGER.error("An error occurred during long polling: %s", e)
+                time.sleep(2)
+                continue
 
-            if response.status_code == 200:
-                break
+            if response is not None and response.status_code == 200:
+                try:
+                    response_data = self.to_json(response.text)
+                except Exception as e:
+                    _LOGGER.debug("Could not parse JSON from long poll: %s", e)
+                    continue
+
+                if isinstance(response_data, dict):
+                    if "ssecurity" in response_data:
+                        self.userId = response_data.get("userId")
+                        self._ssecurity = response_data.get("ssecurity")
+                        self._cUserId = response_data.get("cUserId")
+                        self._pass_token = response_data.get("passToken")
+                        self._location = response_data.get("location")
+                        _LOGGER.debug("Login successful! userId=%s", self.userId)
+                        return True
+
+                    code = response_data.get("code")
+                    if code and code != 0:
+                        _LOGGER.debug("Long poll returned non-zero code %s: %s", code, response_data)
+                        if code in (70016, 70014, 87001):
+                            _LOGGER.error("Ticket expired or cancelled: %s", response_data)
+                            return False
             else:
-                _LOGGER.error("Long polling failed, retrying...")
+                _LOGGER.error("Long polling returned status %s, retrying...", getattr(response, "status_code", "None"))
+                time.sleep(2)
 
-        if response.status_code != 200:
-            _LOGGER.error("Long polling failed with status code: " + str(response.status_code))
-            return False
-
-        _LOGGER.debug("Login successful!")
-        _LOGGER.debug("Response data:")
-
-        response_data = self.to_json(response.text)
-        _LOGGER.debug(response_data)
-
-        self.userId = response_data["userId"]
-        self._ssecurity = response_data["ssecurity"]
-        self._cUserId = response_data["cUserId"]
-        self._pass_token = response_data["passToken"]
-        self._location = response_data["location"]
-
-        _LOGGER.debug("User ID: " + str(self.userId))
-        _LOGGER.debug("Ssecurity: " + str(self._ssecurity))
-        _LOGGER.debug("CUser ID: " + str(self._cUserId))
-        _LOGGER.debug("Pass token: " + str(self._pass_token))
-        _LOGGER.debug("Pass token: " + str(self._location))
-
-        return True
+        _LOGGER.error("Long polling timed out after %s seconds.", timeout_seconds)
+        return False
 
     def login_step_4(self) -> bool:
         _LOGGER.debug("login_step_4")
@@ -745,12 +789,34 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
             _LOGGER.error("No location found.")
             return False
 
-        response = self._session.get(location, headers={"content-type": "application/x-www-form-urlencoded"})
-        if response.status_code != 200:
+        headers = {
+            "User-Agent": self._agent,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        try:
+            response = self._session.get(location, headers=headers, allow_redirects=True)
+        except Exception as e:
+            _LOGGER.error("Error fetching service token location: %s", e)
             return False
 
-        self._serviceToken = response.cookies["serviceToken"]
-        _LOGGER.debug("Service token: " + str(self._serviceToken))
+        if response.status_code != 200:
+            _LOGGER.error("Service token location status: %s", response.status_code)
+            return False
+
+        token = response.cookies.get("serviceToken") or self._session.cookies.get("serviceToken")
+        if not token:
+            for c in self._session.cookies:
+                if c.name == "serviceToken":
+                    token = c.value
+                    break
+
+        if not token:
+            _LOGGER.error("No serviceToken in response or session cookies.")
+            return False
+
+        self._serviceToken = token
+        self.install_service_token_cookies(token)
+        _LOGGER.debug("Service token acquired: %s", str(self._serviceToken))
         return True
 
 

@@ -76,7 +76,7 @@ h1, h2 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   padding: 4px 2px 20px;
   /* место под .corner-actions (PIN/тема, фиксированы в правом верхнем углу) —
      иначе правый край топбара (напр. "← Панель" на /service) заезжает под них */
-  padding-right: 96px;
+  padding-right: 140px;
   flex-wrap: wrap;
 }
 .topbar-actions {
@@ -425,6 +425,24 @@ html[data-theme="light"] #start { color: #04222c; }
   line-height: 1;
 }
 .theme-toggle:hover { color: var(--text); }
+
+/* --- кнопка переключения языка / language toggle --- */
+.lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font: 600 11px/1 var(--mono);
+  cursor: pointer;
+  line-height: 1;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.lang-toggle:hover { color: var(--text); border-color: var(--accent); }
 
 /* --- кнопка выбора самоката --- */
 .scooter-toggle {

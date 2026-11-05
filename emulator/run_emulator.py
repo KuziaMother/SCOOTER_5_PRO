@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""
-Прогон настоящих инструментов проекта против эмулятора устройства (без BLE).
+"""Run real project tools against device emulator (without BLE).
 
-Подменяет dreame_auth.BleakClient на FakeBleakClient и запускает:
-  1) login (dreame_auth Stage A+B) — проверка крипто round-trip;
-  2) DFU BLE той же версии -> switchFirmware отвергнут (status 6), как на железе;
-  3) DFU BLE НОВОЙ версии -> switchFirmware ПРИМЕНЁН, версия поднялась
-     (то, чего живой самокат не позволяет — та же версия уже стоит);
-  4) info-канал 0x001c: версии/железо/серийник.
+Substitutes dreame_auth.BleakClient with FakeBleakClient and runs:
+1) login (dreame_auth Stage A+B) — crypto round-trip verification;
+2) DFU BLE of identical version -> switchFirmware rejected (status 6), matching hardware;
+3) DFU BLE of NEW version -> switchFirmware APPLIED, version incremented;
+4) info channel 0x001c: version / hardware / serial;
+5) spec telemetry channel (0x001a/0x001b) via spec_read.py;
+6) spontaneous push notification upon property change (0x001b).
 
-Запуск:  python emulator/run_emulator.py
+Usage:  python emulator/run_emulator.py
 """
 import asyncio
 import os
@@ -17,33 +17,33 @@ import struct
 import sys
 import tempfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "core"))
 sys.path.insert(0, os.path.join(ROOT, "probes"))
+sys.path.insert(0, os.path.join(ROOT, "emulator"))
 
-import dreame_auth as da
-import fake_ble
-from scooter_device import ScooterDevice
+import dreame_auth as da  # noqa: E402
+import fake_ble  # noqa: E402
+from scooter_device import ScooterDevice  # noqa: E402
 
-# --- общий эмулируемый экземпляр устройства (один на прогон) ---
+# Shared emulated device instance (one per run)
 DEVICE = {"obj": None}
-
-# Эмулятору НЕ нужен настоящий ключ устройства — оба конца (клиент и
-# ScooterDevice) видят одно и то же значение, реальный ECDH round-trip
-# работает с любым 32-байтным ltmk. secrets/ltmk.hex — реальный секретный
-# ключ живого самоката, гитигнорится и НЕ существует в CI/на чистом
-# чекауте; если его нет — используем фиксированное тестовое значение
-# (только для этого прогона, не для реального устройства).
-_TEST_LTMK = bytes(range(32))
 
 
 def _load_ltmk():
-    if os.path.exists(da.LTMK_HEX):
-        return bytes.fromhex(open(da.LTMK_HEX).read().strip())
-    return _TEST_LTMK
+    # Emulator does NOT require device's real key — both sides (client and
+    # ScooterDevice) share the same value; real ECDH round-trip works with any
+    # 32-byte ltmk. If secrets/ltmk.hex does not exist, use fixed test key.
+    p = os.path.join(ROOT, "secrets", "ltmk.hex")
+    if os.path.exists(p):
+        try:
+            val = open(p).read().strip()
+            if len(val) == 64:
+                return bytes.fromhex(val)
+        except Exception:
+            pass
+    return bytes.fromhex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 
 def make_device():
@@ -52,11 +52,12 @@ def make_device():
 
 def install_fake():
     fake_ble.FakeBleakClient._device_factory = make_device
-    da.BleakClient = fake_ble.FakeBleakClient       # подмена в ядре
+    da.BleakClient = fake_ble.FakeBleakClient
 
 
 def make_fake_image(size, tag=b"EMUIMG"):
-    """Псевдо-образ нужного размера (детерминированный, чтобы CRC совпадал)."""
+    """Synthetic firmware image of requested size (deterministic CRC)."""
+    import struct
     body = bytearray()
     i = 0
     while len(body) < size:
@@ -67,15 +68,15 @@ def make_fake_image(size, tag=b"EMUIMG"):
 
 async def scenario_login():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 1: login (крипто round-trip)")
+    print("SCENARIO 1: login (crypto round-trip)")
     print("=" * 60)
     import dreame_flasher as df
     ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
     try:
         await df.login(t, ltmk)
-        print("РЕЗУЛЬТАТ: login прошёл через эмулятор ✅"
-              if DEVICE["obj"].logged_in else "РЕЗУЛЬТАТ: login НЕ прошёл ❌")
+        print("RESULT: login passed via emulator ✅"
+              if DEVICE["obj"].logged_in else "RESULT: login FAILED ❌")
     finally:
         await t.close()
 
@@ -93,70 +94,60 @@ async def flash_via_tools(target, image_path, commit):
 
 async def scenario_same_version():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 2: DFU BLE ТОЙ ЖЕ версии -> ожидаем ОТКАЗ (status 6)")
+    print("SCENARIO 2: DFU BLE SAME version -> expect REJECTION (status 6)")
     print("=" * 60)
     dev = DEVICE["obj"]
-    dev.offered_ble_version = dev.ble_version           # та же версия
-    img = make_fake_image(3000)                          # маленький образ (быстро)
+    dev.offered_ble_version = dev.ble_version
+    img = make_fake_image(3000)
     path = os.path.join(tempfile.gettempdir(), "emu_same.bin")
     open(path, "wb").write(img)
     before = dev.ble_version
     await flash_via_tools("ble", path, commit=True)
-    print(f"РЕЗУЛЬТАТ: версия BLE {before} -> {dev.ble_version} "
-          f"({'НЕ изменилась, отказ сработал ✅' if dev.ble_version == before else 'изменилась ❌'})")
+    print(f"RESULT: BLE version {before} -> {dev.ble_version} "
+          f"({'UNCHANGED, refusal triggered ✅' if dev.ble_version == before else 'CHANGED ❌'})")
 
 
 async def scenario_296_boundary():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 2.5: граница accept_limit (модель 296/301) на ТОЙ ЖЕ версии")
+    print("SCENARIO 2.5: accept_limit boundary (296/301 model) on SAME version")
     print("=" * 60)
-    # Реальная аномалия — устройство САМО держит счётчик на 296/301 (см. docs/FACTS.md),
-    # не зависит от буфера/длины файла. Тот же механизм в accept_limit; чтобы прогон не
-    # занимал минуты, проверяем на пропорционально малом образе (limit=10 из 15), а не на
-    # реалистичных 296/301 — сам механизм (счётчик не растёт после limit) идентичен.
     dev = DEVICE["obj"]
-    dev.offered_ble_version = dev.ble_version            # та же версия, как на живом устройстве
+    dev.offered_ble_version = dev.ble_version
     dev.accept_limit = 10
     dev.ble_buf = bytearray()
     dev.ble_last = 0
     img = make_fake_image(15 * 512)
     path = os.path.join(tempfile.gettempdir(), "emu_296.bin")
     open(path, "wb").write(img)
-    # commit=False намеренно: switchFirmware (даже отклонённый) сбрасывает буфер
-    # (docs/FACTS.md «switchFirmware СБРАСЫВАЕТ OTA-буфер даже при отказе») — это
-    # отдельный, уже проверенный факт (сценарий 2), здесь же смотрим именно на сам
-    # счётчик приёма фрагментов, поэтому коммит не отправляем.
     await flash_via_tools("ble", path, commit=False)
     capped_ok = dev.ble_last == 10
-    print(f"РЕЗУЛЬТАТ: устройство остановилось на lastFragmentIndex={dev.ble_last}/15 "
+    print(f"RESULT: device stopped at lastFragmentIndex={dev.ble_last}/15 "
           f"(accept_limit=10) {'✅' if capped_ok else '❌'} "
-          f"— на живом самокате тот же эффект даёт 296/301 (docs/FACTS.md).")
-    dev.accept_limit = None                               # вернуть дефолт для дальнейших сценариев
-    dev.ble_buf = bytearray()                             # т.к. commit=False не сбросил буфер
-    dev.ble_last = 0                                      # сам (в отличие от switchFirmware) —
-                                                            # иначе следующий сценарий увидит
-                                                            # чужой resume-CRC и рассинхронизируется
+          f"— matches physical 296/301 behavior (docs/FACTS.md).")
+    dev.accept_limit = None
+    dev.ble_buf = bytearray()
+    dev.ble_last = 0
 
 
 async def scenario_upgrade():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 3: DFU BLE НОВОЙ версии -> ожидаем УСПЕХ (switchFirmware)")
+    print("SCENARIO 3: DFU BLE NEW version -> expect SUCCESS (switchFirmware)")
     print("=" * 60)
     dev = DEVICE["obj"]
-    dev.offered_ble_version = "2.8.0_0001"              # новее установленной
+    dev.offered_ble_version = "2.8.0_0001"
     img = make_fake_image(3000)
     path = os.path.join(tempfile.gettempdir(), "emu_new.bin")
     open(path, "wb").write(img)
     before = dev.ble_version
     await flash_via_tools("ble", path, commit=True)
     ok = dev.ble_version == "2.8.0_0001"
-    print(f"РЕЗУЛЬТАТ: версия BLE {before} -> {dev.ble_version} "
-          f"({'ПРОШИВКА ПРИМЕНЕНА ✅ (недостижимо на железе)' if ok else 'не применилась ❌'})")
+    print(f"RESULT: BLE version {before} -> {dev.ble_version} "
+          f"({'FIRMWARE APPLIED ✅' if ok else 'NOT applied ❌'})")
 
 
 async def scenario_info():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 4: инфо-канал 0x001c")
+    print("SCENARIO 4: info channel 0x001c")
     print("=" * 60)
     dev = DEVICE["obj"]
     t = da.Transport(da.MAC_DEFAULT)
@@ -174,7 +165,7 @@ async def scenario_info():
 
 async def scenario_telemetry():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 5: телеметрия spec-канала (0x001a/0x001b), настоящий probes/spec_read.py")
+    print("SCENARIO 5: spec telemetry channel (0x001a/0x001b), real probes/spec_read.py")
     print("=" * 60)
     import dreame_flasher as df
     import spec_read as sr
@@ -183,26 +174,23 @@ async def scenario_telemetry():
     try:
         await df.login(t, ltmk)
         sk = da.LAST_SK
-        # читаем ПО ОДНОМУ свойству — устройство (и наш эмулятор) обслуживает
-        # только первый объект запроса, batch не работает (см. docs/FACTS.md).
         single = [(1, 2), (1, 4), (1, 7), (2, 6), (3, 2), (4, 5)]
         all_ok = True
         for i, obj in enumerate(single):
             pt = await sr.spec_request(t, sk, [obj], app_cnt=i)
-            lines = sr.parse_reply(pt) if pt else ["[!] ответа нет"]
-            got = pt is not None and "пусто" not in "".join(lines)
+            lines = sr.parse_reply(pt) if pt else ["[!] no response"]
+            got = pt is not None and "empty" not in "".join(lines)
             all_ok &= got
             print("  " + lines[-1] if len(lines) > 1 else "  " + lines[0])
-        print(f"РЕЗУЛЬТАТ: телеметрия эмулятора прочитана настоящим spec_read.py "
-              f"(по одному свойству) {'✅' if all_ok else '❌'}")
+        print(f"RESULT: emulator telemetry read by real spec_read.py "
+              f"(per property) {'✅' if all_ok else '❌'}")
 
-        # multi-object В ОДНОМ запросе: устройство должно обслужить ТОЛЬКО первый
         pt2 = await sr.spec_request(t, sk, [(1, 2), (1, 4)], app_cnt=len(single))
         lines2 = sr.parse_reply(pt2) if pt2 else []
-        first_ok = any("BATTERY_LEVEL" in ln and "пусто" not in ln for ln in lines2)
+        first_ok = any("BATTERY_LEVEL" in ln and "empty" not in ln for ln in lines2)
         second_no_data = any("VOLTAGE" in ln and "status=61533" in ln for ln in lines2)
-        print(f"РЕЗУЛЬТАТ: multi-object эмулируется как на железе "
-              f"(первый объект есть, второй -> status) "
+        print(f"RESULT: multi-object emulated matching hardware "
+              f"(first object present, second -> status) "
               f"{'✅' if first_ok and second_no_data else '❌'}")
     finally:
         await t.close()
@@ -210,7 +198,7 @@ async def scenario_telemetry():
 
 async def scenario_push():
     print("\n" + "=" * 60)
-    print("СЦЕНАРИЙ 6: спонтанный пуш при изменении свойства (0x001b), без запроса")
+    print("SCENARIO 6: spontaneous push on property change (0x001b), unsolicited")
     print("=" * 60)
     import dreame_flasher as df
     import spec_read as sr
@@ -221,37 +209,35 @@ async def scenario_push():
         await df.login(t, ltmk)
         sk = da.LAST_SK
 
-        # свойство ВНЕ списка подписки — пуш не должен уйти вообще
-        out = dev.push_property(4, 5, "unused")   # (4,5) не в SUBSCRIBABLE
-        print(f"  push вне SUBSCRIBABLE -> {'ничего не отправлено ✅' if not out else 'ОШИБКА, ушёл пуш ❌'}")
+        out = dev.push_property(4, 5, "unused")
+        print(f"  push outside SUBSCRIBABLE -> {'nothing sent ✅' if not out else 'ERROR, push sent ❌'}")
 
-        # IS_RIDING: 0 -> 2 (в списке подписки) — устройство должно САМО прислать CTR
         while not t.rx.empty():
             t.rx.get_nowait()
         t.client.notify_now(dev.push_property(2, 7, 2))
 
         s, b = await asyncio.wait_for(t.rx.get(), timeout=2.0)
         is_ctr = s == 0x001B and len(b) >= 6 and b[0] == 0 and b[1] == 0 and b[2] == 0x00
-        print(f"  CTR от устройства без запроса: {'получен ✅' if is_ctr else 'НЕ получен ❌'}")
+        print(f"  unsolicited CTR from device: {'received ✅' if is_ctr else 'NOT received ❌'}")
         if not is_ctr:
-            print("РЕЗУЛЬТАТ: пуш не работает ❌")
+            print("RESULT: push not working ❌")
             return
         fc = struct.unpack("<H", b[4:6])[0]
-        await t.write(0x001B, struct.pack("<HBB", 0, 0x01, 0x01))   # готовы принимать
+        await t.write(0x001B, struct.pack("<HBB", 0, 0x01, 0x01))   # ready to receive
         parts = {}
         for _ in range(fc):
             s2, b2 = await asyncio.wait_for(t.rx.get(), timeout=2.0)
             seq = struct.unpack("<H", b2[:2])[0]
             parts[seq] = b2[2:]
-        await t.write(0x001B, struct.pack("<HBB", 0, 0x01, 0x00))   # приняли всё
+        await t.write(0x001B, struct.pack("<HBB", 0, 0x01, 0x00))   # accepted all
         payload = b"".join(parts[i] for i in sorted(parts))
         cnt = struct.unpack("<H", payload[:2])[0]
         pt = sr.dec_dev(sk, cnt, payload[2:])
         lines = sr.parse_reply(pt)
         for line in lines:
             print("  " + line)
-        ok = any("IS_RIDING" in ln and "пусто" not in ln for ln in lines)
-        print(f"РЕЗУЛЬТАТ: пуш IS_RIDING расшифрован настоящим spec_read.dec_dev "
+        ok = any("IS_RIDING" in ln and "empty" not in ln for ln in lines)
+        print(f"RESULT: IS_RIDING push decrypted by real spec_read.dec_dev "
               f"{'✅' if ok else '❌'}")
     finally:
         await t.close()
@@ -259,7 +245,6 @@ async def scenario_push():
 
 async def main():
     install_fake()
-    # устройство на СТАРОЙ версии, чтобы можно было показать апгрейд
     ltmk = _load_ltmk()
     DEVICE["obj"] = ScooterDevice(ltmk, ble_version="2.7.0_0015",
                                   mcu_version="0007", verbose=True)
@@ -274,7 +259,7 @@ async def main():
     DEVICE["obj"].logged_in = False
     await scenario_push()
     print("\n" + "=" * 60)
-    print("ГОТОВО. Эмулятор прогнал настоящие dreame_auth/dreame_flasher без BLE.")
+    print("DONE. Emulator completed test run against real dreame_auth/dreame_flasher without BLE.")
     print("=" * 60)
 
 

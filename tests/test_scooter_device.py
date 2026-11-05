@@ -1,5 +1,5 @@
-"""Юнит-тесты чистых функций эмулятора устройства (emulator/scooter_device.py):
-сравнение версий прошивки и кодирование spec-значений. Без BLE, без асинхронности."""
+"""Unit tests for pure helper functions in device emulator (emulator/scooter_device.py):
+firmware version comparison and spec value encoding. No BLE, non-async."""
 import struct
 
 import scooter_device as sd
@@ -11,8 +11,8 @@ def test_ver_tuple_parses_dotted_and_underscore():
 
 
 def test_ver_tuple_ordering_matches_switch_firmware_gate():
-    """От этого сравнения зависит защита от дурака в _switch(): 'новее' решается
-    именно так, как здесь — иначе можно случайно разрешить даунгрейд/переустановку."""
+    """Version gate protection in _switch() depends on this comparison: 'newer' is decided
+    exactly as tested here — otherwise a downgrade or reinstall could be mistakenly allowed."""
     assert sd.ver_tuple("2.8.0_0001") > sd.ver_tuple("2.7.0_0015")
     assert sd.ver_tuple("2.7.0_0015") == sd.ver_tuple("2.7.0_0015")
     assert not sd.ver_tuple("2.7.0_0015") > sd.ver_tuple("2.7.0_0015")
@@ -35,9 +35,9 @@ def test_spec_encode_value_types():
 
 
 def test_spec_telemetry_and_subscribable_keys_are_consistent():
-    """SUBSCRIBABLE должен ссылаться на реальные siid/piid — опечатка тут тихо
-    сломает пуш конкретного свойства (см. push_property)."""
+    """SUBSCRIBABLE must reference valid siid/piid pairs — a typo here silently
+    breaks property notification dispatching (see push_property)."""
     assert isinstance(sd.SUBSCRIBABLE, set)
-    assert (2, 7) in sd.SUBSCRIBABLE  # IS_RIDING — используется в сценарии 6
+    assert (2, 7) in sd.SUBSCRIBABLE  # IS_RIDING — used in scenario 6
     for key in sd.SUBSCRIBABLE:
         assert isinstance(key, tuple) and len(key) == 2

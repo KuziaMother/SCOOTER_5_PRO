@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Эмуляция round-robin-диспетчера 0x0E658 (моторная цепочка, §39.5b) с seed «живого» стейта.
+"""Emulation of round-robin dispatcher 0x0E658 (motor chain, §39.5b) with "live" state seed.
 
-Слоты TBB: 0=0x6E50, 1=0x63B8, 2=0x799C (управление), 3=0x7A30, 4=0x69E4, 5=0x6838.
-Гейты: byte@RAM[0xA49]=1, byte@RAM[0x35]=0. Stub `bx lr` в хвосте образа (0x08024D00).
+TBB slots: 0=0x6E50, 1=0x63B8, 2=0x799C (control), 3=0x7A30, 4=0x69E4, 5=0x6838.
+Gates: byte@RAM[0xA49]=1, byte@RAM[0x35]=0. Stub `bx lr` in tail of image (0x08024D00).
 
-Запуск: python mcu_dispatch_emu.py [sensor] [mode] [state]
+Usage: python mcu_dispatch_emu.py [sensor] [mode] [state]
 """
 import os
 import struct as st
@@ -16,7 +16,7 @@ from mcu_emu import McuEmu, STACK_TOP  # noqa: E402
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE  # noqa: E402
 from unicorn.arm_const import UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_LR  # noqa: E402
 
-STUB = 0x08024D00          # bx lr в хвосте образа
+STUB = 0x08024D00          # bx lr in tail of image
 
 
 def main():
@@ -26,17 +26,17 @@ def main():
 
     emu = McuEmu(max_insn=20_000_000)
     uc = emu.uc
-    uc.mem_write(0x40000000, bytes(0x100000))     # периферия = 0
+    uc.mem_write(0x40000000, bytes(0x100000))     # peripherals = 0
     try:
-        uc.mem_map(0x48000000, 0x1000)            # порт-блок
+        uc.mem_map(0x48000000, 0x1000)            # port block
     except Exception:
         pass
     uc.mem_write(STUB, b"\x70\x47")               # bx lr
 
-    # seed «живого» стейта
-    uc.mem_write(0x20000A49, b"\x01")             # гейт диспетчера
-    uc.mem_write(0x20000035, b"\x00")             # RAM[0x35] = 0 (разрешено)
-    uc.mem_write(0x20001384 + 0x20, st.pack("<h", sensor))   # сенсор i16
+    # "live" state seed
+    uc.mem_write(0x20000A49, b"\x01")             # dispatcher gate
+    uc.mem_write(0x20000035, b"\x00")             # RAM[0x35] = 0 (allowed)
+    uc.mem_write(0x20001384 + 0x20, st.pack("<h", sensor))   # sensor i16
     uc.mem_write(0x20001384 + 0x06, st.pack("<I", state))    # state u32
     uc.mem_write(0x20001359 + 1, bytes([mode]))             # mode-byte
 
@@ -63,19 +63,19 @@ def main():
     emu.spins = 0
     emu.mapped_pages = 0
 
-    for i in range(12):                            # полный цикл round-robin + запас
+    for i in range(12):                            # full round-robin cycle + margin
         uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
         uc.reg_write(UC_ARM_REG_LR, STUB | 1)
         try:
             uc.emu_start(0xE658 | 1, STUB | 1, timeout=0, count=3_000_000)
         except Exception:
-            pass                                   # срыв в stub-возврате — норма
+            pass                                   # fault at stub return is normal
         counter = bytes(uc.mem_read(0x20000A62, 1))[0]
         out = st.unpack_from("<H", bytes(uc.mem_read(0x20001357, 2)), 0)[0]
         ctl = st.unpack_from("<h", bytes(uc.mem_read(0x200013A4, 2)), 0)[0]
-        print(f"итер {i:2d}: counter={counter} out@1357={out} ctl@st+24={ctl}")
+        print(f"iter {i:2d}: counter={counter} out@1357={out} ctl@st+24={ctl}")
 
-    print(f"insn всего: {emu.insn}; события TIM1/TBL/PORT: {len(events)}")
+    print(f"total insn: {emu.insn}; events TIM1/TBL/PORT: {len(events)}")
     for ev in events[:30]:
         print("  ", ev)
 

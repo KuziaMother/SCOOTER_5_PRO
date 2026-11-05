@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
-"""
-Скачивание плагина Mi Home для xiaomi.scooter.5pro из Mi Cloud.
+"""Download Mi Home plugin for xiaomi.scooter.5pro from Mi Cloud.
 
-Зачем: телеметрии самоката нет ни в MIoT-спеке, ни в инфо-канале 0x001c, ни в
-MiBeacon-рекламе (проверено на живом устройстве, см. research/REPORT.md).
-Остаётся приватный протокол Dreame поверх шифрованной сессии — его логика лежит
-в плагине Mi Home для этой модели, которого в базовом APK нет.
+Context: scooter telemetry is not exposed via standard MIoT spec, info channel 0x001c,
+or MiBeacon advertisements (verified on hardware, see research/REPORT.md).
+Plugin contains Dreame private protocol implementation over encrypted session.
 
-Запрос повторяет PluginUpdateApi->updatePlugin (реверс DEX, classes2.dex):
+Request matches PluginUpdateApi->updatePlugin (reversed DEX, classes2.dex):
     POST {api}/v2/plugin/fetch_plugin
-    data = {"is_car_mihome":.., "latest_req":{..}, "backup_req":{..}, "stand_plugins":{..}}
-Константы из L_m_j/bx9;-><clinit> (НЕ угаданные): api_version=10116, api_level=111.
+Constants from L_m_j/bx9;-><clinit>: api_version=10116, api_level=111.
 
-Сессия Mi Cloud кэшируется в secrets/micloud_session.json (gitignored), чтобы не
-сканировать QR на каждой итерации. Секреты в stdout не печатаются.
+Session cached in secrets/micloud_session.json.
 
-Запуск:  python tools/fetch_plugin.py [--relogin] [--model M]
+Usage:  python tools/fetch_plugin.py [--relogin] [--model M]
 """
 import argparse
 import hashlib
@@ -37,7 +33,7 @@ QR_PNG = os.path.join(OUT_DIR, "qr.png")
 SESSION_JSON = os.path.join(ROOT, "secrets", "micloud_session.json")
 
 sys.argv_backup = list(sys.argv)
-sys.argv = ["qr"]                      # token_extractor читает argv при импорте
+sys.argv = ["qr"]                      # token_extractor reads argv upon import
 sys.path.insert(0, os.path.join(HERE, "xct"))
 import token_extractor as tx           # noqa: E402
 
@@ -46,7 +42,7 @@ def flush(*a):
     print(*a, flush=True)
 
 
-# ---------------------------------------------------------------- сессия
+# ---------------------------------------------------------------- session
 
 def save_session(c):
     os.makedirs(os.path.dirname(SESSION_JSON), exist_ok=True)
@@ -54,7 +50,7 @@ def save_session(c):
         json.dump({"userId": c.userId, "ssecurity": c._ssecurity,
                    "serviceToken": c._serviceToken, "agent": c._agent,
                    "device_id": c._device_id}, f)
-    flush(f"[*] сессия сохранена: {os.path.relpath(SESSION_JSON, ROOT)} (в .gitignore)")
+    flush(f"[*] session saved: {os.path.relpath(SESSION_JSON, ROOT)} (in .gitignore)")
 
 
 def load_session():
@@ -86,9 +82,9 @@ def qr_login():
     with open(QR_PNG, "wb") as f:
         f.write(img.content)
     flush(f"QR_SAVED {QR_PNG}")
-    flush("WAITING_SCAN — отсканируй QR в приложении Mi Home / Xiaomi Home")
+    flush("WAITING_SCAN — scan QR in Mi Home / Xiaomi Home app")
     if not c.login_step_3():
-        flush("ERR step3 (скан не дождался / таймаут)")
+        flush("ERR step3 (scan timeout)")
         return None
     if not c.login_step_4():
         flush("ERR step4")
@@ -98,22 +94,22 @@ def qr_login():
     return c
 
 
-# ---------------------------------------------------------------- запросы
+# ---------------------------------------------------------------- requests
 
 def req_variants(model, region):
-    """Разные формы data для fetch_plugin — пробуем все за один прогон."""
+    """Alternative request payloads for fetch_plugin — tries all in one run."""
     plugins = [{"model": model}]
     latest = {"api_version": API_VERSION, "app_platform": "Android",
               "region": region, "plugins": plugins, "package_type": ""}
     backup = {"plugins": plugins, "api_level": API_LEVEL, "app_platform": "phone"}
     stand = {"api_version": API_VERSION, "app_platform": "Android",
              "stand_plugins": [{"model": model, "version": 0}]}
-    yield "полный (latest+backup+stand)", {
+    yield "full (latest+backup+stand)", {
         "is_car_mihome": False, "latest_req": latest,
         "backup_req": backup, "stand_plugins": stand}
-    yield "только latest_req", {"latest_req": latest}
-    yield "только stand_plugins", {"stand_plugins": stand}
-    yield "latest без region", {
+    yield "latest_req only", {"latest_req": latest}
+    yield "stand_plugins only", {"stand_plugins": stand}
+    yield "latest without region", {
         "latest_req": {k: v for k, v in latest.items() if k != "region"}}
 
 
@@ -139,12 +135,12 @@ def find_downloads(obj, acc, path=""):
 
 
 def summarize(resp):
-    """Короткая сводка непустых блоков ответа."""
+    """Brief summary of non-empty response blocks."""
     r = resp.get("result") or {}
     bits = []
     for k, v in r.items():
         if isinstance(v, list):
-            bits.append(f"{k}={len(v)}" + ("" if v else " (пусто)"))
+            bits.append(f"{k}={len(v)}" + ("" if v else " (empty)"))
         elif v is None:
             bits.append(f"{k}=null")
         else:
@@ -155,7 +151,7 @@ def summarize(resp):
 def download(entry, out_dir):
     name = entry["url"].split("/")[-1].split("?")[0] or "plugin.mpk"
     dest = os.path.join(out_dir, name)
-    flush(f"    скачиваю {name} ...")
+    flush(f"    downloading {name} ...")
     r = requests.get(entry["url"], timeout=180)
     if r.status_code != 200:
         flush(f"    HTTP {r.status_code}")
@@ -164,24 +160,24 @@ def download(entry, out_dir):
         f.write(r.content)
     got = hashlib.md5(r.content).hexdigest()
     ok = "—" if not entry.get("md5") else ("MD5 OK" if got == entry["md5"]
-                                           else "MD5 РАСХОЖДЕНИЕ!")
-    flush(f"    сохранено: {dest}  ({len(r.content)} Б)  {ok}")
+                                           else "MD5 MISMATCH!")
+    flush(f"    saved: {dest}  ({len(r.content)} B)  {ok}")
     return dest
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--relogin", action="store_true", help="игнорировать кэш, новый QR")
+    ap.add_argument("--relogin", action="store_true", help="ignore cache, create new QR")
     ap.add_argument("--model", default=MODEL)
     a = ap.parse_args(sys.argv_backup[1:])
 
     os.makedirs(OUT_DIR, exist_ok=True)
     c = None if a.relogin else load_session()
     if c:
-        flush("[*] использую сохранённую сессию Mi Cloud")
+        flush("[*] using saved Mi Cloud session")
         if not c.execute_api_call_encrypted(
                 c.get_api_url("ru") + "/v2/user/get_device_cnt", {"data": "{}"}):
-            flush("[!] сессия недействительна — нужен новый QR")
+            flush("[!] session expired — new QR required")
             c = None
     if not c:
         c = qr_login()
@@ -194,27 +190,27 @@ def main():
             try:
                 resp = call(c, country, data)
             except Exception as e:
-                flush(f"[{country}/{tag}] исключение: {e}")
+                flush(f"[{country}/{tag}] exception: {e}")
                 continue
             if not resp:
-                flush(f"[{country}/{tag}] пустой ответ")
+                flush(f"[{country}/{tag}] empty response")
                 continue
             code = resp.get("code")
             entries = find_downloads(resp.get("result", resp), [])
             flush(f"[{country}/{tag}] code={code}  {summarize(resp)}"
-                  f"  ссылок={len(entries)}")
+                  f"  urls={len(entries)}")
             with open(os.path.join(OUT_DIR, f"fp_{country}_{tag.split()[0]}.json"),
                       "w", encoding="utf-8") as f:
                 json.dump(resp, f, ensure_ascii=False, indent=2)
             if entries:
                 found = entries
-                flush(f"\n>>> НАШЛИСЬ ССЫЛКИ на {country} ({tag})")
+                flush(f"\n>>> FOUND URLS on {country} ({tag})")
                 break
         if found:
             break
 
     if not found:
-        flush("\nссылок нет ни в одной форме запроса — JSON'ы сохранены в plugins/")
+        flush("\nno urls found in any request form — JSONs saved in plugins/")
         return 1
 
     sub = os.path.join(OUT_DIR, a.model)
@@ -224,7 +220,7 @@ def main():
         flush(f"  [{e['field']}] model={e['model']} version={e['version']}")
         if download(e, sub):
             ok = True
-    flush("\nГОТОВО" if ok else "\nне скачалось")
+    flush("\nDONE" if ok else "\ndownload failed")
     return 0 if ok else 1
 
 

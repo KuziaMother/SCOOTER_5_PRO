@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Скан BLE-рекламы самоката и разбор MiBeacon (service data FE95).
+Scan scooter BLE advertisements and parse MiBeacon (service data FE95).
 
-Гипотеза: телеметрия (батарея и пр.) уходит НЕ через GATT, а объектами MiBeacon
-в рекламе — так отчитываются Xiaomi BLE-устройства без MIoT-свойств.
-У 5 Pro в MIoT-спеке нет ни одного свойства телеметрии, GATT-каналы молчат,
-а ключ устройства у нас есть → это главный оставшийся программный путь.
+Hypothesis: telemetry (battery etc.) is broadcast via MiBeacon objects in
+advertisements rather than GATT — matching Xiaomi BLE devices without MIoT properties.
+Scooter 5 Pro MIoT spec lacks telemetry properties, GATT channels are silent,
+and we hold the device key → primary remaining software route.
 
-Полностью пассивно: только слушаем эфир, ничего не пишем и не подключаемся.
+Completely passive: listens only, writes nothing, does not connect.
 
-Запуск:  python beacon_scan.py [--secs 30]
+Usage:  python beacon_scan.py [--secs 30]
 """
 import argparse
 import asyncio
@@ -20,22 +20,22 @@ from bleak import BleakScanner
 MAC = "2C:19:5C:DE:DE:88"
 FE95 = "0000fe95-0000-1000-8000-00805f9b34fb"
 
-# известные типы объектов MiBeacon (подмножество, релевантное транспорту)
+# known MiBeacon object types (subset relevant to transport)
 OBJ = {
-    0x1001: "кнопка/событие",
-    0x1004: "температура",
-    0x1006: "влажность",
-    0x100A: "БАТАРЕЯ %",
-    0x100D: "температура+влажность",
-    0x1010: "формальдегид",
-    0x1017: "простой idle",
-    0x1018: "освещение",
-    0x1019: "дверь",
-    0x000B: "блокировка",
+    0x1001: "button/event",
+    0x1004: "temperature",
+    0x1006: "humidity",
+    0x100A: "BATTERY %",
+    0x100D: "temperature+humidity",
+    0x1010: "formaldehyde",
+    0x1017: "idle",
+    0x1018: "illumination",
+    0x1019: "door",
+    0x000B: "lock",
 }
 
 def fc_bits(fctrl: int) -> dict:
-    """Канонические поля frame_control MiBeacon (как в xiaomi_ble/ble_monitor)."""
+    """Canonical MiBeacon frame_control fields (matching xiaomi_ble/ble_monitor)."""
     return {
         "version": fctrl >> 12,
         "auth_mode": (fctrl >> 10) & 3,
@@ -52,7 +52,7 @@ def fc_bits(fctrl: int) -> dict:
 
 def parse_mibeacon(sd: bytes):
     if len(sd) < 5:
-        return f"слишком коротко: {sd.hex()}"
+        return f"too short: {sd.hex()}"
     fctrl, pid, cnt = struct.unpack("<HHB", sd[:5])
     f = fc_bits(fctrl)
     on = ", ".join(k for k, v in f.items() if k not in ("version", "auth_mode") and v)
@@ -68,15 +68,15 @@ def parse_mibeacon(sd: bytes):
         i += 1
     rest = sd[i:]
     if not rest:
-        out.append("полезной нагрузки НЕТ — только идентификация (телеметрии в рекламе нет)")
+        out.append("NO payload — identification only (no telemetry in advertisement)")
         return "\n     ".join(out)
     if f["encrypted"]:
-        # шифр: [ciphertext][ext_cnt 3][mic 4]
+        # cipher: [ciphertext][ext_cnt 3][mic 4]
         if len(rest) >= 7:
             ct, ext, mic = rest[:-7], rest[-7:-4], rest[-4:]
-            out.append(f"ЗАШИФРОВАНО ct={ct.hex()} ext_cnt={ext.hex()} mic={mic.hex()}")
+            out.append(f"ENCRYPTED ct={ct.hex()} ext_cnt={ext.hex()} mic={mic.hex()}")
         else:
-            out.append(f"ЗАШИФРОВАНО (коротко) {rest.hex()}")
+            out.append(f"ENCRYPTED (short) {rest.hex()}")
     elif f["object"]:
         while len(rest) >= 3:
             otype, olen = struct.unpack("<HB", rest[:3])
@@ -90,13 +90,13 @@ def parse_mibeacon(sd: bytes):
             out.append(f"OBJ 0x{otype:04x} ({name}) len={olen} {val.hex()}{extra}")
             rest = rest[3 + olen:]
     else:
-        out.append(f"без объектов, хвост={rest.hex()}")
+        out.append(f"no objects, tail={rest.hex()}")
     return "\n     ".join(out)
 
 
 async def run(secs: float, mac: str):
     seen = {}
-    print(f"=== слушаем рекламу {secs:.0f} с (самокат ВКЛЮЧЁН) ===\n")
+    print(f"=== listening to advertisements for {secs:.0f} s (scooter powered ON) ===\n")
 
     def cb(dev, adv):
         if dev.address.upper() != mac.upper():
@@ -124,9 +124,9 @@ async def run(secs: float, mac: str):
     await asyncio.sleep(secs)
     await scanner.stop()
 
-    print("=== ИТОГ ===")
+    print("=== SUMMARY ===")
     if not seen:
-        print("самокат не рекламируется (спит / уже подключён к телефону?)")
+        print("scooter is not advertising (sleeping / already connected to phone?)")
     for k, n in seen.items():
         payload = k[1] if k[0] != "md" else k[2]
         print(f"{n:>4}x  {payload.hex() if isinstance(payload, bytes) else payload}")

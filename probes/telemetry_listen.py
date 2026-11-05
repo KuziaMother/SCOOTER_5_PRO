@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Пассивное прослушивание после логина: ищем телеметрию (батарея/скорость/пробег).
+Passive listening post-login: searching for telemetry (battery/speed/mileage).
 
-Read-only: ничего не пишем в устройство, кроме обязательного login-хендшейка.
-Всё пойманное на 0x001a/0x001b/0x0016 пробуем расшифровать сессионным ключом.
+Read-only: writes nothing to device except required login handshake.
+Attempts to decrypt all packets caught on 0x001a/0x001b/0x0016 using session key.
 
-Раскладка sessionKey (40 Б, схема Mijia):
+sessionKey layout (40 B, Mijia scheme):
     [0:16] dev_key   (device -> app)   [16:32] app_key (app -> device)
     [32:36] dev_iv                     [36:40] app_iv
 
-Запуск:  python telemetry_listen.py [--secs 40]
+Usage:  python telemetry_listen.py [--secs 40]
 """
 import argparse
 import asyncio
@@ -25,15 +25,15 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 
 def try_decrypt(sk: bytes, blob: bytes, direction: str = "dev"):
-    """Перебор counter'ов и раскладок кадра для CCM-расшифровки."""
+    """Brute-forcing counters and frame layouts for CCM decryption."""
     key = sk[0:16] if direction == "dev" else sk[16:32]
     iv = sk[32:36] if direction == "dev" else sk[36:40]
     ccm = AESCCM(key, tag_length=4)
     out = []
-    # кандидаты: (полезная часть, счётчик) при разных вариантах хвоста кадра
+    # candidates: (payload, counter) under various frame tail hypotheses
     variants = []
     if len(blob) >= 4:
-        # counter в конце (2 Б) — стандарт mible: [ct][mac4]... либо [ct+mac4][cnt2]
+        # counter at end (2 B) — standard mible: [ct][mac4]... or [ct+mac4][cnt2]
         variants.append(("cnt2-tail", blob[:-2], int.from_bytes(blob[-2:], "little")))
     variants.append(("cnt-brute", blob, None))
     for tag, body, cnt in variants:
@@ -58,9 +58,9 @@ def annotate(pt: bytes) -> str:
     for i in range(0, max(0, len(pt) - 1)):
         w = int.from_bytes(pt[i:i + 2], "little")
         if 3000 <= w <= 4300:
-            hints.append(f"[{i}:2]={w}(?мВ)")
+            hints.append(f"[{i}:2]={w}(?mV)")
         elif 30000 <= w <= 45000:
-            hints.append(f"[{i}:2]={w}(?мВ пакета)")
+            hints.append(f"[{i}:2]={w}(?pack mV)")
     return "  ".join(hints[:12])
 
 
@@ -70,7 +70,7 @@ async def run(mac: str, secs: float):
     try:
         await t.connect()
         if not await t.a4_handshake():
-            print("[!] транспорт не поднялся")
+            print("[!] transport failed to connect")
             return 1
         for s, b in await t.drain(1.0):
             if s == da.CH_LOGIN and len(b) >= 3 and b[2] == da.PKT_MNG:
@@ -85,14 +85,14 @@ async def run(mac: str, secs: float):
         print("\n=== Stage B ===")
         ok = await da.stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False)
         if not ok:
-            print("[!] login отказан")
+            print("[!] login refused")
             return 1
         sk = da.LAST_SK
-        print(f"\n[+] LOGIN OK. sessionKey {len(sk)}Б, dev_key[:4]={sk[0:4].hex()} "
+        print(f"\n[+] LOGIN OK. sessionKey {len(sk)}B, dev_key[:4]={sk[0:4].hex()} "
               f"dev_iv={sk[32:36].hex()} app_iv={sk[36:40].hex()}")
 
-        print(f"\n=== пассивное прослушивание {secs:.0f} с (самокат должен быть ВКЛЮЧЁН) ===")
-        print("    покрути колесо / пожми ручку — ищем меняющиеся байты\n")
+        print(f"\n=== passive listening for {secs:.0f} s (scooter must be ON) ===")
+        print("    spin wheel / press throttle — searching for varying bytes\n")
         seen = []
         deadline = asyncio.get_event_loop().time() + secs
         while asyncio.get_event_loop().time() < deadline:
@@ -102,14 +102,14 @@ async def run(mac: str, secs: float):
                 continue
             seen.append((s, b))
 
-        print(f"\n=== поймано {len(seen)} нотификаций ===")
+        print(f"\n=== captured {len(seen)} notifications ===")
         if not seen:
-            print("тишина: устройство само телеметрию не пушит — нужен запрос.")
+            print("silence: device does not push telemetry spontaneously — requires query.")
         by_ch = {}
         for s, b in seen:
             by_ch.setdefault(s, []).append(b)
         for s, blobs in sorted(by_ch.items()):
-            print(f"\n--- 0x{s:04x}: {len(blobs)} кадров ---")
+            print(f"\n--- 0x{s:04x}: {len(blobs)} frames ---")
             for b in blobs[:20]:
                 print(f"  {b.hex()}")
             if s in (0x001A, 0x001B):

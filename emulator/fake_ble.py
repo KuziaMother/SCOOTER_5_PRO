@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-FakeBleakClient — адаптер эмулятора под интерфейс bleak.BleakClient.
+FakeBleakClient — emulator adapter conforming to bleak.BleakClient interface.
 
-Позволяет запускать НАСТОЯЩИЕ dreame_auth.py / dreame_flasher.py против
-ScooterDevice без железа: подменяется dreame_auth.BleakClient на этот класс.
+Allows running REAL dreame_auth.py / dreame_flasher.py against
+ScooterDevice without physical hardware: swaps dreame_auth.BleakClient with this class.
 
-Уведомления доставляются синхронно во время write_gatt_char (устройство
-обрабатывает кадр и сразу вызывает notify-callback), что совпадает с моделью
-ожидания в Transport (пишем -> ждём rx).
+Notifications are delivered synchronously during write_gatt_char (device
+processes the frame and invokes notify callback immediately), matching the
+expectation model in Transport (write -> wait rx).
 """
 import asyncio
 
@@ -19,7 +19,7 @@ class FakeChar:
     def __init__(self, sid):
         self.sid = sid
         self.uuid = f"0000{sid:04x}-0000-1000-8000-00805f9b34fb"
-        # набор свойств: notify для входящих каналов, write для команд
+        # property set: notify for inbound channels, write for commands
         props = {"write", "write-without-response"}
         if sid in (0x0010, 0x0016, 0x0017, 0x0018, 0x001a, 0x001b, 0x001c):
             props |= {"notify"}
@@ -35,8 +35,8 @@ class FakeService:
 
 
 class FakeBleakClient:
-    """Минимальная реализация API bleak поверх ScooterDevice."""
-    _device_factory = None      # ставится извне: () -> ScooterDevice
+    """Minimal bleak API implementation backed by ScooterDevice."""
+    _device_factory = None      # set externally: () -> ScooterDevice
 
     def __init__(self, mac, timeout=20.0, **kw):
         self.mac = mac
@@ -77,22 +77,22 @@ class FakeBleakClient:
     async def write_gatt_char(self, char, data, response=False):
         sid = char.sid
         outs = self.device.on_write(sid, bytes(data))
-        # доставляем уведомления через зарегистрированные callback'и
+        # deliver notifications via registered callbacks
         for out_sid, out_bytes in outs:
             cb = self._notify.get(out_sid)
             if cb is not None:
                 sender = self._char_by_sid[out_sid]
                 cb(sender, bytearray(out_bytes))
-        await asyncio.sleep(0)      # уступить циклу
+        await asyncio.sleep(0)      # yield to event loop
 
     async def read_gatt_char(self, char):
         sid = char.sid
         return self.device.on_read(sid)
 
     def notify_now(self, outs):
-        """Доставить уведомления БЕЗ предшествующего write_gatt_char — эмуляция
-        спонтанного пуша устройства (device.push_property(...) -> outs той же
-        формы [(sid, bytes), ...], что возвращает on_write)."""
+        """Deliver notifications WITHOUT prior write_gatt_char — emulation of
+        spontaneous device push (device.push_property(...) -> outs of the same
+        structure [(sid, bytes), ...] returned by on_write)."""
         for out_sid, out_bytes in outs:
             cb = self._notify.get(out_sid)
             if cb is not None:

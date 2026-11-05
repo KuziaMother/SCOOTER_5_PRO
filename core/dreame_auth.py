@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 LAST_SK=None
 """
-Dreame Scooter 5 Pro — security-chip login, ЭТАП A (проба транспорта).
+Dreame Scooter 5 Pro — security-chip login, STAGE A (transport probe).
 ======================================================================
 
-Цель этапа A: поднять канальный транспорт (A4 → MNG) на FE95/0x0016,
-подписаться на notify, отправить кандидаты первой login-команды и
-залогировать ЛЮБУЮ реакцию устройства. Ничего во flash не пишется.
+Stage A goal: establish channel transport (A4 -> MNG) on FE95/0x0016,
+subscribe to notify, send candidates of the first login command and
+log ANY reaction from the device. Nothing is written to flash.
 
-Транспорт (из DEX-анализа, раздел 3 docs/dreame_dfu_protocol.md), little-endian:
-    A4:        write 0xA4 -> 0x0010; устройство отвечает MNG на 0x0016
+Transport (from DEX analysis, section 3 docs/dreame_dfu_protocol.md), little-endian:
+    A4:        write 0xA4 -> 0x0010; device responds MNG on 0x0016
     MNG:       [seq=0000][04][subtype][maxPkgNum][maxDMTU]
     MNG_ACK:   [seq=0000][05][subtype][maxPkgNum][maxDMTU]
     SINGLE:    [seq=0000][02][channel][data...]
@@ -17,7 +17,7 @@ Dreame Scooter 5 Pro — security-chip login, ЭТАП A (проба транс�
     DATA:      [seq u16>=1][payload...]
     ACK:       [seq=0000][01][status][seq u16...]
 
-Использование:
+Usage:
     python dreame_auth.py [MAC]
 """
 
@@ -29,7 +29,7 @@ import zlib
 import json
 from bleak import BleakClient
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # корень проекта (core/ — подкаталог)
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # project root (core/ is subfolder)
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -38,8 +38,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 MAC_DEFAULT = "2C:19:5C:DE:DE:88"
 
-CH_CONTROL = 0x0010     # A4, прямые login-команды
-CH_LOGIN   = 0x0016     # канальный notify/data для login (securitychipauth)
+CH_CONTROL = 0x0010     # A4, direct login commands
+CH_LOGIN   = 0x0016     # channel notify/data for login (securitychipauth)
 CH_MCU     = 0x001C
 
 A4 = 0xA4
@@ -53,10 +53,10 @@ def sid(ch_or_uuid):
 
 
 def gen_ec_keypair():
-    """P-256 пара. Возвращает (priv, raw_pub 64 байта X||Y без 0x04)."""
+    """P-256 pair. Returns (priv, raw_pub 64 bytes X||Y without 0x04)."""
     priv = ec.generate_private_key(ec.SECP256R1())
     raw = priv.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-    return priv, raw[1:]          # обрезаем 0x04, как getRawPublicKey в APK
+    return priv, raw[1:]          # strip 0x04, like getRawPublicKey in APK
 
 
 def decode(data: bytes) -> str:
@@ -76,7 +76,7 @@ class Transport:
         self.client = None
         self.chars = {}
         self.rx = asyncio.Queue()          # (sid, bytes)
-        self.last_ctrl = None              # последний ответ на 0x0010 (login result)
+        self.last_ctrl = None              # last response on 0x0010 (login result)
         self.dmtu = 242
         self.pkg_num = 6
 
@@ -108,7 +108,7 @@ class Transport:
         await self.client.write_gatt_char(self.chars[ch_sid], data, response=response)
 
     async def drain(self, timeout=2.5):
-        """Собрать все notify в течение окна тишины."""
+        """Collect all notifications during silence window."""
         out = []
         try:
             while True:
@@ -126,32 +126,32 @@ class Transport:
             if len(b) >= 6 and b[0] == 0 and b[1] == 0 and b[2] == PKT_MNG:
                 self.pkg_num, self.dmtu = b[4], b[5]
                 print(f"    MNG: maxPackageNum={self.pkg_num} maxDMTU={self.dmtu}")
-                # ответить MNG_ACK на 0x0016
+                # respond MNG_ACK on 0x0016
                 ack = struct.pack("<HBB", 0, PKT_MNG_ACK, b[3]) + bytes([self.pkg_num, self.dmtu])
                 await self.write(CH_LOGIN, ack)
                 print(f"    >>> 0x0016 MNG_ACK {ack.hex()}")
                 await self.drain(1.0)
                 return True
-        print("    [!] MNG не получен")
+        print("    [!] MNG not received")
         return False
 
     async def send_stream(self, channel, payload, timeout=4.0, char=CH_LOGIN, crc=False,
                           resp_data=False, chunk=None):
         """
-        Отправка сообщения как отправитель (по snoop телефона):
-            CTR [00 00][00][channel][fc u16] -> ждём ACK -> DATA×fc -> ждём ACK
-        char — характеристика канала (0x0016 login / 0x0018 dfu).
-        crc=True — добавить CRC32(payload) LE в конец (useCrc32Verify канала DFU;
-            подтверждено реверсом vw1.OooOO0o + z81/k81).
-        chunk — размер данных в DATA-кадре. ВАЖНО: устройство собирает сообщение по
-            смещению seq*chunk, поэтому chunk обязан совпадать с frameSize канала
-            (DFU=242), иначе reassembly сдвигается и CRC не сходится -> NAK 05.
-        resp_data=True — DATA-кадры Write-With-Response.
+        Send message as sender (per phone snoop):
+            CTR [00 00][00][channel][fc u16] -> wait ACK -> DATA×fc -> wait ACK
+        char — channel characteristic (0x0016 login / 0x0018 dfu).
+        crc=True — append CRC32(payload) LE at the end (useCrc32Verify of DFU channel;
+            confirmed by reversing vw1.OooOO0o + z81/k81).
+        chunk — data size in DATA frame. IMPORTANT: device reassembles message by
+            offset seq*chunk, so chunk MUST match channel frameSize
+            (DFU=242), otherwise reassembly shifts and CRC mismatches -> NAK 05.
+        resp_data=True — Write-With-Response DATA frames.
         """
         if crc:
             payload = payload + struct.pack("<I", zlib.crc32(payload) & 0xFFFFFFFF)
         if chunk is None:
-            chunk = self.dmtu - 2  # кадр = [seq u16][chunk] должен влезать в dmtu
+            chunk = self.dmtu - 2  # frame = [seq u16][chunk] must fit in dmtu
         frames = [payload[i:i+chunk] for i in range(0, len(payload), chunk)] or [b""]
         fc = len(frames)
         ctr = struct.pack("<HBBH", 0, PKT_CTR, channel, fc)
@@ -160,27 +160,27 @@ class Transport:
         await self.write(char, ctr)
         st = await self._wait_ack_status(timeout, char)
         if st is None:
-            print("    [!] нет start-ACK на CTR"); return False
+            print("    [!] no start-ACK on CTR"); return False
 
         async def send_frames(seqs):
             for i in seqs:
                 dp = struct.pack("<H", i) + frames[i - 1]
                 await self.write(char, dp, response=resp_data)
                 if not resp_data:
-                    await asyncio.sleep(0.02)  # пейсинг W/O-RESP, чтобы не терять фреймы
+                    await asyncio.sleep(0.02)  # pacing W/O-RESP to prevent frame loss
 
         await send_frames(range(1, fc + 1))
-        # reliable-цикл: 00=готово, 05=resend списка seq, иное — ждём дальше
+        # reliable loop: 00=ready, 05=resend list of seq, other — wait further
         for _ in range(40):
             st, seqs = await self._wait_ack_full(timeout, char)
             if st is None:
-                print("    [!] нет ACK после DATA"); return False
+                print("    [!] no ACK after DATA"); return False
             if st == 0x00:
                 return True
             if st == 0x05 and seqs:
                 await send_frames(seqs)
-            # прочие статусы (03 и т.п.) — просто ждём следующий
-        print("    [!] reliable-цикл не завершился (много resend)"); return False
+            # other statuses (03 etc.) — just wait for next
+        print("    [!] reliable loop did not complete (too many resends)"); return False
 
     async def _wait_ack(self, timeout, char=CH_LOGIN):
         return (await self._wait_ack_status(timeout, char)) is not None
@@ -190,7 +190,7 @@ class Transport:
         return st
 
     async def _wait_ack_full(self, timeout, char=CH_LOGIN):
-        """Ждёт ACK на char. Возвращает (status, [seq...]) или (None, []).
+        """Wait for ACK on char. Returns (status, [seq...]) or (None, []).
         ACK = [00 00][01][status][seq u16...]."""
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
@@ -206,7 +206,7 @@ class Transport:
         return None, []
 
     async def recv_message_v2(self, timeout=6.0, char=CH_LOGIN):
-        """Приём сообщения. char — sid или кортеж sid'ов (напр. пара write/notify)."""
+        """Receive message. char — sid or tuple of sids (e.g. write/notify pair)."""
         chars = char if isinstance(char, (tuple, list, set)) else (char,)
         ack_char = chars[0]
         loop = asyncio.get_event_loop()
@@ -245,9 +245,9 @@ class Transport:
 
     async def recv_message(self, timeout=6.0):
         """
-        Приём канального сообщения: CTR(frameCount) -> N DATA(seq) -> ACK.
-        Возвращает склеенный payload (без seq-заголовков) или None.
-        Также обрабатывает одиночный SINGLE.
+        Receive channel message: CTR(frameCount) -> N DATA(seq) -> ACK.
+        Returns reassembled payload (without seq headers) or None.
+        Also handles single SINGLE packet.
         """
         frame_count = None
         frames = {}
@@ -272,12 +272,12 @@ class Transport:
                     frames = {}
                     print(f"    [recv] CTR frameCount={frame_count}")
                 elif t == PKT_SINGLE:
-                    # одиночный: [00 00 02 channel data]
+                    # single: [00 00 02 channel data]
                     print(f"    [recv] SINGLE ch={b[3]} data={b[4:].hex()}")
                     return b[4:]
                 elif t == PKT_MNG:
                     print(f"    [recv] MNG {b[3:].hex()}")
-                # прочие служебные игнорируем
+                # ignore other control frames
             else:
                 frames[seq] = b[2:]
                 if frame_count and len(frames) >= frame_count:
@@ -286,7 +286,7 @@ class Transport:
         if not frames:
             return None
         payload = b"".join(frames[i] for i in sorted(frames))
-        # ACK: [00 00 01 status=00] + список принятых seq
+        # ACK: [00 00 01 status=00] + list of accepted seq
         seqs = b"".join(struct.pack("<H", i) for i in sorted(frames))
         ack = struct.pack("<HBB", 0, PKT_ACK, 0) + seqs
         try:
@@ -303,39 +303,39 @@ class Transport:
 
 
 def single_pkt(channel, data):
-    """Канальный SINGLE-пакет: [seq=0000][02][channel][data]."""
+    """Channel SINGLE packet: [seq=0000][02][channel][data]."""
     return struct.pack("<HBB", 0, PKT_SINGLE, channel) + data
 
 
 async def stage_a_pubkey_exchange(t: Transport):
     """
-    Обмен публичными ключами по реальному потоку из snoop телефона:
+    Public key exchange per real stream from phone snoop:
         TX 0x0010: 20 00 00              (login-start)
-        TX 0x0016: CTR+DATA (наш pubkey, channel=3)
+        TX 0x0016: CTR+DATA (our pubkey, channel=3)
         RX 0x0016: SINGLE (device pubkey) -> SINGLE_ACK
-    Возвращает (priv, device_pub_raw) или (priv, None).
+    Returns (priv, device_pub_raw) or (priv, None).
     """
     priv, raw_pub = gen_ec_keypair()
     print(f"  app pubkey (raw X||Y, {len(raw_pub)}B): {raw_pub.hex()}")
 
-    # login-start команда 0x20 (3 байта, как в snoop)
+    # login-start command 0x20 (3 bytes, as in snoop)
     while not t.rx.empty():
         t.rx.get_nowait()
     await t.write(CH_CONTROL, bytes([0x20, 0x00, 0x00]))
     print("  >>> 0x0010: 20 00 00 (login-start)")
     await asyncio.sleep(0.2)
 
-    # наш pubkey потоком CTR+DATA на channel=3
+    # our pubkey stream CTR+DATA on channel=3
     ok = await t.send_stream(3, raw_pub)
     if not ok:
-        print("  [!] отправка pubkey (CTR+DATA) не подтверждена")
+        print("  [!] pubkey send (CTR+DATA) not confirmed")
 
-    # приём device pubkey
+    # receive device pubkey
     dev = await t.recv_message_v2(timeout=6.0)
     if dev:
         print(f"\n  [DEVICE PUBKEY] {len(dev)}B: {dev.hex()}")
         return priv, dev
-    print("\n  [!] device pubkey не получен")
+    print("\n  [!] device pubkey not received")
     return priv, None
 
 
@@ -343,9 +343,9 @@ LTMK_HEX = os.path.join(BASE, "secrets", "ltmk.hex")
 
 
 def ltmk_path_for_mac(mac):
-    """Путь к LTMK для конкретного MAC — secrets/ltmk_<MAC без ':'>.hex, если
-    есть, иначе legacy secrets/ltmk.hex (единственный самокат проекта до
-    появления поддержки нескольких профилей)."""
+    """Path to LTMK for specific MAC — secrets/ltmk_<MAC without ':'>.hex if
+    present, else legacy secrets/ltmk.hex (sole scooter of project prior to
+    multi-profile support)."""
     safe = (mac or "").upper().replace(":", "")
     per_mac = os.path.join(BASE, "secrets", f"ltmk_{safe}.hex")
     return per_mac if os.path.exists(per_mac) else LTMK_HEX
@@ -353,7 +353,7 @@ def ltmk_path_for_mac(mac):
 
 LOGIN_SALT = b"smartcfg-login-salt"
 LOGIN_INFO = b"smartcfg-login-info"
-CCM_NONCE = bytes(range(0x10, 0x1c))     # 10 11 ... 1b (12 байт)
+CCM_NONCE = bytes(range(0x10, 0x1c))     # 10 11 ... 1b (12 bytes)
 
 
 def derive_session_key(priv, dev_pub_raw, ltmk):
@@ -371,7 +371,7 @@ async def stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
     shared, sk = derive_session_key(priv, dev_pub, ltmk)
     LAST_SK = sk
     aes_key = sk[16:32]
-    # plaintext = CRC32(device_pubkey) (z81.OooO00o), 4 байта
+    # plaintext = CRC32(device_pubkey) (z81.OooO00o), 4 bytes
     crc = zlib.crc32(dev_pub) & 0xFFFFFFFF
     plaintext = struct.pack(">I" if crc_be else "<I", crc)
     print(f"  shared[:8]={shared[:8].hex()} sessionKey[:8]={sk[:8].hex()} aes_key={aes_key.hex()}")
@@ -379,13 +379,13 @@ async def stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
     enc = ccm.encrypt(CCM_NONCE, plaintext, None)       # ciphertext||mac4
     print(f"  confirmation enc ({len(enc)}B): {enc.hex()}  (plaintext={plaintext.hex() or 'empty'})")
 
-    # отправляем app-confirmation потоком на channel=5
+    # send app-confirmation stream on channel=5
     t.last_ctrl = None
     await t.send_stream(5, enc)
-    await t.drain(3.0)                    # дать устройству ответить
+    await t.drain(3.0)                    # allow device to respond
 
     res = t.last_ctrl
-    print(f"  --- ответ устройства на 0x0010: {res.hex() if res else 'нет'} ---")
+    print(f"  --- device response on 0x0010: {res.hex() if res else 'none'} ---")
     if res and res[:1] == b"\x21":
         return True
     if res and res[:1] == b"\x22":
@@ -394,11 +394,11 @@ async def stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
 
 
 async def collect_info(t, report):
-    """Read-only сбор телеметрии. Пишет строки в список report."""
+    """Read-only telemetry collection. Appends lines to report list."""
     def line(s):
         print("  " + s); report.append(s)
 
-    # 1. GATT READ характеристики
+    # 1. GATT READ characteristics
     line("--- GATT reads ---")
     for sidx, name in ((0x0004, "version"), (0x0005, "0x0005")):
         if sidx in t.chars and "read" in {str(p).lower() for p in t.chars[sidx].properties}:
@@ -409,7 +409,7 @@ async def collect_info(t, report):
             except Exception as e:
                 line(f"{name}: err {e}")
 
-    # 2. MCU-канал 0x001c (без авторизации) — событийный сбор
+    # 2. MCU-channel 0x001c (unauthenticated) — event collection
     line("--- MCU channel 0x001c ---")
     if 0x001C in t.chars:
         results = {}
@@ -435,7 +435,7 @@ async def collect_info(t, report):
             else:
                 line(f"opcode {op} ({nm}): {'err '+hex(r[3]) if r else 'no reply'}")
 
-        # opcode 8 — серийник постранично (offset)
+        # opcode 8 — serial number by pages (offset)
         sn = b""
         offset = 0
         for _ in range(16):
@@ -457,8 +457,8 @@ async def collect_info(t, report):
         except Exception:
             pass
 
-    # 3. DFU командный канал 0x0017 (после login) — только query-опкоды
-    line("--- DFU query 0x0017 (после login, read-only) ---")
+    # 3. DFU command channel 0x0017 (after login) — query opcodes only
+    line("--- DFU query 0x0017 (after login, read-only) ---")
     if 0x0017 in t.chars:
         for op, nm in ((2, "getFragmentSize"), (3, "lastFragmentIndex(BLE)"),
                        (5, "lastFragmentIndex(MCU)")):
@@ -475,7 +475,7 @@ async def collect_info(t, report):
                     rep = b
             line(f"opcode {op} ({nm}): {rep.hex() if rep else 'no reply'}")
 
-    # 4. Свод облачных данных (scooter_keys.json)
+    # 4. Cloud data summary (scooter_keys.json)
     line("--- Cloud (scooter_keys.json) ---")
     try:
         cj = json.load(open(os.path.join(BASE, "secrets", "scooter_keys.json"), encoding="utf-8"))
@@ -509,7 +509,7 @@ def ccm_decrypt(sk, counter, data):
 
 
 def spec_get_frame(props, txn=1):
-    """MiOT property-get кадр: [len|0x2000 u16][txn u16][00][count][siid u8,piid u16]*."""
+    """MiOT property-get frame: [len|0x2000 u16][txn u16][00][count][siid u8,piid u16]*."""
     body = b"".join(struct.pack("<BH", s, p) for s, p in props)
     hdr = struct.pack("<HHBB", (len(body) | 0x2000) & 0xFFFF, txn, 0, len(props))
     return hdr + body
@@ -517,15 +517,15 @@ def spec_get_frame(props, txn=1):
 
 async def stage_telemetry(t, sk):
     """
-    Чтение MiOT-свойств поверх session-шифрования. Сначала верификация на
-    device-info firmware (siid=1,piid=4 → ждём '2.5.3_0011'), затем перебор.
-    Пробуем характеристику/канал-байт эмпирически.
+    Read MiOT properties over session encryption. First verify on
+    device-info firmware (siid=1,piid=4 -> expecting '2.5.3_0011'), then scan.
+    Test characteristic/channel byte empirically.
     """
     print("\n=== Stage T: telemetry (encrypted MiOT prop-get) ===")
     known = spec_get_frame([(1, 4)], txn=1)   # device-info firmware
     print(f"  plaintext prop-get(siid1,piid4): {known.hex()}")
 
-    # варианты плейнтекст-кадра property-get(siid=1,piid=4)
+    # plaintext frame variants for property-get(siid=1, piid=4)
     body = struct.pack("<BH", 1, 4)
     variants = {
         "len|0x2000,txn1,00": struct.pack("<HHBB", (len(body) | 0x2000) & 0xFFFF, 1, 0, 1) + body,
@@ -539,19 +539,19 @@ async def stage_telemetry(t, sk):
             print(f"\n  -- variant '{name}' encctr={ectr}: plain={frame.hex()} enc={enc.hex()} --")
             while not t.rx.empty():
                 t.rx.get_nowait()
-            # CTR ch0 fc1 на 0x001a
+            # CTR ch0 fc1 on 0x001a
             await t.write(0x001A, struct.pack("<HBBH", 0, PKT_CTR, 0, 1))
             await asyncio.sleep(0.15)
-            # DATA seq1 (дважды, как телефон)
+            # DATA seq1 (twice, like phone)
             await t.write(0x001A, struct.pack("<H", 1) + enc)
             await t.write(0x001A, struct.pack("<H", 1) + enc)
-            # слушаем ответ на 0x001a/0x001b
+            # listen for response on 0x001a/0x001b
             resp = None
             for s, b in await t.drain(3.0):
                 if s == 0x001B or (s == 0x001A and struct.unpack_from("<H", b, 0)[0] != 0):
                     payload = b[4:] if (s == 0x001B and len(b) >= 4 and b[2] == PKT_SINGLE) else b[2:]
                     resp = payload
-                    print(f"    <<< ответ 0x{s:04x}: {b.hex()}")
+                    print(f"    <<< reply 0x{s:04x}: {b.hex()}")
             if not resp:
                 continue
             for dctr in (0, 1, ectr):
@@ -560,13 +560,13 @@ async def stage_telemetry(t, sk):
                     print(f"    *** DECRYPTED devctr={dctr}: {dec.hex()} ***")
                     asc = dec.decode("ascii", "replace")
                     if "2.5.3" in asc:
-                        print(f"    [+++] FIRMWARE прочитан — пайплайн работает! variant='{name}'")
+                        print(f"    [+++] FIRMWARE read — pipeline working! variant='{name}'")
                         return name
-    print("  [!] property-ответ не получен ни на одном варианте")
+    print("  [!] property reply not received on any variant")
     return None
 
 
-DFU_DO_UPLOAD = False   # health-check; True = проба заливки одного фрагмента
+DFU_DO_UPLOAD = False   # health-check; True = probe upload of single fragment
 FW_PATH = os.path.join(BASE, "firmware_ota",
                        "0d41b4df91f8d37b5f1355484e2b93c3_upd_xiaomi.scooter.5pro_v2.7.0_0015.bin")
 CH_DFU_CMD = 0x0017
@@ -574,7 +574,7 @@ CH_DFU_DATA = 0x0018
 
 
 async def dfu_cmd(t, opcode, params=b""):
-    """Команда DFU на 0x0017 (W/RESP), ответ notify [01][len][opcode u16][status][data]."""
+    """DFU command on 0x0017 (W/RESP), response notify [01][len][opcode u16][status][data]."""
     frame = struct.pack("<HB", opcode, len(params)) + params
     while not t.rx.empty():
         t.rx.get_nowait()
@@ -589,7 +589,7 @@ async def dfu_cmd(t, opcode, params=b""):
 
 
 def parse_cmd_resp(b):
-    """[01][len][opcode u16 LE][... value]. Возвращает (opcode, value_bytes)."""
+    """[01][len][opcode u16 LE][... value]. Returns (opcode, value_bytes)."""
     if not b or len(b) < 4 or b[0] != 0x01:
         return None, None
     ln = b[1]
@@ -600,20 +600,20 @@ def parse_cmd_resp(b):
 
 async def stage_d_probe(t):
     """
-    БЕЗОПАСНАЯ проба DFU: команды-запросы + загрузка ОДНОГО фрагмента,
-    проверка сдвига lastFragmentIndex. switchFirmware НЕ шлём.
-    Неудачная загрузка не коммитится устройством — вреда нет.
+    SAFE DFU probe: query commands + single fragment upload,
+    verify lastFragmentIndex shift. switchFirmware is NOT sent.
+    Failed upload is not committed by device — safe.
     """
-    print("\n=== Stage D (probe, БЕЗ switchFirmware) ===")
+    print("\n=== Stage D (probe, WITHOUT switchFirmware) ===")
     # 1. getFragmentSize
     r = await dfu_cmd(t, 2)
     op, val = parse_cmd_resp(r)
     frag = struct.unpack_from("<H", val, 1)[0] if val and len(val) >= 3 else None
     print(f"  getFragmentSize: resp={r.hex() if r else None} -> fragmentSize={frag}")
     if frag not in (512, 256, 128, 244):
-        print(f"  [!] неожиданный fragmentSize={frag}; прерываю пробу")
+        print(f"  [!] unexpected fragmentSize={frag}; aborting probe")
         return
-    # 2. lastFragmentIndex (до)
+    # 2. lastFragmentIndex (before)
     r3 = await dfu_cmd(t, 3)
     r5 = await dfu_cmd(t, 5)
     print(f"  lastFragmentIndex(BLE op3): {r3.hex() if r3 else None}")
@@ -625,23 +625,23 @@ async def stage_d_probe(t):
         pass
 
     if not DFU_DO_UPLOAD:
-        print("  [read-only] загрузка фрагмента ОТКЛЮЧЕНА — оцениваем состояние ('UP' на экране)")
+        print("  [read-only] fragment upload DISABLED — evaluating state ('UP' on screen)")
         return
 
-    # --- индекс из ответа lastFragmentIndex(BLE, op3): value=[status][idx u32 LE...] ---
+    # --- index from lastFragmentIndex(BLE, op3) response: value=[status][idx u32 LE...] ---
     _op, lv = parse_cmd_resp(r3)
     last_idx = 0
     if lv and len(lv) >= 5 and lv[0] == 0:
         last_idx = struct.unpack_from("<I", lv, 1)[0]
-    # APK: skip = lastIdx*frag; header index = lastIdx+1 (1-based нумерация фрагментов)
+    # APK: skip = lastIdx*frag; header index = lastIdx+1 (1-based fragment numbering)
     frag_index = last_idx + 1
     skip = last_idx * frag
-    print(f"  parsed lastFragmentIndex={last_idx} -> шлём фрагмент index={frag_index}, skip={skip}B")
+    print(f"  parsed lastFragmentIndex={last_idx} -> sending fragment index={frag_index}, skip={skip}B")
 
-    # 3. Загрузка фрагмента. Реверс транспорта vw1/ChannelManager:
-    #    frameSize(OooOo00)=18 по умолчанию (нет MNG на 0x0018) -> maxPackageNum=1.
-    #    => окно = 1 кадр: CTR(fc), затем шлём кадр seq=N, ждём ACK (05 seq=N+1 = «дай след.»),
-    #    до status 00. DATA-кадр = [seq u16 LE][18 данных]. CRC (useCrc32Verify) — пробуем оба.
+    # 3. Fragment upload. Reversed transport vw1/ChannelManager:
+    #    frameSize(OooOo00)=18 by default (no MNG on 0x0018) -> maxPackageNum=1.
+    #    => window = 1 frame: CTR(fc), then send frame seq=N, wait ACK (05 seq=N+1 = "send next"),
+    #    until status 00. DATA frame = [seq u16 LE][18 data]. CRC (useCrc32Verify) — test both.
     dfu_ok = False
     for use_crc in (False, True):
         with open(FW_PATH, "rb") as f:
@@ -653,7 +653,7 @@ async def stage_d_probe(t):
         FS = 18
         dframes = [msg[i:i+FS] for i in range(0, len(msg), FS)]
         fc = len(dframes)
-        print(f"\n  [crc={use_crc}] сообщение {len(msg)}B -> {fc} кадров по {FS}Б, CTR fc={fc}")
+        print(f"\n  [crc={use_crc}] message {len(msg)}B -> {fc} frames of {FS}B, CTR fc={fc}")
         await t.drain(1.0)
         ctr = struct.pack("<HBBH", 0, PKT_CTR, 0, fc)
         await t.write(CH_DFU_DATA, ctr)
@@ -661,7 +661,7 @@ async def stage_d_probe(t):
         print(f"    CTR -> start-ACK={st0}")
         if st0 is None:
             continue
-        # window=1: шлём seq=1, дальше следуем запрошенному seq
+        # window=1: send seq=1, then follow requested seq
         seq = 1
         ok = False
         max_seq_seen = 0
@@ -669,15 +669,15 @@ async def stage_d_probe(t):
             await t.write(CH_DFU_DATA, struct.pack("<H", seq) + dframes[seq - 1], response=False)
             stt, seqs = await t._wait_ack_full(3.0, CH_DFU_DATA)
             if stt == 0x00:
-                print(f"    [✓] transport ACK 00 после seq={seq} — канальное сообщение принято!")
+                print(f"    [✓] transport ACK 00 after seq={seq} — channel message accepted!")
                 ok = True
-                # ловим DFU-событие 0x0017 [02 03 status idx] (в snoop успех = 02 03 00)
+                # capture DFU event 0x0017 [02 03 status idx] (in snoop success = 02 03 00)
                 ev_status = None
                 for s2, b2 in await t.drain(1.5):
                     if s2 == CH_DFU_CMD and len(b2) >= 3 and b2[0] == 0x02 and b2[1] == 0x03:
                         ev_status = b2[2]
-                        print(f"    DFU-событие: {b2.hex()} -> статус фрагмента={ev_status}"
-                              f" ({'OK, ЗАЧТЁН' if ev_status == 0 else 'отклонён'})")
+                        print(f"    DFU event: {b2.hex()} -> fragment status={ev_status}"
+                              f" ({'OK, ACCEPTED' if ev_status == 0 else 'rejected'})")
                 if ev_status == 0:
                     dfu_ok = True
                 break
@@ -686,22 +686,22 @@ async def stage_d_probe(t):
                 if nxt > max_seq_seen:
                     max_seq_seen = nxt
                     if nxt % 20 == 0 or nxt <= 3:
-                        print(f"    прогресс: device просит seq={nxt}")
+                        print(f"    progress: device requests seq={nxt}")
                 if not (1 <= nxt <= fc):
-                    print(f"    [!] запрошен seq={nxt} вне диапазона 1..{fc}"); break
+                    print(f"    [!] requested seq={nxt} out of range 1..{fc}"); break
                 seq = nxt
             else:
-                print(f"    [!] неожиданный ACK status={stt} seqs={seqs} на seq={seq}"); break
+                print(f"    [!] unexpected ACK status={stt} seqs={seqs} at seq={seq}"); break
         else:
-            print(f"    [!] не завершилось; макс. запрошенный seq={max_seq_seen}")
+            print(f"    [!] did not complete; max requested seq={max_seq_seen}")
         if max_seq_seen >= 2 or ok:
-            print(f"    >>> ПРОДВИЖЕНИЕ: транспорт принял кадры (макс seq={max_seq_seen}), crc={use_crc}")
+            print(f"    >>> PROGRESS: transport accepted frames (max seq={max_seq_seen}), src={use_crc}")
         if dfu_ok:
-            print(f"    [✓✓] ФРАГМЕНТ ЗАЧТЁН DFU-слоем при crc={use_crc}!")
+            print(f"    [✓✓] FRAGMENT ACCEPTED by DFU layer with crc={use_crc}!")
             break
     if not ok:
-        print("  [!] окно=1/frameSize=18 не сошлось — см. лог прогресса")
-    # 4. lastFragmentIndex (после) — сдвинулся ли (ретраи: канал занят после burst)
+        print("  [!] window=1/frameSize=18 did not converge — see progress log")
+    # 4. lastFragmentIndex (after) — did it advance (retries: channel busy after burst)
     new_idx = None
     for attempt in range(5):
         await asyncio.sleep(0.6)
@@ -710,33 +710,33 @@ async def stage_d_probe(t):
         _op2, lv2 = parse_cmd_resp(r3b)
         if lv2 and len(lv2) >= 5 and lv2[0] == 0:
             new_idx = struct.unpack_from("<I", lv2, 1)[0]
-            print(f"  lastFragmentIndex(BLE) после [try {attempt}]: raw={r3b.hex()} parsed={new_idx}")
+            print(f"  lastFragmentIndex(BLE) after [try {attempt}]: raw={r3b.hex()} parsed={new_idx}")
             break
-        print(f"  lastFragmentIndex(BLE) после [try {attempt}]: raw={r3b.hex() if r3b else None}")
+        print(f"  lastFragmentIndex(BLE) after [try {attempt}]: raw={r3b.hex() if r3b else None}")
     if new_idx is not None and new_idx > last_idx:
-        print("  [✓✓] ИНДЕКС СДВИНУЛСЯ — фрагмент ЗАЧТЁН устройством! Заливка реальна.")
+        print("  [✓✓] INDEX ADVANCED — fragment ACCEPTED by device! Flashing viable.")
     else:
-        print("  [i] индекс не сдвинулся — транспорт принял (ACK 00), но device не зачёл "
-              "(вероятно, контент 2.5.3 на 2.7.0 / нужен верный FW_PATH)")
+        print("  [i] index did not advance — transport accepted (ACK 00), but device did not commit "
+              "(likely 2.5.3 content on 2.7.0 / need valid FW_PATH)")
 
 
 async def stage_c_probe(t):
     """
-    Безопасная проверка, что авторизация открыла путь к DFU. Прошивку НЕ пишем.
-    По snoop: после login DFU идёт на канале 0x001a. Проверяем:
-      - чтение версии 0x0004 (сессия жива);
-      - изменился ли Insufficient Authorization на 0x0017 (W/RESP) после login;
-      - отвечает ли device на служебный кадр канала 0x001a.
+    Safe check that authorization opened path to DFU. Firmware is NOT written.
+    Per snoop: after login DFU runs on channel 0x001a. Verifying:
+      - reading version 0x0004 (session alive);
+      - did Insufficient Authorization on 0x0017 (W/RESP) change after login;
+      - does device respond to control frame on channel 0x001a.
     """
-    print("\n=== Stage C: проверка доступа к DFU (без записи flash) ===")
-    # версия
+    print("\n=== Stage C: verify DFU access (without flash write) ===")
+    # version
     try:
         v = await t.client.read_gatt_char(t.chars[0x0004])
         print(f"  version 0x0004: {v.decode('ascii','replace').rstrip(chr(0))}")
     except Exception as e:
         print(f"  version read err: {e}")
 
-    # проба 0x0017 W/RESP getFragmentSize [opcode=2 u16][len=0]
+    # probe 0x0017 W/RESP getFragmentSize [opcode=2 u16][len=0]
     if 0x0017 in t.chars:
         cmd = struct.pack("<HB", 2, 0)
         for resp in (True, False):
@@ -747,11 +747,11 @@ async def stage_c_probe(t):
             except Exception as e:
                 print(f"  0x0017 W{'/RESP' if resp else '/O'}: {e}")
 
-    # служебный кадр на канал 0x001a — оживает ли DFU-канал после login
+    # control frame on channel 0x001a — does DFU channel become alive after login
     if 0x001a in t.chars:
         while not t.rx.empty():
             t.rx.get_nowait()
-        # A4-подобный/CTR служебный: пробуем CTR ch=0 fc=0 (безопасно, не данные)
+        # A4-like/CTR control: try CTR ch=0 fc=0 (safe, not data)
         probe = struct.pack("<HBBH", 0, PKT_CTR, 0, 0)
         try:
             await t.client.write_gatt_char(t.chars[0x001a], probe, response=False)
@@ -763,7 +763,7 @@ async def stage_c_probe(t):
             for s, b in got:
                 print(f"    <<< 0x{s:04x} {b.hex()}")
         else:
-            print("    (0x001a тишина — вероятно нужен зашифрованный сессией кадр, это Stage D)")
+            print("    (0x001a silence — likely requires session-encrypted frame, this is Stage D)")
 
 
 async def main():
@@ -773,8 +773,8 @@ async def main():
     try:
         await t.connect()
         if not await t.a4_handshake():
-            print("[!] транспорт не поднялся"); return 1
-        # устройство иногда шлёт MNG повторно — подтвердим ещё раз
+            print("[!] transport failed to connect"); return 1
+        # device sometimes resends MNG — confirm once more
         for s, b in await t.drain(1.0):
             if s == CH_LOGIN and len(b) >= 3 and b[2] == PKT_MNG:
                 await t.write(CH_LOGIN, struct.pack("<HBB", 0, PKT_MNG_ACK, 0) + bytes([t.pkg_num, t.dmtu]))
@@ -782,19 +782,19 @@ async def main():
         priv, dev_pub = await stage_a_pubkey_exchange(t)
         if not (dev_pub and len(dev_pub) >= 64):
             return 1
-        print("\n[+++] Stage A OK: device pubkey получен!")
+        print("\n[+++] Stage A OK: device pubkey received!")
         print("\n=== Stage B: confirmation (ltmk pin=[masked], CRC LE) ===")
         ok = await stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False)
-        print(f"\n[Stage B] {'LOGIN OK — пин верный!' if ok else 'отказ (0x22) — CRC byte-order/пин'}")
+        print(f"\n[Stage B] {'LOGIN OK — PIN verified!' if ok else 'refused (0x22) — CRC byte-order/pin'}")
         if ok:
             await stage_d_probe(t)
-            print("\n=== Сбор информации (read-only) ===")
+            print("\n=== Information gathering (read-only) ===")
             report = [f"Dreame Scooter 5 Pro — info dump ({mac})"]
             await collect_info(t, report)
             info_path = os.path.join(BASE, "docs", "scooter_info.txt")
             with open(info_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(report) + "\n")
-            print(f"\n[*] отчёт сохранён: {info_path}")
+            print(f"\n[*] report saved: {info_path}")
         return 0 if ok else 1
     except Exception:
         import traceback

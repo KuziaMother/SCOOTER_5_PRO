@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
 """
-Заливка patched_mi5pro_firmware.bin по BLE (MCU-таргет), устойчивая к состояниям.
+Flashing patched_mi5pro_firmware.bin via BLE (MCU target), state-resilient.
 
-Модель (docs/FACTS.md, 2026-08-22 + наблюдения этой сессии):
-  frag-status 0 = принят в MCU-staging; 5 = «не принять» (дубликат индекса в
-  персистентном staging И/или грязный BLE-банк) — после 5 сессия закрывается;
-  7 = MCU «не готов» (транзиент, повтор через время проходит).
-  switchFirmware(4, param=1) на неполном/своем банке: отклоняется status 6,
-  OTA-буфер сбрасывается (проверено), но за ним следует транзиент «не готов»
-  на несколько минут.
-  Стаaging читается только пробой: 5 = индекс уже есть, 0 = его не было (и он
-  теперь принят).
+Model (docs/FACTS.md, 2026-08-22 + session observations):
+  frag-status 0 = accepted into MCU-staging; 5 = "not accepted" (duplicate index in
+  persistent staging AND/OR dirty BLE bank) — after 5 session is closed;
+  7 = MCU "not ready" (transient, retry after delay passes).
+  switchFirmware(4, param=1) on partial/own bank: rejected with status 6,
+  OTA buffer resets (verified), followed by transient "not ready" for a few minutes.
+  Staging is only probed: 5 = index already present, 0 = was absent (now accepted).
 
-Алгоритм:
-  1. login → warm-up (getFragmentSize) → состояние BLE-банка (только показ).
-  2. Проба MCU-frag1 (патченный):
-       0 → staging пуст → залить 2..N → commit switchFirmware(6). ГОТОВО.
-       5 → если банк грязный: безопасный сброс (switchFirmware(4), только при
-           неполном банке или банке = текущей официальной версии) + ожидание
-           транзиента + повтор пробы frag1;
-           если всё равно 5 → картируем staging пробами 2..10 (каждая проба
-           либо подтверждает индекс, либо принимает недостающий) → resume 11..N.
-       7/тишина → ретраи с паузами.
-  3. commit switchFirmware(6) — ТОЛЬКО после того, как в staging гарантированно
-     полный образ (все индексы подтверждены/приняты со status 0).
+Algorithm:
+  1. login -> warm-up (getFragmentSize) -> BLE bank state (display only).
+  2. Probe MCU-frag1 (patched):
+       0 -> staging empty -> upload 2..N -> commit switchFirmware(6). DONE.
+       5 -> if bank is dirty: safe reset (switchFirmware(4), only on partial
+           bank or bank == current official version) + wait for transient + retry frag1 probe;
+           if still 5 -> map staging with probes 2..10 -> resume 11..N.
+       7/silence -> retries with delays.
+  3. commit switchFirmware(6) — ONLY after staging is guaranteed to hold
+     the full image (all indices confirmed/accepted with status 0).
 
-Запуск:  python custom_mcu/ble_flash_patched.py
+Usage:   python custom_mcu/ble_flash_patched.py
 """
 import asyncio
 import os
@@ -49,10 +45,10 @@ OFFICIAL_BLE = os.path.join(ROOT, "firmware_ota",
                             "0d41b4df91f8d37b5f1355484e2b93c3_upd_xiaomi.scooter.5pro_v2.7.0_0015.bin")
 
 LTMK = bytes.fromhex(open(LTMK_HEX).read().strip())
-RETRY = 4            # повторов на тишину/статус 7
-WAIT_SLOW = 60.0     # пауза на статус 7, с
-WAIT_SILENT = 30.0   # пауза на тишину, с
-RESET_WAIT = 150.0   # ожидание транзиента после switchFirmware(4), с
+RETRY = 4            # retries on silence / status 7
+WAIT_SLOW = 60.0     # pause on status 7, s
+WAIT_SILENT = 30.0   # pause on silence, s
+RESET_WAIT = 150.0   # transient delay after switchFirmware(4), s
 
 
 def log(msg=""):
@@ -62,7 +58,7 @@ def log(msg=""):
 async def fresh_session(label):
     t = Transport(MAC_DEFAULT)
     await login(t, LTMK)
-    log(f"[+] сессия «{label}»")
+    log(f"[+] session \"{label}\"")
     return t
 
 
@@ -74,7 +70,7 @@ async def _cmd_value_retry(t, op, what, total=120.0):
         st, v = await _cmd_value(t, op, timeout=max(2.0, min(10.0, deadline - time.time())))
         if st == 0 and v is not None:
             return v
-        log(f"[~] {what}: нет ответа (попытка {attempt}, осталось {deadline - time.time():.0f} с)")
+        log(f"[~] {what}: no response (attempt {attempt}, remaining {deadline - time.time():.0f} s)")
     return None
 
 
@@ -95,162 +91,162 @@ async def read_last(t, op, what="lastFragmentIndex", total=60.0):
 
 
 async def reset_ble_bank(t):
-    """switchFirmware(4, param=1): отклоняется (status 6), буфер → 0. Ждём транзиент."""
+    """switchFirmware(4, param=1): rejected (status 6), buffer -> 0. Waiting for transient."""
     r = await dfu_cmd(t, OPS["ble"]["switch"], struct.pack("<I", 1))
     st = r[4] if r and len(r) >= 5 else None
     log(f"    switchFirmware(4) resp: {r.hex() if r else None} -> status={st}")
     if st != 6:
-        log("[!] неожиданный ответ на switchFirmware(4)")
-    log(f"    транзиент «не готов»: жду {RESET_WAIT:.0f} с…")
+        log("[!] unexpected response to switchFirmware(4)")
+    log(f"    transient 'not ready': waiting {RESET_WAIT:.0f} s...")
     await asyncio.sleep(RESET_WAIT)
 
 
 async def send_with_retries(t, fw, frag, index):
-    """send_fragment с ретраями на тишину/7. Возвращает статус (int/None)."""
+    """send_fragment with retries on silence/7. Returns status (int/None)."""
     data = fw[(index - 1) * frag: index * frag]
     st = await send_fragment(t, index, data)
     tries = 0
     while st in (None, 7) and tries < RETRY:
         tries += 1
         wait = WAIT_SLOW if st == 7 else WAIT_SILENT
-        log(f"[~] frag{index}: status={st!r} — жду {wait:.0f} с, повтор {tries}/{RETRY}")
+        log(f"[~] frag{index}: status={st!r} - waiting {wait:.0f} s, retry {tries}/{RETRY}")
         await asyncio.sleep(wait)
         st = await send_fragment(t, index, data)
     return st
 
 
 async def upload_range(t, fw, frag, start, end, label):
-    """Залить start..end (1-based). Все должны дать status 0."""
+    """Upload start..end (1-based). All must return status 0."""
     t0 = time.time()
-    log(f"    заливка {label}: фрагменты {start}..{end}")
+    log(f"    uploading {label}: fragments {start}..{end}")
     for index in range(start, end + 1):
         st = await send_with_retries(t, fw, frag, index)
         if st != 0:
-            log(f"\n[!] {label} фрагмент {index}/{end}: status={st!r} — стоп БЕЗ коммита "
-                f"(последний подтверждённый: {index - 1})")
+            log(f"\n[!] {label} fragment {index}/{end}: status={st!r} - stop WITHOUT commit "
+                f"(last confirmed: {index - 1})")
             return False
         if index % 10 == 0 or index == end:
             spd = (index - start + 1) / max(time.time() - t0, 0.1)
             eta = (end - index) / max(spd, 0.1)
             print(f"\r    {label}: {index}/{end} ({100 * index // end}%) "
-                  f"{spd:.1f} фр/с ETA {eta:.0f}s   ", end="", flush=True)
-    log(f"\n[+] {label}: все фрагменты приняты (status 0)")
+                  f"{spd:.1f} fr/s ETA {eta:.0f}s   ", end="", flush=True)
+    log(f"\n[+] {label}: all fragments accepted (status 0)")
     return True
 
 
 async def commit_mcu(t, label):
-    """switchFirmware(6, param=1) + опрос версии MCU до 3 мин."""
-    log(f"\n[!!!] {label}: switchFirmware(6) — АКТИВАЦИЯ (необратимо)…")
+    """switchFirmware(6, param=1) + poll MCU version up to 3 min."""
+    log(f"\n[!!!] {label}: switchFirmware(6) - ACTIVATION (irreversible)...")
     r = await dfu_cmd(t, OPS["mcu"]["switch"], struct.pack("<I", 1))
     st = r[4] if r and len(r) >= 5 else None
     log(f"    switchFirmware(6) resp: {r.hex() if r else None} -> status={st}")
     res = await poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
-    meaning = {True: "версия сменилась",
-               False: "версия не менялась (ожидается для переустановки 0007)",
-               None: "тишина+возврат — MCU ребутнулся (активация шла)"}
-    log(f"[i] опрос версии: {meaning[res]}")
+    meaning = {True: "version changed",
+               False: "version unchanged (expected for reinstalling 0007)",
+               None: "silence+return - MCU rebooted (activation in progress)"}
+    log(f"[i] version poll: {meaning[res]}")
     return st
 
 
 async def finish_upload(t, patched, frag, start, N, label):
     if not await upload_range(t, patched, frag, start, N, label):
         return False
-    await commit_mcu(t, "патченный образ")
-    log("\n[===] ГОТОВО: патченный MCU-образ активирован по BLE")
+    await commit_mcu(t, "patched image")
+    log("\n[===] DONE: patched MCU image activated via BLE")
     return True
 
 
 async def main():
     patched = open(PATCHED, "rb").read()
     official_ble = open(OFFICIAL_BLE, "rb").read()
-    log(f"патченный: {len(patched)} Б crc32={zlib.crc32(patched) & 0xFFFFFFFF:08x}")
+    log(f"patched: {len(patched)} B crc32={zlib.crc32(patched) & 0xFFFFFFFF:08x}")
 
-    t = await fresh_session("разведка")
+    t = await fresh_session("recon")
     try:
         frag = await read_frag_size(t, OPS["mcu"])
         if not frag:
-            log("[!] getFragmentSize(MCU) не ответил — устройство в транзиенте. "
-                "Подожди несколько минут и запусти заново.")
+            log("[!] getFragmentSize(MCU) did not respond - device in transient state. "
+                "Wait a few minutes and run again.")
             return 1
         N = -(-len(patched) // frag)
-        log(f"[i] MCU fragmentSize={frag}, всего фрагментов={N}")
+        log(f"[i] MCU fragmentSize={frag}, total fragments={N}")
 
-        idx_ble, crc_ble = await read_last(t, OPS["ble"], "BLE-банк")
-        log(f"[i] BLE-банк: lastFragmentIndex={idx_ble}, "
-            f"crc={'%08x' % crc_ble if crc_ble is not None else '—'} (только показ)")
+        idx_ble, crc_ble = await read_last(t, OPS["ble"], "BLE bank")
+        log(f"[i] BLE bank: lastFragmentIndex={idx_ble}, "
+            f"crc={'%08x' % crc_ble if crc_ble is not None else '-'} (display only)")
 
-        # ---------- 2. проба frag1 ----------
+        # ---------- 2. probe frag1 ----------
         st1 = await send_with_retries(t, patched, frag, 1)
         if st1 is None:
-            log("[~] frag1: сбой транспорта — reconnect и повтор")
+            log("[~] frag1: transport failure - reconnect and retry")
             await t.close()
-            t = await fresh_session("повтор frag1")
+            t = await fresh_session("retry frag1")
             frag = await read_frag_size(t, OPS["mcu"]) or frag
             st1 = await send_with_retries(t, patched, frag, 1)
-        log(f"[i] MCU-frag1 (патченный): status={st1!r}")
+        log(f"[i] MCU-frag1 (patched): status={st1!r}")
 
         if st1 == 0:
-            # ---------- staging пуст: полная заливка ----------
-            return 0 if await finish_upload(t, patched, frag, 2, N, "патченный") else 1
+            # ---------- staging empty: full upload ----------
+            return 0 if await finish_upload(t, patched, frag, 2, N, "patched") else 1
 
         if st1 == 5:
-            # ---------- дубликат/гейт ----------
+            # ---------- duplicate/gate ----------
             if idx_ble is not None and idx_ble > 0:
                 frag_ble = await read_frag_size(t, OPS["ble"], total=60.0) or 512
                 N_ble = -(-len(official_ble) // frag_ble)
                 local_crc = zlib.crc32(official_ble[:idx_ble * frag_ble]) & 0xFFFFFFFF
                 safe = (idx_ble < N_ble) or (crc_ble is not None and crc_ble == local_crc)
-                log(f"[i] BLE-банк грязный ({idx_ble}/{N_ble}); содержимое совпадает с "
-                    f"официальным: {crc_ble is not None and crc_ble == local_crc}")
+                log(f"[i] BLE bank dirty ({idx_ble}/{N_ble}); contents match "
+                    f"official: {crc_ble is not None and crc_ble == local_crc}")
                 if safe:
-                    log("[i] сброс банка безопасен (неполный или та же версия)")
+                    log("[i] bank reset is safe (incomplete or same version)")
                     await reset_ble_bank(t)
                     await t.close()
-                    t = await fresh_session("после сброса банка")
+                    t = await fresh_session("after bank reset")
                     frag = await read_frag_size(t, OPS["mcu"]) or frag
                     st1 = await send_with_retries(t, patched, frag, 1)
-                    log(f"[i] MCU-frag1 после сброса банка: status={st1!r}")
+                    log(f"[i] MCU-frag1 after bank reset: status={st1!r}")
                 else:
-                    log("[!] банк полный с неизвестным содержимым — стоп, решение вручную")
+                    log("[!] bank is full with unknown contents - stop, manual intervention required")
                     return 1
 
             if st1 == 0:
-                return 0 if await finish_upload(t, patched, frag, 2, N, "патченный (после сброса)") else 1
+                return 0 if await finish_upload(t, patched, frag, 2, N, "patched (after reset)") else 1
 
             if st1 != 5:
-                log(f"[!] неожиданный статус frag1: {st1!r} — стоп без коммита")
+                log(f"[!] unexpected frag1 status: {st1!r} - stop without commit")
                 return 1
 
-            # ---------- картируем staging: пробы 2..N-? (здесь 2..10+ по факту до N) ----------
-            log("[i] frag1 всё ещё 5 → картирую staging пробами (5 = есть, 0 = принял)")
+            # ---------- map staging: probes 2..N-? (here 2..10+ effectively up to N) ----------
+            log("[i] frag1 still 5 -> mapping staging with probes (5 = present, 0 = accepted)")
             last_confirmed = 1
             for index in range(2, N + 1):
                 stp = await send_with_retries(t, patched, frag, index)
                 if stp == 5:
-                    log(f"    проба {index}: 5 (уже в staging) — сессия закрыта, reconnect")
+                    log(f"    probe {index}: 5 (already in staging) - session closed, reconnect")
                     last_confirmed = index
                     await t.close()
-                    t = await fresh_session(f"проба {index + 1}")
+                    t = await fresh_session(f"probe {index + 1}")
                     frag = await read_frag_size(t, OPS["mcu"]) or frag
                 elif stp == 0:
                     last_confirmed = index
                     if index % 25 == 0:
-                        log(f"    проба {index}: 0 (принят)")
+                        log(f"    probe {index}: 0 (accepted)")
                 else:
-                    log(f"[!] проба {index}: неожиданный статус {stp!r} — стоп без коммита")
+                    log(f"[!] probe {index}: unexpected status {stp!r} - stop without commit")
                     return 1
-            log(f"[i] staging картирован: подтверждено 1..{last_confirmed}")
+            log(f"[i] staging mapped: confirmed 1..{last_confirmed}")
 
             # ---------- resume ----------
             if last_confirmed >= N:
-                log("[i] весь образ уже в staging — сразу commit")
-                await commit_mcu(t, "патченный образ (уже полностью в staging)")
-                log("\n[===] ГОТОВО: патченный MCU-образ активирован по BLE")
+                log("[i] full image already in staging - commit immediately")
+                await commit_mcu(t, "patched image (already completely in staging)")
+                log("\n[===] DONE: patched MCU image activated via BLE")
                 return 0
             return 0 if await finish_upload(t, patched, frag, last_confirmed + 1, N,
-                                            f"патченный (resume с {last_confirmed + 1})") else 1
+                                            f"patched (resume from {last_confirmed + 1})") else 1
 
-        log(f"[!] неожиданный статус frag1: {st1!r} — стоп без коммита")
+        log(f"[!] unexpected frag1 status: {st1!r} - stop without commit")
         return 1
     finally:
         try:

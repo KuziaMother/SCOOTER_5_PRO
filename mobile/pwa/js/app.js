@@ -10,21 +10,30 @@ import { login } from "./login.js";
 import { specGet, specSet, decodeValue } from "./spec.js";
 import * as props from "./props.js";
 import { hexToBytes } from "./bin.js";
+import { getLang, t, onLanguageChange, applyI18n, toggleLang } from "./i18n.js";
 
 const $ = (id) => document.getElementById(id);
 
 // ---- локальное состояние (аналог WebState в webui/app.py) ----
 const appState = {
   status: "idle", message: "", properties: {}, events: [],
-  groups: props.GROUPS, names: props.NAMES, labels: props.LABELS,
+  groups: props.GROUPS, groups_en: props.GROUPS_EN,
+  names: props.NAMES, labels: props.LABELS, labels_en: props.LABELS_EN,
   write_enabled: false,
   writable: Object.keys(props.WRITABLE),
   writable_confirm: Object.fromEntries(
     Object.entries(props.WRITABLE).filter(([, v]) => v.confirm).map(([k, v]) => [k, v.confirm])
   ),
+  writable_confirm_en: Object.fromEntries(
+    Object.entries(props.WRITABLE).filter(([, v]) => v.confirm).map(([k, v]) => [k, props.WRITABLE_CONFIRM_EN[v.confirm] || v.confirm])
+  ),
   writable_values: Object.fromEntries(
     Object.entries(props.WRITABLE).filter(([, v]) => v.values)
       .map(([k, v]) => [k, v.values.map((val) => [val, (props.ENUM_LABELS[k] || {})[val] ?? String(val)])])
+  ),
+  writable_values_en: Object.fromEntries(
+    Object.entries(props.WRITABLE).filter(([, v]) => v.values)
+      .map(([k, v]) => [k, v.values.map((val) => [val, (props.ENUM_LABELS_EN[k] || {})[val] ?? String(val)])])
   ),
   last_update: "—",
 };
@@ -46,7 +55,7 @@ function setStatus(status, message = "") {
 // вписывается). С input:true работает как prompt(): резолвится строкой или
 // null при отмене; без input — как confirm(): true/false. ----
 function showModal(title, message, opts = {}) {
-  const { danger = false, okText = "Подтвердить", input = false, inputPlaceholder = "", inputType = "text", inputValue = "" } = opts;
+  const { danger = false, okText = "Confirm", input = false, inputPlaceholder = "", inputType = "text", inputValue = "" } = opts;
   return new Promise((resolve) => {
     const overlay = $("modal-overlay");
     const okBtn = $("modal-ok");
@@ -100,17 +109,20 @@ function hasPin() { return Boolean(localStorage.getItem(PIN_KEY)); }
 function updatePinButton() {
   const btn = $("pin-toggle");
   btn.classList.toggle("on", hasPin());
-  btn.title = hasPin() ? "PIN на разблокировку включён (клик — изменить/убрать)" : "PIN на разблокировку выключен (клик — включить)";
+  const isEn = getLang() === "en";
+  btn.title = hasPin()
+    ? (isEn ? "Unlock PIN enabled (click to change/disable)" : "PIN на разблокировку включён (клик — изменить/убрать)")
+    : (isEn ? "Unlock PIN disabled (click to enable)" : "PIN на разблокировку выключен (клик — включить)");
 }
 
 async function verifyPin() {
   if (!hasPin()) return true;
   const entered = await showModal(
-    "PIN для разблокировки", "Введите PIN, чтобы разблокировать самокат.",
-    { input: true, inputPlaceholder: "PIN", inputType: "password", okText: "Разблокировать" });
+    "Unlock PIN", "Enter PIN to unlock the scooter.",
+    { input: true, inputPlaceholder: "PIN", inputType: "password", okText: "Unlock" });
   if (!entered) return false;
   if ((await sha256Hex(entered)) !== localStorage.getItem(PIN_KEY)) {
-    alert("Неверный PIN.");
+    alert("Incorrect PIN.");
     return false;
   }
   return true;
@@ -119,15 +131,15 @@ async function verifyPin() {
 async function managePin() {
   if (hasPin()) {
     const cur = await showModal(
-      "Изменить PIN", "Введите текущий PIN, чтобы изменить или отключить защиту.",
-      { input: true, inputPlaceholder: "текущий PIN", inputType: "password", okText: "Далее" });
+      "Change PIN", "Enter current PIN to change or disable protection.",
+      { input: true, inputPlaceholder: "current PIN", inputType: "password", okText: "Next" });
     if (!cur) return;
     if ((await sha256Hex(cur)) !== localStorage.getItem(PIN_KEY)) { alert("Неверный PIN."); return; }
   }
   const next = await showModal(
-    hasPin() ? "Новый PIN" : "Установить PIN на разблокировку",
-    `Минимум 4 цифры. ${hasPin() ? "Оставьте пустым, чтобы отключить защиту." : "Потребуется при каждой разблокировке."}`,
-    { input: true, inputPlaceholder: "новый PIN", inputType: "password", okText: "Далее" });
+    hasPin() ? "New PIN" : "Set Unlock PIN",
+    `Minimum 4 digits. ${hasPin() ? "Leave empty to disable protection." : "Required for every unlock."}`,
+    { input: true, inputPlaceholder: "new PIN", inputType: "password", okText: "Next" });
   if (next === null) return;
   if (!next) {
     if (hasPin()) {
@@ -136,11 +148,11 @@ async function managePin() {
     }
     return;
   }
-  if (!/^\d{4,}$/.test(next)) { alert("PIN должен быть числом из минимум 4 цифр."); return; }
+  if (!/^\d{4,}$/.test(next)) { alert("PIN must be a number with at least 4 digits."); return; }
   const repeat = await showModal(
-    "Повторите PIN", "Введите тот же PIN ещё раз для подтверждения.",
-    { input: true, inputPlaceholder: "повтор PIN", inputType: "password", okText: "Сохранить" });
-  if (repeat !== next) { alert("PIN не совпадает — попробуйте снова."); return; }
+    "Confirm PIN", "Re-enter the same PIN to confirm.",
+    { input: true, inputPlaceholder: "repeat PIN", inputType: "password", okText: "Save" });
+  if (repeat !== next) { alert("PIN does not match — try again."); return; }
   localStorage.setItem(PIN_KEY, await sha256Hex(next));
   updatePinButton();
 }
@@ -149,6 +161,8 @@ function esc(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 function shortName(key, state) {
+  const isEn = getLang() === "en";
+  if (isEn && (state.labels_en && state.labels_en[key])) return state.labels_en[key];
   return (state.labels && state.labels[key]) || (state.names && state.names[key]) || key;
 }
 function prop(state, key) { return (state.properties || {})[key] || null; }
@@ -177,21 +191,23 @@ function renderHero(state) {
   const dash = (pct / 100) * C;
   const col = batteryColor(bat);
 
+  const isEn = getLang() === "en";
   const tiles = [
-    ["Ср. скорость", speed == null ? "—" : `${speed.toFixed(1)}`, "км/ч"],
-    ["Запас хода", range == null ? "—" : `${range.toFixed(1)}`, "км"],
-    ["Мощность", power == null ? "—" : `${Math.round(power)}`, "Вт"],
-    ["Напряжение", volt == null ? "—" : `${volt.toFixed(1)}`, "В"],
-    ["Ток", curr == null ? "—" : `${curr.toFixed(1)}`, "А"],
+    [isEn ? "Avg speed" : "Ср. скорость", speed == null ? "—" : `${speed.toFixed(1)}`, isEn ? "km/h" : "км/ч"],
+    [isEn ? "Range" : "Запас хода", range == null ? "—" : `${range.toFixed(1)}`, isEn ? "km" : "км"],
+    [isEn ? "Power" : "Мощность", power == null ? "—" : `${Math.round(power)}`, isEn ? "W" : "Вт"],
+    [isEn ? "Voltage" : "Напряжение", volt == null ? "—" : `${volt.toFixed(1)}`, isEn ? "V" : "В"],
+    [isEn ? "Current" : "Ток", curr == null ? "—" : `${curr.toFixed(1)}`, isEn ? "A" : "А"],
   ].map(([l, v, u]) => `<div class="stat-item"><div class="sl">${l}</div><div class="sv">${v}<span class="su">${u}</span></div></div>`).join("");
 
   const chips = [];
-  const modeTxt = modeP && modeP.text ? esc(String(modeP.text).replace(/\s*\(raw.*\)/, "")) : null;
+  const rawMode = modeP ? ((isEn && modeP.text_en) ? modeP.text_en : modeP.text) : null;
+  const modeTxt = rawMode ? esc(String(rawMode).replace(/\s*\(raw.*\)/, "")) : null;
   if (modeTxt) chips.push(`<span class="chip mode">${modeTxt}</span>`);
-  if (locked != null) chips.push(`<span class="chip ${locked ? "bad" : "ok"}">${locked ? "🔒 Заблокирован" : "🔓 Разблокирован"}</span>`);
-  if (riding) chips.push(`<span class="chip ok">🛴 Движение</span>`);
-  if (charging) chips.push(`<span class="chip warn">⚡ Зарядка</span>`);
-  if (fault != null) chips.push(`<span class="chip ${fault ? "bad" : "ok"}">${fault ? "⚠ Ошибка " + fault : "✓ Без ошибок"}</span>`);
+  if (locked != null) chips.push(`<span class="chip ${locked ? "bad" : "ok"}">${locked ? (isEn ? "🔒 Locked" : "🔒 Заблокирован") : (isEn ? "🔓 Unlocked" : "🔓 Разблокирован")}</span>`);
+  if (riding) chips.push(`<span class="chip ok">${isEn ? "🛴 Riding" : "🛴 Движение"}</span>`);
+  if (charging) chips.push(`<span class="chip warn">${isEn ? "⚡ Charging" : "⚡ Зарядка"}</span>`);
+  if (fault != null) chips.push(`<span class="chip ${fault ? "bad" : "ok"}">${fault ? (isEn ? "⚠ Fault " + fault : "⚠ Ошибка " + fault) : (isEn ? "✓ No faults" : "✓ Без ошибок")}</span>`);
 
   host.innerHTML = `
     <div class="hero-battery">
@@ -247,12 +263,13 @@ function renderRideMode(state) {
   const batEl = $("rm-battery");
   batEl.textContent = bat == null ? "—" : `${Math.round(bat)}%`;
   batEl.style.color = bat == null ? "#fff" : batteryColor(bat);
-  $("rm-range").textContent = range == null ? "—" : `${range.toFixed(1)} км`;
+  const isEn = getLang() === "en";
+  $("rm-range").textContent = range == null ? "—" : `${range.toFixed(1)} ${isEn ? "km" : "км"}`;
 
   const tripDist = pnum(state, "1.9");
-  $("rm-trip-dist").textContent = tripDist == null ? "—" : `${tripDist.toFixed(1)} км`;
+  $("rm-trip-dist").textContent = tripDist == null ? "—" : `${tripDist.toFixed(1)} ${isEn ? "km" : "км"}`;
   const tripTimeP = prop(state, "2.8");
-  $("rm-trip-time").textContent = tripTimeP && tripTimeP.text ? tripTimeP.text : "—";
+  $("rm-trip-time").textContent = tripTimeP ? ((isEn && tripTimeP.text_en) ? tripTimeP.text_en : tripTimeP.text) : "—";
 
   const modeTxt = modeP && modeP.text ? esc(String(modeP.text).replace(/\s*\(raw.*\)/, "")) : null;
   const modeEl = $("rm-mode");
@@ -275,12 +292,12 @@ function renderRideMode(state) {
     lockBtn.classList.toggle("bad", Boolean(locked));
     lockBtn.classList.toggle("ok", !locked);
     if (!lockBtn.classList.contains("holding")) {
-      lockBtn.textContent = locked ? "🔒 Заблокирован" : "🔓 Разблокирован";
+      lockBtn.textContent = locked ? (isEn ? "🔒 Locked" : "🔒 Заблокирован") : (isEn ? "🔓 Unlocked" : "🔓 Разблокирован");
     }
   }
 
   const banner = $("rm-fault-banner");
-  if (fault) { banner.hidden = false; banner.textContent = `⚠ ОШИБКА ${fault}`; }
+  if (fault) { banner.hidden = false; banner.textContent = isEn ? `⚠ FAULT ${fault}` : `⚠ ОШИБКА ${fault}`; }
   else banner.hidden = true;
 }
 
@@ -335,7 +352,9 @@ const prevValueText = {};
 function buildGroups(state) {
   const container = $("groups");
   container.innerHTML = "";
-  for (const g of state.groups || []) {
+  const isEn = getLang() === "en";
+  const groupsList = (isEn && state.groups_en) ? state.groups_en : (state.groups || []);
+  for (const g of groupsList) {
     const sec = document.createElement("section");
     sec.className = "panel group";
     const h = document.createElement("h2");
@@ -380,12 +399,17 @@ function renderRideLog(state) {
   const wrap = document.querySelector('.ridelog[data-group="logs"]');
   if (!wrap) return;
   const rides = [];
+  const isEn = getLang() === "en";
   for (let i = 1; i <= 5; i++) {
     const p = (state.properties || {})[`6.${i}`];
-    if (p && Array.isArray(p.rides)) rides.push(...p.rides);
+    if (p) {
+      const list = (isEn && p.rides_en) ? p.rides_en : p.rides;
+      if (Array.isArray(list)) rides.push(...list);
+    }
   }
-  if (!rides.length) { wrap.innerHTML = '<div class="ride-empty">нет записей о поездках</div>'; return; }
-  const head = '<div class="ride-row ride-head"><span>#</span><span>Длительность</span><span>Дистанция</span><span>Ср. скорость</span><span>Макс.</span></div>';
+  const isEn = getLang() === "en";
+  if (!rides.length) { wrap.innerHTML = `<div class="ride-empty">${t("no_trip_records")}</div>`; return; }
+  const head = `<div class="ride-row ride-head"><span>#</span><span>${t("table_dur")}</span><span>${t("table_dist")}</span><span>${t("table_avg")}</span><span>${t("table_max")}</span></div>`;
   const rows = rides.map((r, i) => `<div class="ride-row"><span class="ride-idx">${i + 1}</span><span>${esc(r.dur)}</span><span>${esc(r.dist)}</span><span>${esc(r.avg)}</span><span>${esc(r.top)}</span></div>`).join("");
   wrap.innerHTML = head + rows;
 }
@@ -401,10 +425,11 @@ function updateProps(state) {
     card.classList.toggle("secret", Boolean(p && p.secret));
     if (!p) { value.textContent = "—"; meta.textContent = ""; card.classList.remove("has-data"); return; }
     card.classList.add("has-data");
-    const newText = p.text || "—";
+    const isEn = getLang() === "en";
+    const newText = (isEn && p.text_en) ? p.text_en : (p.text || "—");
     value.textContent = newText;
-    card.classList.toggle("bool-on", p.text === "вкл");
-    card.classList.toggle("bool-off", p.text === "выкл");
+    card.classList.toggle("bool-on", p.text === "вкл" || p.text === "on");
+    card.classList.toggle("bool-off", p.text === "выкл" || p.text === "off");
     value.classList.toggle("val-text", Boolean(p.text) && p.text.length > 14);
     if (prevValueText[key] !== undefined && prevValueText[key] !== newText) {
       card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
@@ -445,8 +470,11 @@ function updateControls(state) {
   $("msg").textContent = state.message || "";
   $("updated").textContent = state.last_update || "—";
 
+  const isEn = getLang() === "en";
   const wb = $("write-toggle");
-  wb.textContent = state.write_enabled ? "🔓 Управление вкл" : "🔒 Только чтение";
+  wb.textContent = state.write_enabled
+    ? (isEn ? "🔓 Control on" : "🔓 Управление вкл")
+    : (isEn ? "🔒 Read only" : "🔒 Только чтение");
   wb.classList.toggle("on", state.write_enabled);
   document.body.classList.toggle("write-on", state.write_enabled);
 }
@@ -466,10 +494,10 @@ $("ridemode-exit").onclick = exitRideMode;
 $("write-toggle").onclick = async () => {
   const enabled = !appState.write_enabled;
   if (enabled && !(await showModal(
-    "Включить режим управления?",
-    "Клик по функции будет менять настройку самоката (SET), пока не выключите обратно."))) return;
+    "Enable control mode?",
+    "Clicking a setting will change scooter configuration (SET) until toggled off."))) return;
   appState.write_enabled = enabled;
-  addEvent(`режим управления: ${enabled ? "ВКЛ" : "выкл"}`);
+  addEvent(`control mode: ${enabled ? "ON" : "off"}`);
   render();
 };
 
@@ -526,7 +554,8 @@ function loadProfiles() {
 function saveProfiles(list) { localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }
 
 function updateScooterButton() {
-  $("scooter-toggle").textContent = "📡 " + (currentProfile ? currentProfile.name : "не подключён");
+  const isEn = getLang() === "en";
+  $("scooter-toggle").textContent = "📡 " + (currentProfile ? currentProfile.name : (isEn ? "not connected" : "не подключён"));
 }
 
 /** Находит сохранённый профиль по device.id или создаёт новый (спрашивает имя+LTMK). */
@@ -574,9 +603,9 @@ async function promptLtmk() {
   let hex = null;
   if ("BarcodeDetector" in window) {
     const wantScan = await showModal(
-      "LTMK этого самоката",
-      "Можно отсканировать QR с ключом камерой (webui → «Мои самокаты» → 🔑 → «Показать QR для телефона») или ввести вручную.",
-      { okText: "📷 Сканировать" });
+      "LTMK for this scooter",
+      "You can scan the QR code with your camera (webui → 'My Scooters' → 🔑 → 'Show QR for phone') or enter it manually.",
+      { okText: "📷 Scan" });
     if (wantScan) {
       const scanned = await scanQrCode();
       if (scanned) hex = scanned.trim().toLowerCase();
@@ -584,9 +613,9 @@ async function promptLtmk() {
   }
   if (!hex) {
     hex = (await showModal(
-      "LTMK этого самоката",
-      "64 hex-символа — 32 байта ключа логина. Хранится только в этом браузере, никуда не отправляется.",
-      { input: true, inputPlaceholder: "LTMK hex", okText: "Сохранить" })) || "";
+      "LTMK for this scooter",
+      "64 hex characters — 32 bytes of the login key. Stored only in this browser.",
+      { input: true, inputPlaceholder: "LTMK hex", okText: "Save" })) || "";
   }
   return hex;
 }
@@ -596,12 +625,12 @@ async function resolveProfile(device) {
   let profile = profiles.find((p) => p.id === device.id);
   if (!profile) {
     const name = (await showModal(
-      "Новый самокат",
-      `Устройство «${device.name || "без имени"}» подключается впервые. Введите название для удобства (например «мой»).`,
-      { input: true, inputPlaceholder: "название", inputValue: device.name || "", okText: "Далее" }));
-    if (!name) throw new Error("подключение отменено (не задано название)");
+      "New scooter",
+      `Device "${device.name || "unnamed"}" is connecting for the first time. Enter friendly name (e.g. 'mine').`,
+      { input: true, inputPlaceholder: "name", inputValue: device.name || "", okText: "Next" }));
+    if (!name) throw new Error("connection canceled (no name provided)");
     const hex = await promptLtmk();
-    if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error("LTMK должен быть 64 hex-символа (32 байта)");
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error("LTMK must be 64 hex characters (32 bytes)");
     profile = { id: device.id, name, ltmkHex: hex.toLowerCase() };
     profiles.push(profile);
     saveProfiles(profiles);
@@ -616,7 +645,7 @@ function renderScootersList() {
   if (!profiles.length) {
     const empty = document.createElement("div");
     empty.className = "scooter-mac";
-    empty.textContent = "Пока нет сохранённых профилей — появятся автоматически при первом подключении.";
+    empty.textContent = "No saved profiles yet — they will appear automatically after connecting.";
     box.appendChild(empty);
     return;
   }
@@ -640,9 +669,9 @@ function renderScootersList() {
     const renameBtn = document.createElement("button");
     renameBtn.type = "button";
     renameBtn.className = "modal-btn scooter-select";
-    renameBtn.textContent = "Переименовать";
+    renameBtn.textContent = "Rename";
     renameBtn.onclick = async () => {
-      const next = await showModal("Переименовать самокат", "Новое название.", { input: true, inputValue: p.name, okText: "Сохранить" });
+      const next = await showModal("Rename scooter", "New name.", { input: true, inputValue: p.name, okText: "Save" });
       if (!next) return;
       const list = loadProfiles();
       const idx = list.findIndex((x) => x.id === p.id);
@@ -656,9 +685,9 @@ function renderScootersList() {
     delBtn.type = "button";
     delBtn.className = "modal-btn scooter-del";
     delBtn.textContent = "✕";
-    delBtn.title = "Удалить";
+    delBtn.title = "Delete";
     delBtn.onclick = async () => {
-      if (!(await showModal("Удалить самокат?", `«${p.name}» будет удалён из списка. LTMK для него придётся ввести заново при следующем подключении.`, { danger: true, okText: "Удалить" }))) return;
+      if (!(await showModal("Delete scooter?", `"${p.name}" will be removed from the list.`, { danger: true, okText: "Delete" }))) return;
       saveProfiles(loadProfiles().filter((x) => x.id !== p.id));
       if (currentProfile && currentProfile.id === p.id) { currentProfile = null; updateScooterButton(); }
       renderScootersList();
@@ -678,7 +707,7 @@ $("scooters-close").onclick = () => { $("scooters-overlay").hidden = true; };
 $("scooters-overlay").addEventListener("click", (e) => {
   if (e.target === $("scooters-overlay")) $("scooters-overlay").hidden = true;
 });
-$("scooters-add").textContent = "🔗 Подключить новый";
+$("scooters-add").textContent = "+ Connect New";
 $("scooters-add").onclick = () => {
   $("scooters-overlay").hidden = true;
   connect();
@@ -689,7 +718,7 @@ async function readOne(siid, piid) {
   appCnt += 1;
   const key = `${siid}.${piid}`;
   if (!obj) {
-    appState.properties[key] = { key, siid, piid, name: props.NAMES[key] || "?", text: "нет ответа", type: null, secret: false, groups: props.PROP_GROUPS[key] || [] };
+    appState.properties[key] = { key, siid, piid, name: props.NAMES[key] || "?", text: "no response", type: null, secret: false, groups: props.PROP_GROUPS[key] || [] };
     return null;
   }
   if (key === "3.5" && obj.status === 0) {
@@ -697,7 +726,7 @@ async function readOne(siid, piid) {
   }
   const fmt = props.formatProperty(siid, piid, obj.tcode, obj.value || new Uint8Array(0), unitMult);
   if (obj.status && obj.status !== 0) fmt.text += ` [status=${obj.status}]`;
-  fmt.ts = new Date().toLocaleTimeString("ru-RU");
+  fmt.ts = new Date().toLocaleTimeString();
   appState.properties[key] = fmt;
   if (!fmt.secret) addEvent(`${props.LABELS[key] || fmt.name} = ${fmt.text}`);
   return fmt;
@@ -726,19 +755,19 @@ async function applyPendingSets() {
     const [siid, piid] = key.split(".").map(Number);
     const valBytes = typeCode === 0 ? new Uint8Array([value ? 1 : 0]) : new Uint8Array([value & 0xff]);
     const label = props.LABELS[key] || key;
-    addEvent(`SET ${label} = ${value} — отправляю`);
+    addEvent(`SET ${label} = ${value} — sending`);
     try {
       const { ok, status } = await specSet(transport, sk, siid, piid, typeCode, valBytes, appCnt);
       appCnt += 1;
       if (ok) {
-        addEvent(`SET ${label} → ${value}: принято (status 0)`);
+        addEvent(`SET ${label} → ${value}: accepted (status 0)`);
         await sleep(300);
         await readOne(siid, piid);
       } else {
-        addEvent(`SET ${label} → ${value}: ОТКАЗ (status=${status})`);
+        addEvent(`SET ${label} → ${value}: REFUSED (status=${status})`);
       }
     } catch (e) {
-      addEvent(`SET ${label}: ошибка ${e.message}`);
+      addEvent(`SET ${label}: error ${e.message}`);
     }
     render();
     resolve();
@@ -761,7 +790,7 @@ async function pollLoop(signal) {
 
   let lastStatic = 0;
   const dynamicNoUnit = props.DYNAMIC_SET.filter(([s, p]) => !(s === 3 && p === 5));
-  setStatus("polling", "поллинг живых свойств ~каждые 3с; медленный набор ~60с");
+  setStatus("polling", "polling live telemetry ~every 3s; slow set ~60s");
   render();
 
   while (!signal.aborted) {
@@ -795,7 +824,7 @@ async function pollLoop(signal) {
 async function connect() {
   $("connect").disabled = true;
   try {
-    setStatus("connecting", "выбор устройства…"); render();
+    setStatus("connecting", "selecting device…"); render();
     transport = new Transport();
     transport.onLog = (msg) => { /* технический BLE-лог — не в UI, слишком шумно */ };
     await transport.requestDevice();
@@ -806,7 +835,7 @@ async function connect() {
 
     await transport.connect();
 
-    setStatus("login", "обмен ключами (ECDH + AES-CCM)…"); render();
+    setStatus("login", "key exchange (ECDH + AES-CCM)…"); render();
     sk = await login(transport, ltmk);
     appCnt = 0;
 
@@ -818,7 +847,7 @@ async function connect() {
     await pollLoop(controller.signal);
   } catch (e) {
     setStatus("error", e.message || String(e));
-    addEvent(`Ошибка: ${e.message || e}`);
+    addEvent(`Error: ${e.message || e}`);
     render();
   } finally {
     $("connect").disabled = false;
@@ -827,7 +856,7 @@ async function connect() {
 
 async function disconnect() {
   if (pollAbort) pollAbort.abort();
-  setStatus("stopping", "остановка…"); render();
+  setStatus("stopping", "stopping…"); render();
   try { if (transport) await transport.disconnect(); } catch (e) { /* ignore */ }
   transport = null; sk = null;
   $("disconnect").disabled = true;
@@ -841,8 +870,28 @@ updatePinButton();
 updateScooterButton();
 
 if (!("bluetooth" in navigator)) {
-  setStatus("error", "Web Bluetooth недоступен в этом браузере (нужен Chrome/Edge на Android, не Safari/iOS).");
-  addEvent("Web Bluetooth API отсутствует — navigator.bluetooth не найден.");
+  setStatus("error", "Web Bluetooth is not supported in this browser (Chrome/Edge on Android required, not Safari/iOS).");
+  addEvent("Web Bluetooth API unavailable — navigator.bluetooth not found.");
 }
 
 render();
+
+const langBtn = $("lang-toggle");
+if (langBtn) {
+  langBtn.addEventListener("click", () => {
+    toggleLang();
+  });
+}
+applyI18n();
+
+onLanguageChange(() => {
+  groupsBuilt = false;
+  updateControls(appState);
+  renderHero(appState);
+  renderRideMode(appState);
+  buildGroups(appState);
+  updateProps(appState);
+  renderRideLog(appState);
+  updatePinButton();
+  updateScooterButton();
+});

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Проба 3: что означает status 7 — «отклонено и не буферизовано» или «буферизовано с флагом»?
+Probe 3: what does status 7 mean — "rejected and unbuffered" or "buffered with flag"?
 
-Последовательность (одна сессия, без commit, чистые банки):
-  frag1 -> статус A (ожидаем 7)
-  frag1 ещё раз -> статус B:
-      5 = «дубликат/неверный индекс»  ⇒ первый фрагмент ЛЕГ в буфер несмотря на 7;
-      7 = состояние не изменилось     ⇒ 7 = чистый отказ, ничего не буферизовано.
-  frag2 -> статус C:
-      если B=5 и C=0 — буферизация идёт «вслепую», гейт срабатывает позже;
-      если C=5 — пропуск индекса тоже виден устройству.
+Sequence (single session, no commit, clean banks):
+  frag1 -> status A (expect 7)
+  frag1 again -> status B:
+      5 = "duplicate/invalid index" => first fragment buffered despite 7;
+      7 = state unchanged           => 7 = clean reject, nothing buffered.
+  frag2 -> status C:
+      if B=5 and C=0 — buffering is "blind", gate triggers later;
+      if C=5 — index skip is also detected by device.
 
-Печатает полные сырые события 0x0017 (без фильтрации) — вдруг в них больше байт.
+Prints full raw 0x0017 events (unfiltered) in case they contain more bytes.
 
-Запуск:  python probes/mcu_gate_repeat.py
+Usage:  python probes/mcu_gate_repeat.py
 """
 import asyncio
 import os
@@ -38,7 +38,7 @@ async def main():
         op = OPS["mcu"]
         last, crc = await get_last_index(t, op)
         if last != 0:
-            print(f"[!] MCU-банк не пуст (last={last}) — тест невалиден")
+            print(f"[!] MCU bank not empty (last={last}) — test is invalid")
             return 1
         frag_size = await get_fragment_size(t, op)
         fw = open(MCU_IMG, "rb").read()
@@ -48,7 +48,7 @@ async def main():
             print(f"[i] frag{idx}: status={st}")
 
         last2, crc2 = await get_last_index(t, op)
-        print(f"[i] MCU-банк после: last={last2}, crc={'%08x' % crc2 if crc2 else '—'}")
+        print(f"[i] MCU bank after: last={last2}, crc={'%08x' % crc2 if crc2 else '—'}")
         return 0
     finally:
         await t.close()

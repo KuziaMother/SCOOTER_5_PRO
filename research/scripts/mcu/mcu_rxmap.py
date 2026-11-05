@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Карта переходов RX-фреймера MCU (ISR 0x1e480) — исполнением, не статикой.
+Transition map of MCU RX-framer (ISR 0x1e480) - by execution, not static.
 
-Для каждой пары (state, byte) подаём байт в USART3 RX и снимаем:
-  - новый (state, slot, idx)
-  - куда записан байт (адрес в RAM / периферия)
-Это даёт полную таблицу стейт-машины — то, что статика не смогла из-за
-jump-table с вычисляемой геометрией.
+For each pair (state, byte) feed byte into USART3 RX and capture:
+  - new (state, slot, idx)
+  - where byte was written (RAM address / peripheral)
+This yields full state-machine table - what static analysis could not due to
+jump-table with computed geometry.
 
-Запуск:  python research/mcu_rxmap.py [--states 0-40] [--out rxmap.tsv]
+Usage:  python research/mcu_rxmap.py [--states 0-40] [--out rxmap.tsv]
 """
 import argparse
 import os
@@ -83,7 +83,7 @@ class RMapper:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--states", default="0-40",
-                    help="диапазон состояний 'a-b' или список '1,2,3'")
+                    help="state range 'a-b' or list '1,2,3'")
     ap.add_argument("--out", default="rxmap.tsv")
     a = ap.parse_args()
 
@@ -99,7 +99,7 @@ def main():
     for st in states:
         for b in range(256):
             nst, nsl, nix, writes, err = rm.step(st, b)
-            # куда ушёл байт? ищем запись, равную байту, в RAM-области
+            # where did byte go? find write matching byte in RAM area
             where = []
             for addr, size, val in writes:
                 if addr >= 0x20000000 and val == (b if size == 1 else None):
@@ -110,17 +110,17 @@ def main():
                         tag = f"desc[{d//150}][{d%150}]"
                     where.append(f"0x20000{off:03x}{(':'+tag) if tag else ''}")
             rows.append((st, b, nst, nsl, nix, ";".join(where[:4]), err or ""))
-        print(f"  state {st}: готово ({time.time()-t0:.1f}s)", flush=True)
+        print(f"  state {st}: done ({time.time()-t0:.1f}s)", flush=True)
 
     out = os.path.join(HERE, a.out)
     with open(out, "w", encoding="utf-8") as f:
         f.write("state\tbyte\tnew_state\tnew_slot\tnew_idx\tbyte_written_to\tnote\n")
         for r in rows:
             f.write("\t".join(str(x) for x in r) + "\n")
-    print(f"записано {len(rows)} переходов -> {out}")
+    print(f"written {len(rows)} transitions -> {out}")
 
-    # компактная сводка: для каждого состояния — какие байты принимались
-    print("\nСВОДКА (state: принимаемые байты -> new_state):")
+    # compact summary: for each state - which bytes were accepted
+    print("\nSUMMARY (state: accepted bytes -> new_state):")
     from collections import defaultdict
     by_st = defaultdict(list)
     for st, b, nst, nsl, nix, where, err in rows:
@@ -128,7 +128,7 @@ def main():
             by_st[st].append((b, nst, where))
     for st in sorted(by_st):
         items = by_st[st]
-        # группируем по new_state
+        # group by new_state
         groups = defaultdict(list)
         for b, nst, where in items:
             groups[nst].append(b)

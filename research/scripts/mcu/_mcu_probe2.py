@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Капстон-декод T32 push.w кандидатов + их позиция относительно B5xx-стартов."""
+"""Capstone decode of T32 push.w candidates + their position relative to B5xx starts."""
 import os, struct
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 

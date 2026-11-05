@@ -1,6 +1,6 @@
-"""Общий sys.path для тестов — модули проекта сами не оформлены как пакеты
-(привычка проекта: скрипты добавляют root/подпапки в sys.path при запуске),
-поэтому подключаем нужные директории один раз здесь."""
+"""Shared sys.path for tests — project modules are not packaged as a single module
+(project convention: scripts prepend root and subfolders to sys.path on launch),
+so required directories are injected once here."""
 import os
 import sys
 

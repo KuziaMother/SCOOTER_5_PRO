@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""§73.x ADC: прямой вызов 0x1be1c (TIM capture) с known sector/T/C.
+"""§73.x ADC: direct call 0x1be1c (TIM capture) with known sector/T/C.
 
-Подтверждает: базу T-регистров (пул @0x1be29), какие T читаются для сектора,
-формулу реконструкции тока (T−C)<<4 → r0+0xc/0x10/0x14, и clamp [−30000,30000].
+Confirms: T-register base (pool @0x1be29), which T registers are read for the sector,
+current reconstruction formula (T-C)<<4 -> r0+0xc/0x10/0x14, and clamp [-30000,30000].
 """
 import struct, sys
 sys.path.insert(0, '.')
@@ -22,9 +22,9 @@ def run_be1c(sector, c18, c1a, c1c, t28, t2c, t30):
     emu.uc.mem_write(r0 + 0x18, struct.pack('<H', c18 & 0xFFFF))
     emu.uc.mem_write(r0 + 0x1a, struct.pack('<H', c1a & 0xFFFF))
     emu.uc.mem_write(r0 + 0x1c, struct.pack('<H', c1c & 0xFFFF))
-    # гейт mode-2: STAT бит15 = 1
+    # mode-2 gate: STAT bit15 = 1
     emu.uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))
-    # T-регистры (предполагаемая база 0x40012440): +0x28/+0x2c/+0x30
+    # T-registers (assumed base 0x40012440): +0x28/+0x2c/+0x30
     emu.uc.mem_write(0x40012440 + 0x28, struct.pack('<I', t28 & 0xFFFFFFFF))
     emu.uc.mem_write(0x40012440 + 0x2c, struct.pack('<I', t2c & 0xFFFFFFFF))
     emu.uc.mem_write(0x40012440 + 0x30, struct.pack('<I', t30 & 0xFFFFFFFF))
@@ -43,24 +43,24 @@ def run_be1c(sector, c18, c1a, c1c, t28, t2c, t30):
     except UcError:
         pass
     emu.uc.hook_del(sh)
-    # результат: r0+0xc/0x10/0x14 (s32) + что скопировано в пул-блок
+    # result: r0+0xc/0x10/0x14 (s32) + what is copied to pool-block
     out = {}
     for off, nm in ((0x0c, 'o_c'), (0x10, 'o_10'), (0x14, 'o_14')):
         out[nm] = struct.unpack('<i', emu.uc.mem_read(r0 + off, 4))[0]
-    # periph reads (адреса) в регионе capture
-    # (periph_reads не включён; используем periph_writes для записи результата)
+    # periph reads (addresses) in capture region
+    # (periph_reads not enabled; use periph_writes to record result)
     return emu, out
 
 
 def classify(out):
-    """По паттерну pre-clamp выходов определить handler (какие T−C использованы)."""
+    """Determine handler (which T-C were used) from pre-clamp output pattern."""
     oc, o10, o14 = out['o_c'], out['o_10'], out['o_14']
-    # диффы: A28=T28−C18, A2C=T2C−C1A, A30=T30−C1C (все ×16)
+    # diffs: A28=T28-C18, A2C=T2C-C1A, A30=T30-C1C (all x16)
     return (oc, o10, o14)
 
 
 def main():
-    # разные diff, чтобы различить handler: (T−C): 28→4000, 2c→6000, 30→8000
+    # different diffs to distinguish handler: (T-C): 28->4000, 2c->6000, 30->8000
     c18, c1a, c1c = 1000, 2000, 3000
     t28, t2c, t30 = 5000, 8000, 11000
     d28 = (t28 - c18) << 4   # 64000

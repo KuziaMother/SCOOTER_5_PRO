@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Blob-конфиги #1/#2/#3 (@0x844..@0x880): кто пишет, кто читает.
+Blob configs #1/#2/#3 (@0x844..@0x880): who writes, who reads.
 
-1) SET-свип: для каждой Path-A подкоманды 0x10..0x1b гоняем стейт-машину
-   0x1f71c с валидным кадром и ловим ВСЕ записи в RAM 0x840..0x880.
-2) GET-захват: предзаполняем blob-регион паттерном, гоняем Path-B подкоманды
-   0x22/0x28/0x29/0x2a и снимаем TX-кадры из кольца @0x10b5 (маппинг полей).
+1) SET sweep: for each Path-A subcommand 0x10..0x1b run state machine
+   0x1f71c with valid frame and catch ALL writes to RAM 0x840..0x880.
+2) GET capture: prefill blob region with pattern, run Path-B subcommands
+   0x22/0x28/0x29/0x2a and capture TX frames from ring @0x10b5 (field mapping).
 
-Запуск:  python research/scripts/mcu/mcu_blobs.py [set|get|all]
+Usage:  python research/scripts/mcu/mcu_blobs.py [set|get|all]
 """
 import os
 import struct
@@ -36,11 +36,11 @@ def make_frame_b(hdr, sub, data=b""):
 
 
 def drive(frame, max_calls=10):
-    """Гоняем 0x1f71c до стабилизации; возвращаем emu и список (pc, addr, size, val)."""
+    """Run 0x1f71c until stabilization; return emu and list of (pc, addr, size, val)."""
     emu = McuEmu(trace=False, max_insn=200000)
     uc = emu.uc
     uc.mem_write(0x200002c8, b"\x00")   # RX head
-    uc.mem_write(0x200002c7, b"\x01")   # flag (не пусто)
+    uc.mem_write(0x200002c7, b"\x01")   # flag (not empty)
     uc.mem_write(0x200002c9, b"\x00")   # TX head
     uc.mem_write(CTX + 0x180 - 0x170, b"\x00")
     uc.mem_write(CTX + 0x182 - 0x170, b"\x00")
@@ -68,7 +68,7 @@ def drive(frame, max_calls=10):
 
 
 def tx_frames(emu):
-    """Снимаем TX-кадры из кольца @0x10b5 (сканируем все 8 слотов)."""
+    """Capture TX frames from ring @0x10b5 (scan all 8 slots)."""
     uc = emu.uc
     out = []
     for i in range(8):
@@ -82,10 +82,10 @@ def tx_frames(emu):
 
 def run_set_sweep():
     print("=" * 72)
-    print("SET-СВИП Path A (0x51 xx DATA): записи в RAM 0x840..0x880")
+    print("SET-SWEEP Path A (0x51 xx DATA): writes to RAM 0x840..0x880")
     print("=" * 72)
     for sub in list(range(0x10, 0x1c)) + [0x53]:
-        # data: 20 байт паттерна (чтобы хватало для любого blob)
+        # data: 20 bytes pattern (enough for any blob)
         data = bytes((i + 1) & 0xFF for i in range(20))
         frame = make_frame_a(0x51, sub, data)
         emu, writes = drive(frame)
@@ -104,12 +104,12 @@ def run_set_sweep():
 def run_get_capture():
     print()
     print("=" * 72)
-    print("GET-ЗАХВАТ Path B: TX-кадры при предзаполненном blob-регионе")
+    print("GET-CAPTURE Path B: TX frames with prefilled blob region")
     print("=" * 72)
-    # паттерн: RAM 0x844+i = i*7+3 (уникальный на 0x844..0x880)
+    # pattern: RAM 0x844+i = i*7+3 (unique on 0x844..0x880)
     seed = bytes((i * 7 + 3) & 0xFF for i in range(0x880 - 0x844))
-    for sub, name in ((0x22, "конфиг#1 формат."), (0x28, "конфиг#1 raw"),
-                      (0x29, "конфиг#2 raw"), (0x2a, "конфиг#3 сид")):
+    for sub, name in ((0x22, "config#1 format"), (0x28, "config#1 raw"),
+                      (0x29, "config#2 raw"), (0x2a, "config#3 seed")):
         emu = McuEmu(trace=False, max_insn=200000)
         uc = emu.uc
         uc.mem_write(0x20000844, seed)
@@ -131,18 +131,18 @@ def run_get_capture():
         print(f"\nsub 0x{sub:02x} ({name}):")
         if out:
             print(f"   USART3: {out.hex(' ')}")
-            # маппинг: какие байты кадра = паттерну RAM 0x844+i (i*7+3)
+            # mapping: which frame bytes match pattern RAM 0x844+i (i*7+3)
             hits = []
             for j, b in enumerate(out):
                 i = (b - 3) % 256 / 7 if False else None
-                # решаем i: (7i+3) mod 256 == b  →  i = (b-3)*inv7 mod 256
+                # solve for i: (7i+3) mod 256 == b -> i = (b-3)*inv7 mod 256
                 for k in range(0x40):
                     if (k * 7 + 3) & 0xFF == b:
                         hits.append((j, f"RAM0x{0x844 + k:03x}"))
                         break
-            print(f"   маппинг: {hits}")
+            print(f"   mapping: {hits}")
         else:
-            print("   USART3 пусто")
+            print("   USART3 empty")
         for slot, f in frames:
             print(f"   TX-ring slot{slot}: {f.hex(' ')}")
             hits = []
@@ -151,7 +151,7 @@ def run_get_capture():
                     if (k * 7 + 3) & 0xFF == b:
                         hits.append((j, f"RAM0x{0x844 + k:03x}"))
                         break
-            print(f"   маппинг: {hits}")
+            print(f"   mapping: {hits}")
 
 
 if __name__ == "__main__":

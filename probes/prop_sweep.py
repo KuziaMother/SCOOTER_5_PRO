@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Сессионный свип всех siid/piid самоката по BLE (только чтение).
+"""Session sweep across all scooter siid/piid over BLE (read-only).
 
-Цели (TODO B-класс):
-  1. Живые значения телеметрии/настроек (база для корреляций §34/§31).
-  2. Найти app-триггер GET sub 0x2A (сид @0x871..@0x880, 16 Б) — кандидаты:
-     SIID_6 LOG_1..LOG_5 и «сырые» blob-свойства (16/18/20 Б в ответе).
-  3. Зафиксировать маппинг siid/piid -> содержимое (для siid/piid <-> CMD задачи).
+Objectives:
+  1. Live telemetry/settings values (baseline for correlations).
+  2. Discover app-trigger GET sub 0x2A (seed @0x871..@0x880, 16 B) — candidates:
+     SIID_6 LOG_1..LOG_5 and raw blob properties (16/18/20 B in reply).
+  3. Map siid/piid -> content for command mapping.
 
-Всё расшифрованное (plaintext ответов) дублируется в лог: logs/prop_sweep_<ts>.log
+All decrypted data (plaintext replies) duplicated to log: logs/prop_sweep_<ts>.log
 
-Запуск:  python probes/prop_sweep.py [--mac 2C:19:5C:DE:DE:88] [--no-logs]
+Usage:  python probes/prop_sweep.py [--mac 2C:19:5C:DE:DE:88] [--no-logs]
 """
 import argparse
 import asyncio
@@ -29,7 +29,7 @@ import dreame_auth as da
 import spec_read as sr
 
 
-# Полный список свойств из плагина (modules/10724.js SIID_DIC) + SIID_5/SIID_6.
+# Complete property list from plugin (modules/10724.js SIID_DIC) + SIID_5/SIID_6.
 PROPS = (
     [(1, p) for p in range(1, 10)]
     + [(2, p) for p in range(1, 19)]
@@ -39,9 +39,9 @@ PROPS = (
     + [(6, p) for p in range(1, 6)]
 )
 
-# размеры, интересные для blob-субкоманд (§38.3): 0x2a=16Б сид, 0x28=18Б blob#1,
-# 0x29=20Б blob#2, 0x22=7Б заголовок
-BLOB_HINT = {7: "заголовок @0x844 (sub 0x22)?", 16: "СИД @0x871 (sub 0x2A)??",
+# sizes relevant to blob subcommands: 0x2a=16B seed, 0x28=18B blob#1,
+# 0x29=20B blob#2, 0x22=7B header
+BLOB_HINT = {7: "header @0x844 (sub 0x22)?", 16: "SEED @0x871 (sub 0x2A)??",
              18: "blob#1 @0x84b (sub 0x28)??", 20: "blob#2 @0x85d (sub 0x29)??"}
 
 
@@ -68,13 +68,13 @@ async def read_one(t, sk, obj, app_cnt, out):
     print(f"--- siid={s} piid={p} [{name}] (app_cnt={app_cnt})")
     pt = await sr.spec_request(t, sk, [obj], app_cnt)
     if pt is None:
-        out.append(f"{s}.{p} {name}: НЕТ ОТВЕТА")
+        out.append(f"{s}.{p} {name}: NO RESPONSE")
         return None, app_cnt + 1
     out.append(f"{s}.{p} {name}: {pt.hex()}")
     for line in sr.parse_reply(pt):
         print("   " + line)
         out.append("   " + line)
-    # blob-детект: ищем value с «подозрительным» размером
+    # blob-detect: search for value of suspicious size
     try:
         off = 6
         count = pt[5]
@@ -89,11 +89,11 @@ async def read_one(t, sk, obj, app_cnt, out):
             vlen = tl & 0x0FFF
             val = pt[off + 7: off + 7 + vlen]
             if vlen in BLOB_HINT:
-                print(f"   >>> BLOB {vlen}Б: {BLOB_HINT[vlen]}  raw={val.hex()}")
-                out.append(f"   >>> BLOB {vlen}Б: {BLOB_HINT[vlen]}  raw={val.hex()}")
+                print(f"   >>> BLOB {vlen}B: {BLOB_HINT[vlen]}  raw={val.hex()}")
+                out.append(f"   >>> BLOB {vlen}B: {BLOB_HINT[vlen]}  raw={val.hex()}")
             off += 7 + vlen
     except Exception as e:
-        print(f"   [!] blob-скан: {e}")
+        print(f"   [!] blob scan: {e}")
     return pt, app_cnt + 1
 
 
@@ -103,7 +103,7 @@ async def run(mac):
     try:
         await t.connect()
         if not await t.a4_handshake():
-            print("[!] транспорт не поднялся")
+            print("[!] transport failed to connect")
             return 1
         for s, b in await t.drain(1.0):
             if s == da.CH_LOGIN and len(b) >= 3 and b[2] == da.PKT_MNG:
@@ -113,10 +113,10 @@ async def run(mac):
         if not (dev_pub and len(dev_pub) >= 64):
             return 1
         if not await da.stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
-            print("[!] login отказан")
+            print("[!] login refused")
             return 1
         sk = da.LAST_SK
-        print("\n[+] LOGIN OK — старт свипа\n")
+        print("\n[+] LOGIN OK — starting sweep\n")
 
         out = []
         app_cnt = 0
@@ -127,10 +127,10 @@ async def run(mac):
                 if pt is not None:
                     ok += 1
             except Exception as e:
-                print(f"   [!] ошибка: {e}")
-                out.append(f"{obj[0]}.{obj[1]}: ошибка {e}")
+                print(f"   [!] error: {e}")
+                out.append(f"{obj[0]}.{obj[1]}: error {e}")
             await asyncio.sleep(0.15)
-        print(f"\n=== свип завершён: ответов {ok}/{len(PROPS)} ===")
+        print(f"\n=== sweep complete: responses {ok}/{len(PROPS)} ===")
         return 0 if ok else 1
     except Exception:
         import traceback
@@ -161,5 +161,5 @@ if __name__ == "__main__":
     _sys.stdout.flush()
     if log_path:
         fh.close()
-        print(f"\n[лог: {log_path}]")
+        print(f"\n[log: {log_path}]")
     raise SystemExit(rc)

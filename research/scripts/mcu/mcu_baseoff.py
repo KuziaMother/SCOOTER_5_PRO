@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Статический поиск доступов «RAM-база + смещение» к полям RX-телеметрии.
+Static search for "RAM base + offset" accesses to RX telemetry fields.
 
-Дополнение к mcu_consumers.py: ловит паттерн, который пропускает чистый
-pool-скан —
-    ldr rB, [pc,#imm]      ; rB = 0x20000000 (RAM-база из пула)
+Supplement to mcu_consumers.py: catches pattern missed by clean
+pool-scan -
+    ldr rB, [pc,#imm]      ; rB = 0x20000000 (RAM base from pool)
     ...
-    ldrb/ldrh/ldr rX, [rB, #off]   или  [rB, rO] (rO = movw #off)
+    ldrb/ldrh/ldr rX, [rB, #off]   or   [rB, rO] (rO = movw #off)
     add rT, rB, #off;  ldr ... [rT]
-Мини-константный пропэгатор по окнам функций (skipdata).
+Mini constant propagator over function windows (skipdata).
 
 python research/mcu_baseoff.py [--only C42,C43]
 """
@@ -68,7 +68,7 @@ def main():
             mn = ins.mnemonic
             ops = ins.op_str.replace(" ", "")
             addr = ins.address
-            # --- константные присваивания ---
+            # --- constant assignments ---
             if mn == "ldr" and "[pc,#" in ops:
                 reg = ops.split(",")[0]
                 imm = int(ops.split("[pc,#")[1][:-1], 0)
@@ -110,13 +110,13 @@ def main():
                     val[parts[0]] = (a_ + b_) & 0xFFFFFFFF if mn in ("adds", "add") \
                         else (a_ - b_) & 0xFFFFFFFF
             elif mn in ("ands", "bics", "orrs", "eor"):
-                # сбросим, если операнд не константа (грубо)
+                # reset if operand is not constant (coarse)
                 parts = ops.split(",")
                 if len(parts) == 3 and not parts[2].startswith("#"):
                     val.pop(parts[0], None)
             elif mn in ("ldrb", "ldrh", "ldrsh", "ldr", "strb", "strh", "str",
                         "ldrb.w", "ldrh.w", "ldrsh.w", "ldr.w", "strb.w", "strh.w", "str.w"):
-                # память: [base] / [base,#imm] / [base,reg] / [base,reg,#imm]
+                # memory: [base] / [base,#imm] / [base,reg] / [base,reg,#imm]
                 if ops.startswith("["):
                     body = ops[1:-1]
                     parts = body.split(",")
@@ -145,14 +145,14 @@ def main():
                         tname = target_of(tgt - RAM) if RAM <= tgt < RAM + 0x20000 else None
                         if tname is not None:
                             hits.append((addr, fa, mn, ops, tgt, tname))
-                    # load из памяти сбрасывает константность регистра-приёмника
+                    # memory load resets constancy of destination register
                     if mn.startswith("ldr") and not ops.endswith("]"):
                         pass
                     dst = ins.op_str.split(",")[0].strip()
                     if mn.startswith(("ldr", "ldrb", "ldrh")):
                         val.pop(dst, None)
             else:
-                # прочие инструкции — грубо сбрасываем всё (консервативно)
+                # other instructions - coarsely reset all (conservative)
                 if mn not in ("nop", "b", "b.w", "cbz", "cbnz", "cmp", "cmn",
                               "tst", "it", "push", "push.w", "pop", "pop.w",
                               "bx", "bl", "blx", "svc"):
@@ -160,7 +160,7 @@ def main():
 
     if only:
         hits = [h for h in hits if h[5] in only]
-    print(f"доступов «база+смещение» в целевые диапазоны: {len(hits)}")
+    print(f"base+offset accesses to target ranges: {len(hits)}")
     by_t = {}
     for pc, f, mn, ops, tgt, tname in hits:
         by_t.setdefault(tname, []).append((pc, f, mn, ops, tgt))
@@ -169,7 +169,7 @@ def main():
             continue
         hs = by_t.get(name, [])
         fs = sorted(set(f for _, f, _, _, _ in hs))
-        print(f"\n[{name}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: {len(hs)} доступов; функций: "
+        print(f"\n[{name}] 0x{RAM+lo:08x}..0x{RAM+hi:08x}: {len(hs)} accesses; functions: "
               + ", ".join(f"0x{x:05x}" for x in fs))
         for pc, f, mn, ops, tgt in sorted(hs):
             print(f"    0x{pc:05x} (func 0x{f:05x}) {mn} {ops} -> 0x{tgt:08x}")

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Эмуляция кандидатов на моторный контур с хуками на:
-  - TIM1: CCER(+0x30), CCR1/2/3(+0x44/48/4C) — layout с оффсетом +0x10 (см. §39)
-  - таблица коммутации flash 0x17D36..0x17D7A
-  - виртуальный порт-блок 0x48000000..0x48000E00
-Кандидаты: ADC ISR 0x1a31c, SysTick 0x13CAC, main tick 0x1dfd8.
+Emulation of motor loop candidates with hooks on:
+  - TIM1: CCER(+0x30), CCR1/2/3(+0x44/48/4C) - layout with offset +0x10 (see §39)
+  - commutation table flash 0x17D36..0x17D7A
+  - virtual port block 0x48000000..0x48000E00
+Candidates: ADC ISR 0x1a31c, SysTick 0x13CAC, main tick 0x1dfd8.
 """
 import os
 import sys
@@ -21,9 +21,9 @@ CANDS = {"adc_isr": 0x1a31c, "systick": 0x13CAC, "main_tick": 0x1dfd8}
 def run(name, func, budget=8_000_000):
     emu = McuEmu(max_insn=budget)
     uc = emu.uc
-    uc.mem_write(0x40000000, bytes(0x100000))   # периферия = 0
+    uc.mem_write(0x40000000, bytes(0x100000))   # peripherals = 0
     try:
-        uc.mem_map(0x48000000, 0x1000)          # порт-блок
+        uc.mem_map(0x48000000, 0x1000)          # port block
     except UcError:
         pass
 
@@ -61,12 +61,12 @@ def run(name, func, budget=8_000_000):
         uc.emu_start(func | 1, 1, timeout=0, count=0)
     except UcError as e:
         print("UcError:", e)
-    print(f"останов: {emu.stopped or 'нормально'}; insn={emu.insn}; spins={emu.spins}")
+    print(f"stop: {emu.stopped or 'normal'}; insn={emu.insn}; spins={emu.spins}")
 
     from collections import Counter
     c = Counter(ev[1] for ev in events)
-    print("события:", dict(c))
-    # детали TIM1 и таблицы
+    print("events:", dict(c))
+    # TIM1 and table details
     for ev in events:
         if ev[1] in ("TIM1W", "TIM1R", "TBL_R") and len(events) < 2000:
             pass
@@ -75,7 +75,7 @@ def run(name, func, budget=8_000_000):
     port_w = [ev for ev in events if ev[1] == "PORT_W"]
     if tim1:
         c2 = Counter((op, off) for _, op, off in [(e[0], e[1], e[2]) for e in tim1])
-        print("TIM1 детали (top):")
+        print("TIM1 details (top):")
         for (op, off), n in sorted(c2.items())[:20]:
             pcs = sorted(set(e[0] for e in tim1 if e[1] == op and e[2] == off))
             print(f"  {op} +0x{off:02x} x{n}: pc={[f'0x{p:05x}' for p in pcs[:5]]}")

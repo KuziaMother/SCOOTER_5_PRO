@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-READ-ONLY полный набор безопасных чтений MCU DFU-консоли по USART3 (19200 8N1).
+READ-ONLY complete suite of safe MCU DFU console queries over USART3 (19200 8N1).
 ================================================================================
-НИЧЕГО не пишет в NVM/flash, не трогает мотор. Только read-only команды:
-  1. UID        — бинарный handshake `53 2A 7D AC` (warmup: get_ver + пауза 0.4с);
-                   кадр `64 2A 10 <UID 16Б> <chk> 9B`. Секрет маскируется.
-  2. get_ver    — версия MCU (ожидается "0007").
-  3. rd_info    — состояние DFU/NVM-региона (`down rd_info\\r\\x00\\x00\\x00`).
-  4. mcu_rand   — 16-байтовый nonce (`ok <16Б>\\r`). Секрет маскируется.
+Writes NOTHING to NVM/flash, does not affect motor. Read-only commands only:
+  1. UID        — binary handshake `53 2A 7D AC` (warmup: get_ver + 0.4s pause);
+                   frame `64 2A 10 <UID 16B> <chk> 9B`. Secrets masked.
+  2. get_ver    — MCU version (expected "0007").
+  3. rd_info    — DFU/NVM region state (`down rd_info\\r\\x00\\x00\\x00`).
+  4. mcu_rand   — 16-byte nonce (`ok <16B>\\r`). Secret masked.
 
-НЕ шлёт: nvm_write / wr_info / dfu_verify / dfu_active / mcu_key / ble_key /
-чанки FW / ble_rand (key-материал). UID и mcu_rand печатаются МАСТИРОВАННО.
+Does NOT send: nvm_write / wr_info / dfu_verify / dfu_active / mcu_key / ble_key /
+FW chunks / ble_rand (key material). UID and mcu_rand are MASKED in output.
 
-Запуск:  python probes/mcu_console_read.py [--port COM3]
+Usage:  python probes/mcu_console_read.py [--port COM3]
 """
 import argparse
 import time
@@ -21,7 +21,7 @@ import serial
 
 
 class Reader:
-    """Push-фильтр (кадры 0x61…chk 9E отбрасываются из clean-буфера)."""
+    """Push-filter (frames 0x61...chk 9E are dropped from clean buffer)."""
 
     def __init__(self, s):
         self.s = s
@@ -91,7 +91,7 @@ def main():
     s = serial.Serial(a.port, 19200, timeout=0.2)
     r = Reader(s)
     try:
-        # --- 1) UID (warmup + hex-кадр) ---
+        # --- 1) UID (warmup + hex frame) ---
         uid = None
         for attempt in range(1, 4):
             r.drain()
@@ -117,7 +117,7 @@ def main():
         if uid:
             print(f"[1] UID (16B, masked): {mask(uid)}")
         else:
-            print("[1] UID: нет ответа (нужен warmup; повторить?)")
+            print("[1] UID: no response (warmup needed; retry?)")
 
         def show(tag, payload, suffix=b"", tries=3):
             for _ in range(tries):
@@ -129,14 +129,14 @@ def main():
                     print(f"{tag}: {line!r}")
                     return
                 time.sleep(0.4)
-            print(f"{tag}: НЕТ ответа (raw={d.hex(' ')})")
+            print(f"{tag}: NO response (raw={d.hex(' ')})")
 
-        time.sleep(0.6)  # пауза после бинарного handshake перед текстовыми командами
+        time.sleep(0.6)  # pause after binary handshake before text commands
         # --- 2) get_ver ---
         show("[2] get_ver", b"down get_ver")
 
         time.sleep(0.3)
-        # --- 3) rd_info (с суффиксом \x00\x00\x00 как во флешере) ---
+        # --- 3) rd_info (with suffix \x00\x00\x00 as in flasher) ---
         show("[3] rd_info", b"down rd_info", suffix=b"\x00\x00\x00")
 
         time.sleep(0.3)
@@ -156,7 +156,7 @@ def main():
         else:
             print(f"[4] mcu_rand: raw={bytes(acc)[:24].hex(' ')}")
 
-        print("\n[+] готово. Ничего не записывалось.")
+        print("\n[+] Done. Nothing was written.")
     finally:
         s.close()
 

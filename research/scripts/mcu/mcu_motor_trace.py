@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Трассировка моторного контура исполнением (Unicorn).
+Motor loop tracing via execution (Unicorn).
 
-Цель: найти, кто реально читает таблицу коммутации @0x17d38.. и трогает TIM1
-(0x40012C00) — статических ссылок на таблицу НЕТ, поэтому ищем потребителей
-read/write-хуками при исполнении кандидатов:
-  - 0x1dfd8 (main tick: фильтры сенсоров + подзадачи)
-  - 0x1a31c (ADC ISR: выборка фазных токов)
-  - 0x1a2a4 (функция с TIM1-пулом, найденная по pool-скану)
+Goal: find who actually reads commutation table @0x17d38.. and touches TIM1
+(0x40012C00) - NO static references to table, so look for consumers
+via read/write hooks when executing candidates:
+  - 0x1dfd8 (main tick: sensor filters + subtasks)
+  - 0x1a31c (ADC ISR: phase current sampling)
+  - 0x1a2a4 (function with TIM1 pool found via pool scan)
 
-Запуск: python mcu_motor_trace.py [func]   (func = 0x1dfd8 по умолчанию)
+Usage: python mcu_motor_trace.py [func]   (func = 0x1dfd8 by default)
 """
 import os
 import struct
@@ -21,7 +21,7 @@ from mcu_emu import McuEmu, STACK_TOP  # noqa: E402
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UcError  # noqa: E402
 from unicorn.arm_const import UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0  # noqa: E402
 
-TABLE_LO = 0x08017D00      # калибровки + коммутация (flash-зеркало)
+TABLE_LO = 0x08017D00      # calibrations + commutation (flash mirror)
 TABLE_HI = 0x08017E00
 TIM1_LO = 0x40012C00
 TIM1_HI = 0x40012C60
@@ -30,7 +30,7 @@ TIM1_HI = 0x40012C60
 def main():
     func = int(sys.argv[1], 16) if len(sys.argv) > 1 else 0x1dfd8
     emu = McuEmu(max_insn=3_000_000)
-    emu.uc.mem_write(0x40000000, bytes(0x100000))  # периферия = 0 (чистые флаги)
+    emu.uc.mem_write(0x40000000, bytes(0x100000))  # peripherals = 0 (clean flags)
 
     table_reads = []   # (pc, addr)
     tim1_rw = []       # (pc, 'R'/'W', off, size, val)
@@ -59,39 +59,39 @@ def main():
     uc.reg_write(UC_ARM_REG_LR, 1)
     uc.reg_write(UC_ARM_REG_R0, 0)
 
-    print(f"=== запуск 0x{func:05x} |1 ===")
+    print(f"=== launch 0x{func:05x} |1 ===")
     try:
         uc.emu_start(func | 1, 1, timeout=0, count=0)
     except UcError as e:
         print("UcError:", e)
-    print(f"останов: {emu.stopped or 'нормально'}; инструкций: {emu.insn}; спинов: {emu.spins}")
+    print(f"stop: {emu.stopped or 'normal'}; instructions: {emu.insn}; spins: {emu.spins}")
 
-    # отчёт: кто читает таблицу
+    # report: who reads table
     if table_reads:
         from collections import Counter
         c = Counter(pc for pc, _ in table_reads)
-        print(f"\n--- ЧТЕНИЯ таблицы 0x17D00..0x17E00: {len(table_reads)} (PC-группы):")
+        print(f"\n--- READS of table 0x17D00..0x17E00: {len(table_reads)} (PC groups):")
         for pc, n in c.most_common(30):
             addrs = sorted(set(a - 0x08000000 for p, a in table_reads if p == pc))
-            print(f"  pc=0x{pc:05x} x{n}: офс {addrs[:12]}")
+            print(f"  pc=0x{pc:05x} x{n}: offset {addrs[:12]}")
     else:
-        print("\n--- таблица НЕ читалась")
+        print("\n--- table was NOT read")
 
     if tim1_rw:
         from collections import Counter
         c = Counter((op, off) for _, op, off, _, _ in tim1_rw)
-        print(f"\n--- TIM1 R/W: {len(tim1_rw)} (группы op/off):")
+        print(f"\n--- TIM1 R/W: {len(tim1_rw)} (op/off groups):")
         for (op, off), n in sorted(c.items()):
             pcs = sorted(set(pc for pc, o2, off2, _, _ in tim1_rw if o2 == op and off2 == off))
             vals = sorted(set(v for _, o2, off2, _, v in tim1_rw if o2 == op and off2 == off))[:8]
             print(f"  {op} TIM1+0x{off:02x} x{n}: pc={ [f'0x{p:05x}' for p in pcs[:6]] } val~{[hex(v) for v in vals]}")
     else:
-        print("\n--- TIM1 не трогался")
+        print("\n--- TIM1 was not touched")
 
-    # куда уходил поток (последние разные PC)
+    # where control flow went (last distinct PCs)
     if emu.pc_hits:
         top = sorted(emu.pc_hits.items(), key=lambda kv: -kv[1])[:15]
-        print("\n--- топ-PC по частоте:")
+        print("\n--- top PCs by frequency:")
         for pc, n in top:
             print(f"  0x{pc:05x}: {n}")
 

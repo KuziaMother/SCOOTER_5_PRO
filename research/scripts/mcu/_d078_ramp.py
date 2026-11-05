@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Зонд v2: расшифровка ramp-машины 0x1d078 (structB@0x3c8 → r4[+0x18]).
-Чистые значения интеграторов (чтобы out1/out2 не были мусором), сентинелы только
-на structB, исправленная детекция базы S/W. Цель: понять P/I/D-термы контроллера."""
+"""Probe v2: reversing ramp-machine 0x1d078 (structB@0x3c8 -> r4[+0x18]).
+Clean integrator values (so out1/out2 are not garbage), sentinels only
+on structB, corrected S/W base detection. Goal: understand controller P/I/D terms."""
 import struct
 import sys
 
@@ -34,17 +34,17 @@ def main():
     run.ram_write(0x324, struct.pack('<H', m2t))
     run.ram_write(0x326, struct.pack('<H', c326))
 
-    # working struct: ЧИСТЫЕ значения (интеграторы с нуля)
+    # working struct: CLEAN values (integrators from zero)
     run.ram_write(W + 0x00, struct.pack('<H', 0))
     run.ram_write(W + 0x04, struct.pack('<I', 0))   # acc2
     run.ram_write(W + 0x08, struct.pack('<H', 0))   # out2
     run.ram_write(W + 0x0C, struct.pack('<I', 0))   # acc1
     run.ram_write(W + 0x10, struct.pack('<H', 0))   # out1
-    run.ram_write(W + 0x14, struct.pack('<H', 0))   # target (перезапишется)
+    run.ram_write(W + 0x14, struct.pack('<H', 0))   # target (will be overwritten)
     run.ram_write(W + 0x16, bytes([0]))
     run.ram_write(W + 0x18, struct.pack('<I', 0))   # OUT
 
-    # structB: сентинелы (только здесь)
+    # structB: sentinels (here only)
     run.ram_write(S + 0x00, bytes([0xC0]))          # state
     run.ram_write(S + 0x10, bytes([0xC1]))
     for off in (0x24, 0x26, 0x28, 0x2A, 0x2C, 0x2E):
@@ -75,9 +75,9 @@ def main():
                   (0x28, 'f28'), (0x2A, 'f2a'), (0x2C, 'f2c'), (0x2E, 'f2e'),
                   (0x58, 'f58'), (0x5C, 'f5c'), (0x60, 'f60'), (0x64, 'f64')])
 
-    for it in range(3):   # 3 итерации, чтобы увидеть динамику
+    for it in range(3):   # 3 iterations to observe dynamics
         run.call(0x1D078, (), max_insn=400000)
-        print(f"\n=== после итерации {it+1} ===")
+        print(f"\n=== after iteration {it+1} ===")
         print("  working:")
         dump(run, W, [(0, 'val'), (4, 'acc2'), (8, 'out2'), (0xC, 'acc1'),
                       (0x10, 'out1'), (0x14, 'target'), (0x18, 'OUT')])
@@ -89,7 +89,7 @@ def main():
     run.uc.hook_del(hr)
     run.uc.hook_del(hw)
 
-    print(f"\n=== ACCESS TRACE (итерация 1: {len(events)} событий) ===")
+    print(f"\n=== ACCESS TRACE (iteration 1: {len(events)} events) ===")
     for e in events[:60]:
         print("  " + e)
 

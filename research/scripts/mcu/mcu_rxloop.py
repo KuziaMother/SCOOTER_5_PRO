@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Полный цикл RX: ISR-фреймер 0x1e480 + диспетчер 0x1e9e0 — всё исполнением.
+Full RX cycle: ISR-framer 0x1e480 + dispatcher 0x1e9e0 - all by execution.
 
-Строит контрольно-корректный кадр (формат, установленный исполнением):
-  class A: 74 CMD LEN D0 CHK1 8B D1..D{LEN-2} X CHK2 8B   (LEN+5 байт)
+Constructs verified valid frame (format established by execution):
+  class A: 74 CMD LEN D0 CHK1 8B D1..D{LEN-2} X CHK2 8B   (LEN+5 bytes)
     CHK1 = (0x74 + CMD + LEN + D0) & 0xFF
     CHK2 = sum(frame[0..LEN+2]) & 0xFF
-  class B: 74 CMD 4F 4B CHK1 8B   ("OK"-ответ, 6 байт)
+  class B: 74 CMD 4F 4B CHK1 8B   ("OK" response, 6 bytes)
 
-Подаёт кадр побайтно в ISR, затем крутит диспетчер до обработки и снимает
-все записи в RAM — сверка с таблицей §6.5 (поле -> адрес).
+Feeds frame byte-by-byte into ISR, then steps dispatcher until processed and captures
+all RAM writes - verification against table §6.5 (field -> address).
 
-Запуск:  python research/mcu_rxloop.py [--cmd 0x42] [--len 7]
+Usage:  python research/mcu_rxloop.py [--cmd 0x42] [--len 7]
 """
 import argparse
 import os
@@ -31,7 +31,7 @@ PROD_VAR = 0x200002BF   # producer (ISR)
 
 
 def build_class_a(cmd, length, data):
-    """74 CMD LEN DATA[LEN] CHK2 8B; CHK2 = sum(всех предыдущих) & 0xFF."""
+    """74 CMD LEN DATA[LEN] CHK2 8B; CHK2 = sum(all previous) & 0xFF."""
     assert len(data) == length, "data size"
     body = bytes([0x74, cmd, length]) + data
     chk2 = sum(body) & 0xFF
@@ -56,22 +56,22 @@ def main():
     else:
         data = bytes([0x11 + i for i in range(a.len)])
         frame = build_class_a(cmd, a.len, data)
-    print(f"кадр ({len(frame)} Б): {frame.hex(' ')}")
+    print(f"frame ({len(frame)} B): {frame.hex(' ')}")
 
     emu = McuEmu(trace=False, max_insn=200000)
     e = emu.uc
 
-    # --- фаза 1: побайтовый прогон ISR (чистый harness с детектом возврата) ---
-    print("\n--- фаза 1: ISR-фреймер (0x1e480) ---")
+    # --- phase 1: byte-by-byte ISR run (clean harness with return detection) ---
+    print("\n--- phase 1: ISR-framer (0x1e480) ---")
     emu.feed_frame(frame, state=0, slot=0)
     prod = e.mem_read(PROD_VAR, 1)[0]
     buf = e.mem_read(RX_DESC_BASE, 150)
     print(f"producer={prod}, desc[0][:{len(frame)}] = {buf[:len(frame)].hex(' ')}")
     ok_frame = bytes(buf[:len(frame)]) == frame
-    print(f"кадр в дескрипторе: {'OK' if ok_frame else 'RASHGODKLOVSIYA!'}")
+    print(f"frame in descriptor: {'OK' if ok_frame else 'MISMATCH'}")
 
-    # --- фаза 2: диспетчер до обработки ---
-    print("\n--- фаза 2: диспетчер (0x1e9e0) ---")
+    # --- phase 2: dispatcher until processing ---
+    print("\n--- phase 2: dispatcher (0x1e9e0) ---")
     phase_writes = []
     writes = []
 
@@ -84,7 +84,7 @@ def main():
         prod = e.mem_read(PROD_VAR, 1)[0]
         step = e.mem_read(CTX + 1, 1)[0]
         if cons == prod:
-            print(f"  [{i}] consumer={cons}==producer -> обработано")
+            print(f"  [{i}] consumer={cons}==producer -> processed")
             break
         writes.clear()
         e.reg_write(UC_ARM_REG_SP, STACK_TOP)
@@ -94,7 +94,7 @@ def main():
         except UcError as ex:
             pc = e.reg_read(UC_ARM_REG_PC)
             if pc in (0xDEAD0000, 0xDEAD0001):
-                pass  # чистый возврат через bx lr
+                pass  # clean return via bx lr
             else:
                 print(f"  [{i}] step={step} UcError {ex} @pc=0x{pc:08x}")
                 break
@@ -110,8 +110,8 @@ def main():
         phase_writes.extend(ram)
     e.hook_del(h)
 
-    # --- итог: куда легли поля кадра ---
-    print("\n--- записи в RAM-стейт (кроме описательных/стека) ---")
+    # --- summary: where frame fields landed ---
+    print("\n--- writes to RAM state (except descriptors/stack) ---")
     seen = {}
     for x, s, v in phase_writes:
         if RX_DESC_BASE <= x < RX_DESC_BASE + 450:

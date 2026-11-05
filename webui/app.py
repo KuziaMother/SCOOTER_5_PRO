@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Модульный локальный web UI для Xiaomi Scooter 5 Pro (этап 1 — read-only dashboard).
+Modular local web UI for Xiaomi Scooter 5 Pro (stage 1 — read-only dashboard).
 
-Структура намеренно немамонолитная:
-  webui/app.py          — Flask, HTTP API, тред-безопасное состояние;
-  webui/ble_worker.py   — asyncio BLE-сессия (login/poll/push), только чтение;
-  webui/props.py        — каталог свойств, единицы, enum'ы, маскировка секретов;
-  webui/templates/*.html— разметка;
-  webui/static/*        — CSS и JS отдельно.
+Intentionally non-monolithic structure:
+  webui/app.py          — Flask, HTTP API, thread-safe state;
+  webui/ble_worker.py   — asyncio BLE session (login/poll/push), read-only;
+  webui/props.py        — properties catalog, units, enums, secret masking;
+  webui/templates/*.html— markup;
+  webui/static/*        — CSS and JS separate.
 
-Безопасность:
-  * bind только 127.0.0.1;
-  * по умолчанию read-only (set/запись в этом этапе нет);
-  * paced-чтения по одному свойству, без batch/spam/sweep;
-  * секреты (OOB_CODE/SN) не попадают в JSON/UI.
+Security:
+  * bind to 127.0.0.1 only;
+  * read-only by default (no set/write at this stage);
+  * paced reads property-by-property, no batch/spam/sweep;
+  * secrets (OOB_CODE/SN) excluded from JSON/UI.
 
-Запуск:
+Launch:
   python webui/app.py
-  python probes/spec_listen_web.py   # тонкий compatibility launcher
+  python probes/spec_listen_web.py   # thin compatibility launcher
 """
 import asyncio
 import base64
@@ -54,10 +54,10 @@ RUNNING_STATUSES = {
     "polling", "listening", "stopping",
 }
 
-# ---- профили самокатов (§ несколько устройств) -----------------------------
-# secrets/ целиком в .gitignore — файл со списком name+MAC (без ключей)
-# уместно хранить там же, отдельного правила не нужно. LTMK для конкретного
-# MAC резолвится отдельно, см. dreame_auth.ltmk_path_for_mac.
+# ---- scooter profiles (§ multiple devices) -----------------------------------
+# secrets/ is entirely gitignored — name+MAC list (without keys) is stored
+# there as well. LTMK for specific MAC is resolved separately, see
+# dreame_auth.ltmk_path_for_mac.
 SCOOTERS_FILE = os.path.join(_ROOT, "secrets", "scooters.json")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
@@ -85,14 +85,14 @@ def _ts():
 
 
 class WebState:
-    """Тред-безопасное состояние: BLE-поток пишет, HTTP-запросы читают."""
+    """Thread-safe state: BLE worker thread writes, HTTP requests read."""
 
     def __init__(self):
         self.lock = threading.RLock()
         self.thread = None
         self.stop_event = threading.Event()
         self.set_queue = queue.Queue()
-        self.write_enabled = False   # управление (SET) выключено по умолчанию (§5)
+        self.write_enabled = False   # control mode (SET) disabled by default (§5)
         self.reset()
 
     def reset(self):
@@ -119,7 +119,7 @@ class WebState:
             del self.events[:len(self.events) - 300]
 
     def handle(self, evt):
-        """Обработчик событий ble_worker (вызывается из BLE-потока)."""
+        """ble_worker event handler (invoked from BLE thread)."""
         if not isinstance(evt, dict):
             return
         with self.lock:
@@ -177,8 +177,13 @@ class WebState:
                     {"id": g["id"], "title": g["title"], "props": [[s, p] for s, p in g["props"]]}
                     for g in props.GROUPS
                 ],
+                "groups_en": [
+                    {"id": g["id"], "title": g["title"], "props": [[s, p] for s, p in g["props"]]}
+                    for g in props.GROUPS_EN
+                ],
                 "names": {f"{s}.{p}": n for (s, p), n in props.NAMES.items()},
                 "labels": {f"{s}.{p}": n for (s, p), n in props.LABELS.items()},
+                "labels_en": {f"{s}.{p}": n for (s, p), n in props.LABELS_EN.items()},
                 "history": list(self.history[-100:]),
                 "events": list(self.events[-200:]),
                 "counters": dict(self.counters),
@@ -189,9 +194,20 @@ class WebState:
                     f"{s}.{p}": props.WRITABLE[(s, p)]["confirm"]
                     for (s, p) in props.WRITABLE if props.WRITABLE[(s, p)].get("confirm")
                 },
+                "writable_confirm_en": {
+                    f"{s}.{p}": props.WRITABLE_CONFIRM_EN.get((s, p), props.WRITABLE[(s, p)].get("confirm", ""))
+                    for (s, p) in props.WRITABLE if props.WRITABLE[(s, p)].get("confirm")
+                },
                 "writable_values": {
                     f"{s}.{p}": [
                         [v, props.ENUM_LABELS.get((s, p), {}).get(v, str(v))]
+                        for v in props.WRITABLE[(s, p)]["values"]
+                    ]
+                    for (s, p) in props.WRITABLE if "values" in props.WRITABLE[(s, p)]
+                },
+                "writable_values_en": {
+                    f"{s}.{p}": [
+                        [v, props.ENUM_LABELS_EN.get((s, p), {}).get(v, str(v))]
                         for v in props.WRITABLE[(s, p)]["values"]
                     ]
                     for (s, p) in props.WRITABLE if "values" in props.WRITABLE[(s, p)]
@@ -203,7 +219,7 @@ STATE = WebState()
 
 
 def _worker(mac, mode, interval, static_interval):
-    """BLE-сессия в отдельном потоке со своим event loop (bleak/WinRT)."""
+    """BLE session in separate thread with own event loop (bleak/WinRT)."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -253,20 +269,20 @@ def api_scooters_add():
     name = str(data.get("name", "")).strip()
     mac = str(data.get("mac", "")).strip().upper()
     if not name:
-        return jsonify(ok=False, error="имя не может быть пустым"), 400
+        return jsonify(ok=False, error="name cannot be empty"), 400
     if not MAC_RE.match(mac):
-        return jsonify(ok=False, error="MAC должен быть в формате AA:BB:CC:DD:EE:FF"), 400
+        return jsonify(ok=False, error="MAC must be in format AA:BB:CC:DD:EE:FF"), 400
 
     scooters = load_scooters()
     if any(s["mac"].upper() == mac for s in scooters):
-        return jsonify(ok=False, error="самокат с таким MAC уже сохранён"), 409
+        return jsonify(ok=False, error="scooter with this MAC already exists"), 409
     scooters.append({"name": name, "mac": mac})
     save_scooters(scooters)
     return jsonify(ok=True, scooters=scooters)
 
 
 def _scan_worker(timeout, result):
-    """Скан в отдельном потоке со своим event loop (тот же паттерн, что _worker)."""
+    """Scan in separate thread with own event loop (same pattern as _worker)."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -279,9 +295,9 @@ def _scan_worker(timeout, result):
 
 @app.post("/api/scooters/scan")
 def api_scooters_scan():
-    """Пассивный скан эфира (§4: только слушает рекламу, ничего не пишет на устройство)."""
+    """Passive air scan (§4: listens to advertisements only, writes nothing to device)."""
     if STATE.running:
-        return jsonify(ok=False, error="сессия уже запущена — сначала остановите"), 409
+        return jsonify(ok=False, error="session already running — stop it first"), 409
 
     data = request.get_json(silent=True) or {}
     try:
@@ -295,7 +311,7 @@ def api_scooters_scan():
     t.start()
     t.join(timeout + 5.0)
     if t.is_alive():
-        return jsonify(ok=False, error="скан завис (таймаут)"), 504
+        return jsonify(ok=False, error="scan timed out"), 504
     if "error" in result:
         return jsonify(ok=False, error=result["error"]), 500
     return jsonify(ok=True, devices=result.get("devices", []))
@@ -308,7 +324,7 @@ def api_scooters_delete():
     scooters = load_scooters()
     remaining = [s for s in scooters if s["mac"].upper() != mac]
     if len(remaining) == len(scooters):
-        return jsonify(ok=False, error="не найден"), 404
+        return jsonify(ok=False, error="not found"), 404
     save_scooters(remaining)
     return jsonify(ok=True, scooters=remaining)
 
@@ -318,12 +334,54 @@ def api_ltmk_status():
     return jsonify(ok=True, logged_in=ml.has_session(), qr=ml.qr_login_status())
 
 
+@app.post("/api/ltmk/password_login")
+def api_ltmk_password_login():
+    """Authenticates with Xiaomi Cloud using username (email/phone/ID) and password."""
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+    if not username or not password:
+        return jsonify(ok=False, error="Username and password are required"), 400
+    try:
+        ml.login_with_password(username, password)
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 401
+    STATE.handle({"type": "log", "message": f"Mi Cloud session authenticated via password for {username}"})
+    return jsonify(ok=True)
+
+
+@app.post("/api/ltmk/logout")
+def api_ltmk_logout():
+    """Clears stored Mi Cloud session."""
+    ml.logout()
+    STATE.handle({"type": "log", "message": "Mi Cloud session cleared"})
+    return jsonify(ok=True)
+
+
+@app.post("/api/ltmk/save_manual")
+def api_ltmk_save_manual():
+    """Saves manually provided LTMK hex string to secrets/ltmk_<MAC>.hex."""
+    data = request.get_json(silent=True) or {}
+    mac = str(data.get("mac", "")).strip().upper()
+    ltmk_hex = str(data.get("ltmk_hex", "")).strip()
+    if not mac or not MAC_RE.match(mac):
+        return jsonify(ok=False, error="Invalid MAC address"), 400
+    if not ltmk_hex:
+        return jsonify(ok=False, error="LTMK key is required"), 400
+    try:
+        path, length = ml.save_manual_ltmk(mac, ltmk_hex)
+    except ml.LtmkError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    STATE.handle({"type": "log", "message": f"Manual LTMK saved for {mac} ({os.path.relpath(path, _ROOT)}), {length} B"})
+    return jsonify(ok=True, mac=mac, length=length)
+
+
 @app.post("/api/ltmk/qr_start")
 def api_ltmk_qr_start():
-    """Начинает QR-логин в Mi Cloud — сам вход идёт в фоновом потоке (ожидание
-    скана может занять минуты), эндпоинт сразу отдаёт картинку QR-кода и
-    альтернативную ссылку (если браузер на этом же компьютере уже залогинен
-    в аккаунт Xiaomi, переход по ней завершает вход без сканирования)."""
+    """Starts QR login into Mi Cloud — login proceeds in background thread (waiting
+    for scan may take minutes), endpoint immediately returns QR code image and
+    alternative URL (if browser on this machine is already logged into Xiaomi
+    account, navigating to it completes login without scanning)."""
     try:
         png, login_url = ml.start_qr_login()
     except ml.LtmkError as e:
@@ -347,15 +405,15 @@ def api_ltmk_devices():
 
 @app.post("/api/ltmk/fetch")
 def api_ltmk_fetch():
-    """Тянет LTMK из облака и сохраняет в secrets/ltmk_<MAC>.hex. Сам ключ
-    НИКОГДА не возвращается в JSON — только факт успеха и длина (§6)."""
+    """Fetches LTMK from cloud and saves to secrets/ltmk_<MAC>.hex. The key itself
+    is NEVER returned in JSON — only success status and key length (§6)."""
     data = request.get_json(silent=True) or {}
     did = str(data.get("did", "")).strip()
     country = str(data.get("country", "ru")).strip() or "ru"
     mac = str(data.get("mac", "")).strip().upper()
     pincode = data.get("pin") or None
     if not did or not MAC_RE.match(mac):
-        return jsonify(ok=False, error="нужны did и корректный mac"), 400
+        return jsonify(ok=False, error="did and valid mac required"), 400
     try:
         ltmk = ml.fetch_ltmk(did, country=country, pincode=pincode)
     except ml.LtmkError as e:
@@ -364,24 +422,23 @@ def api_ltmk_fetch():
         return jsonify(ok=False, error=str(e)), 502
     path = ml.save_ltmk(mac, ltmk)
     STATE.handle({"type": "log", "message":
-                  f"LTMK получен и сохранён для {mac} ({os.path.relpath(path, _ROOT)}), {len(ltmk)} Б"})
+                  f"LTMK received and saved for {mac} ({os.path.relpath(path, _ROOT)}), {len(ltmk)} B"})
     return jsonify(ok=True, mac=mac, length=len(ltmk))
 
 
 @app.post("/api/ltmk/reveal_qr")
 def api_ltmk_reveal_qr():
-    """QR-картинка с LTMK для переноса на телефон (сканируется в PWA) — только
-    по явному запросу пользователя, сам ключ не логируется и не пишется в
-    STATE.events. Отдаёт ТОЛЬКО точный per-MAC файл, без fallback на общий
-    secrets/ltmk.hex — иначе для нового устройства без своего файла можно
-    было бы случайно показать чужой ключ."""
+    """QR image with LTMK for transfer to phone (scanned in PWA) — only
+    on explicit user request; key itself is never logged or written to
+    STATE.events. Returns EXACT per-MAC file only, without fallback to
+    secrets/ltmk.hex to avoid exposing another device key."""
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     if not MAC_RE.match(mac):
-        return jsonify(ok=False, error="неверный MAC"), 400
+        return jsonify(ok=False, error="invalid MAC"), 400
     hex_ltmk = ml.load_saved_ltmk_hex_exact(mac)
     if not hex_ltmk:
-        return jsonify(ok=False, error="LTMK для этого MAC не найден локально — сначала получите его"), 404
+        return jsonify(ok=False, error="LTMK for this MAC not found locally — fetch it first"), 404
     import qrcode
     img = qrcode.make(hex_ltmk)
     buf = io.BytesIO()
@@ -389,14 +446,14 @@ def api_ltmk_reveal_qr():
     return jsonify(ok=True, qr_png_b64=base64.b64encode(buf.getvalue()).decode("ascii"))
 
 
-# соответствие типа записи в firmware_ota (как в облачном ответе) и target'а dreame_flasher
+# mapping between record type in firmware_ota (cloud response) and dreame_flasher target
 FW_TYPE_TO_TARGET = {"upd": "ble", "mcu": "mcu"}
 
 
 @app.get("/api/firmware/installed")
 def api_firmware_installed():
-    """Последняя известная версия из телеметрии главной страницы (если там
-    шёл поллинг) — своей BLE-сессии эта страница не открывает."""
+    """Last known version from main dashboard telemetry (if polling was active)
+    — this page does not open a dedicated BLE session."""
     with STATE.lock:
         ble = STATE.properties.get("4.5")   # FIRMWARE_VERSION
         bms = STATE.properties.get("4.3")   # BMS_FIRMWARE_VERSION
@@ -407,20 +464,20 @@ def api_firmware_installed():
 
 @app.post("/api/firmware/check")
 def api_firmware_check():
-    """Ищет did по MAC среди устройств аккаунта (та же сессия, что LTMK) и
-    спрашивает Mi Cloud про последнюю версию. Помечает каждую запись,
-    скачана ли она уже локально (по MD5)."""
+    """Finds did by MAC among account devices (same session as LTMK) and
+    queries Mi Cloud for latest version. Flags each entry whether it is
+    already downloaded locally (by MD5)."""
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     if not MAC_RE.match(mac):
-        return jsonify(ok=False, error="неверный MAC"), 400
+        return jsonify(ok=False, error="invalid MAC"), 400
     try:
         devices = ml.list_devices()
     except ml.LtmkError as e:
         return jsonify(ok=False, error=str(e)), 409
     dev = next((d for d in devices if d.get("mac") == mac), None)
     if not dev:
-        return jsonify(ok=False, error="устройство с этим MAC не найдено в аккаунте Mi Cloud"), 404
+        return jsonify(ok=False, error="device with this MAC not found in Mi Cloud account"), 404
     try:
         entries = fo.check_latest(dev["did"], country=dev["country"])
     except fo.FirmwareError as e:
@@ -447,30 +504,30 @@ def api_firmware_download():
     md5 = str(data.get("md5", "")).strip()
     fw_type = str(data.get("type", "")).strip()
     if not url or fw_type not in FW_TYPE_TO_TARGET:
-        return jsonify(ok=False, error="нужны url и type (upd|mcu)"), 400
+        return jsonify(ok=False, error="url and type (upd|mcu) required"), 400
     try:
         item = fo.download_firmware(url, md5, fw_type)
     except fo.FirmwareError as e:
         return jsonify(ok=False, error=str(e)), 502
     item["target"] = FW_TYPE_TO_TARGET.get(item["type"])
-    STATE.handle({"type": "log", "message": f"прошивка скачана: {item['filename']} ({item['size']} Б)"})
+    STATE.handle({"type": "log", "message": f"firmware downloaded: {item['filename']} ({item['size']} B)"})
     return jsonify(ok=True, item=item)
 
 
 @app.post("/api/firmware/flash/start")
 def api_firmware_flash_start():
-    """Заливка образа (без переключения) — commit=False. §5: необратимая
-    часть (switchFirmware) в отдельном эндпоинте /commit, только по явному
-    следующему запросу пользователя."""
+    """Flashing firmware image (without switch) — commit=False. §5: irreversible
+    step (switchFirmware) is in dedicated /commit endpoint, executed only
+    upon explicit subsequent user request."""
     if STATE.running:
-        return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
-                                        "— одно BLE-соединение на процесс"), 409
+        return jsonify(ok=False, error="stop polling session on main page first "
+                                        "— one BLE connection per process"), 409
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     filename = str(data.get("filename", "")).strip()
     target = str(data.get("target", "")).strip()
     if not MAC_RE.match(mac) or not filename or target not in ("ble", "mcu"):
-        return jsonify(ok=False, error="нужны mac, filename и target (ble|mcu)"), 400
+        return jsonify(ok=False, error="mac, filename and target (ble|mcu) required"), 400
     try:
         fw.start_flash(mac, filename, target, commit=False)
     except fw.FlashError as e:
@@ -480,47 +537,47 @@ def api_firmware_flash_start():
 
 @app.post("/api/firmware/flash/commit")
 def api_firmware_flash_commit():
-    """switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Резюм по CRC
-    внутри dreame_flasher.flash сам проверит, что все фрагменты на месте,
-    прежде чем реально переключать; если чего-то не хватает — сначала
-    докачает. Вызывается только по явному подтверждению в UI (модалка)."""
+    """switchFirmware is an IRREVERSIBLE operation (brick risk). CRC resume
+    inside dreame_flasher.flash verifies all fragments are intact before
+    switching; if anything is missing — downloads remaining fragments first.
+    Called only upon explicit user confirmation in UI (modal)."""
     if STATE.running:
-        return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
-                                        "— одно BLE-соединение на процесс"), 409
+        return jsonify(ok=False, error="stop polling session on main page first "
+                                        "— one BLE connection per process"), 409
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     filename = str(data.get("filename", "")).strip()
     target = str(data.get("target", "")).strip()
     if not MAC_RE.match(mac) or not filename or target not in ("ble", "mcu"):
-        return jsonify(ok=False, error="нужны mac, filename и target (ble|mcu)"), 400
+        return jsonify(ok=False, error="mac, filename and target (ble|mcu) required"), 400
     try:
         fw.start_flash(mac, filename, target, commit=True)
     except fw.FlashError as e:
         return jsonify(ok=False, error=str(e)), 409
-    STATE.handle({"type": "log", "message": f"switchFirmware ({target}, {filename}) — запущено пользователем"})
+    STATE.handle({"type": "log", "message": f"switchFirmware ({target}, {filename}) — initiated by user"})
     return jsonify(ok=True)
 
 
 @app.get("/api/firmware/flash/status")
 def api_firmware_flash_status():
-    # без ok=True-обёртки: FLASH_STATE уже несёт своё поле "ok" (счётчик удачных
-    # фрагментов) — jsonify(ok=True, **fw.status()) падал с "got multiple values
-    # for keyword argument 'ok'" (500, не JSON). Фронтенд читает поля напрямую
-    # (st.phase/st.ok/...), обёртка ему не нужна.
+    # no ok=True wrapper: FLASH_STATE already carries its own "ok" field (count of successful
+    # fragments) — jsonify(ok=True, **fw.status()) crashed with "got multiple values
+    # for keyword argument 'ok'" (500, not JSON). Frontend reads fields directly
+    # (st.phase/st.ok/...), no wrapper required.
     return jsonify(fw.status())
 
 
 @app.get("/api/firmware/flash/log")
 def api_firmware_flash_log():
-    """Постоянный лог заливок/переключений (logs/flash_log.jsonl) — переживает
-    перезапуск сервера, в отличие от FLASH_STATE (только память)."""
+    """Persistent log of flashes/switches (logs/flash_log.jsonl) — survives
+    server restarts, unlike FLASH_STATE (memory only)."""
     return jsonify(ok=True, entries=fw.read_log(limit=300))
 
 
 @app.post("/api/start")
 def api_start():
     if STATE.running:
-        return jsonify(ok=False, error="уже запущено"), 409
+        return jsonify(ok=False, error="already running"), 409
 
     data = request.get_json(silent=True) or {}
 
@@ -531,7 +588,7 @@ def api_start():
 
     mode = str(param("mode", "poll")).lower()
     if mode not in {"once", "poll", "push"}:
-        return jsonify(ok=False, error="mode должен быть once|poll|push"), 400
+        return jsonify(ok=False, error="mode must be once|poll|push"), 400
 
     try:
         interval = float(param("interval", 3))
@@ -552,7 +609,7 @@ def api_start():
         STATE.mode = mode
         STATE.mac = mac
     STATE.stop_event.clear()
-    STATE.handle({"type": "status", "status": "connecting", "message": "запуск…"})
+    STATE.handle({"type": "status", "status": "connecting", "message": "starting…"})
 
     STATE.thread = threading.Thread(
         target=_worker, args=(mac, mode, interval, static_interval), daemon=True
@@ -564,9 +621,9 @@ def api_start():
 @app.post("/api/stop")
 def api_stop():
     if not STATE.running:
-        return jsonify(ok=False, error="не запущено"), 409
+        return jsonify(ok=False, error="not running"), 409
     STATE.stop_event.set()
-    STATE.handle({"type": "status", "status": "stopping", "message": "остановка по запросу…"})
+    STATE.handle({"type": "status", "status": "stopping", "message": "stopping on request…"})
     return jsonify(ok=True, status="stopping")
 
 
@@ -576,61 +633,61 @@ def api_write_mode():
     enabled = bool(data.get("enabled"))
     with STATE.lock:
         STATE.write_enabled = enabled
-    STATE.handle({"type": "log", "message": f"режим управления: {'ВКЛ' if enabled else 'выкл'}"})
+    STATE.handle({"type": "log", "message": f"control mode: {'ON' if enabled else 'OFF'}"})
     return jsonify(ok=True, write_enabled=enabled)
 
 
 @app.post("/api/set")
 def api_set():
-    """SET одного разрешённого свойства (§5: только при включённом режиме управления)."""
+    """SET single allowed property (§5: only when control mode is active)."""
     if not STATE.running:
-        return jsonify(ok=False, error="сессия не запущена"), 409
+        return jsonify(ok=False, error="session not running"), 409
     with STATE.lock:
         if not STATE.write_enabled:
-            return jsonify(ok=False, error="режим управления выключен"), 403
+            return jsonify(ok=False, error="control mode is disabled"), 403
         if STATE.mode != "poll":
-            return jsonify(ok=False, error="управление доступно только в режиме poll"), 409
+            return jsonify(ok=False, error="control is only available in poll mode"), 409
 
     data = request.get_json(silent=True) or {}
     key = str(data.get("key", ""))
     if not props.is_writable(key):
-        return jsonify(ok=False, error="свойство не разрешено для записи"), 403
+        return jsonify(ok=False, error="property is not writable"), 403
     try:
         siid, piid = (int(x) for x in key.split("."))
     except ValueError:
-        return jsonify(ok=False, error="неверный key"), 400
+        return jsonify(ok=False, error="invalid key"), 400
 
     spec = props.WRITABLE[(siid, piid)]
     tcode = spec["type"]
     val = data.get("value")
     if tcode == 0:                                   # BOOL
         if val not in (0, 1, True, False):
-            return jsonify(ok=False, error="value должен быть 0/1"), 400
+            return jsonify(ok=False, error="value must be 0/1"), 400
         iv = 1 if val in (1, True) else 0
         value = bytes([iv])
-    elif tcode == 1:                                 # UINT8 (enum-уровень)
+    elif tcode == 1:                                 # UINT8 (enum level)
         try:
             iv = int(val)
         except (TypeError, ValueError):
-            return jsonify(ok=False, error="value должен быть числом"), 400
+            return jsonify(ok=False, error="value must be a number"), 400
         allowed = spec.get("values")
         if allowed and iv not in allowed:
-            return jsonify(ok=False, error=f"value должен быть один из {allowed}"), 400
+            return jsonify(ok=False, error=f"value must be one of {allowed}"), 400
         if not (0 <= iv <= 255):
-            return jsonify(ok=False, error="UINT8 вне диапазона"), 400
+            return jsonify(ok=False, error="UINT8 out of range"), 400
         value = bytes([iv])
     else:
-        return jsonify(ok=False, error="неподдерживаемый тип"), 400
+        return jsonify(ok=False, error="unsupported type"), 400
 
     STATE.set_queue.put({"siid": siid, "piid": piid, "type": tcode, "value": value})
-    STATE.handle({"type": "log", "message": f"SET {key} = {iv} — в очереди"})
+    STATE.handle({"type": "log", "message": f"SET {key} = {iv} — enqueued"})
     return jsonify(ok=True, queued=key)
 
 
 def main():
     port = int(os.environ.get("SCOOTER_WEB_PORT", os.environ.get("PUSH_WEB_PORT", "8321")))
     debug = os.environ.get("SCOOTER_WEB_DEBUG") == "1"
-    print(f"[scooter-web] UI: http://127.0.0.1:{port}  (только localhost; read-only)")
+    print(f"[scooter-web] UI: http://127.0.0.1:{port}  (localhost only; read-only)")
     app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False, threaded=True)
 
 

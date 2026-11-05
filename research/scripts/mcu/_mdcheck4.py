@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Поведенческая проверка Thumb-инструкций через Unicorn (QEMU) —
-независимый от capstone декодер. Что реально делает каждый байтовый паттерн?"""
+"""Behavioral verification of Thumb instructions via Unicorn (QEMU) —
+independent of capstone decoder. What does each byte pattern actually do?"""
 import sys, io, struct
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from unicorn import Uc
@@ -23,7 +23,7 @@ def run(hws, regs_before, readback=None):
         uc.reg_write(r, v)
     uc.reg_write(UC_ARM_REG_SP, STACK + 0x100)
     uc.reg_write(UC_ARM_REG_LR, 0xDEAD0001)
-    uc.mem_write(BASE + len(blob), struct.pack('<H', 0x4770))  # bx lr стоп
+    uc.mem_write(BASE + len(blob), struct.pack('<H', 0x4770))  # bx lr stop
     try:
         uc.emu_start(BASE | 1, BASE + len(blob) | 1)
     except Exception as e:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Скан mcu_0007.bin: (1) все сборщики push-кадров (movs #0x61/#0x9e),
-(2) функции, ссылающиеся на строки DFU-консоли (error/ok/0002 + пул команд)."""
+"""Scan mcu_0007.bin: (1) all push-frame builders (movs #0x61/#0x9e),
+(2) functions referencing DFU console strings (error/ok/0002 + command pool)."""
 import os, struct
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN
 
@@ -30,8 +30,8 @@ def func_of(off):
 
 md = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_LITTLE_ENDIAN)
 
-# --- (1) movs #0x61 / #0x9e (сборщики кадров) ---
-print("=== (1) movs rX,#0x61 / #0x9e (кандидаты на сборку push-кадра) ===")
+# --- (1) movs #0x61 / #0x9e (frame builders) ---
+print("=== (1) movs rX,#0x61 / #0x9e (push frame builder candidates) ===")
 frame_hits = {}
 for a, b in CODE:
     for ins in md.disasm(d[a:b], a):
@@ -40,21 +40,21 @@ for a, b in CODE:
             frame_hits.setdefault(f, []).append((ins.address, ins.op_str))
 for f in sorted(frame_hits):
     locs = frame_hits[f]
-    print(f"  func@0x{f:05x}: {len(locs)} хитов, напр. {[(hex(o), o2) for o,o2 in locs[:3]]}")
+    print(f"  func@0x{f:05x}: {len(locs)} hits, e.g. {[(hex(o), o2) for o,o2 in locs[:3]]}")
 
-# --- (2) ссылки на строки консоли (literal-pool words + movw/movt) ---
+# --- (2) console string references (literal-pool words + movw/movt) ---
 STRINGS = {0x18acc: "error", 0x18b62: "ok 0000000000", 0x18b94: "0002",
            0x1893c: "CMD-pool base (rd_info)", 0x1896e: "get_ver",
            0x18a04: "nvm_write", 0x18a36: "dfu_verify", 0x189a0: "dfu_active"}
-print("\n=== (2) literal-pool слова == адреса строк консоли ===")
+print("\n=== (2) literal-pool words == console string addresses ===")
 for o in range(0, N - 3, 4):
     w = struct.unpack_from("<I", d, o)[0]
     if w in STRINGS:
         f = func_of(o)
         print(f"  @0x{o:05x} (func 0x{f:05x}) -> {STRINGS[w]}")
 
-# movw/movt пары
-print("\n=== (2b) movw+movt конструирующие адреса строк ===")
+# movw/movt pairs
+print("\n=== (2b) movw+movt constructing string addresses ===")
 for a, b in CODE:
     i = 0
     words = d[a:b]

@@ -1,18 +1,18 @@
-"""emu_coverage.py — пофункционный first-pass эмуляции MCU (TODO: закрыть 678 функций).
+"""emu_coverage.py - per-function first-pass MCU emulation (TODO: cover 678 functions).
 
-Для каждой НЕПОКРЫТОЙ @t-тестом функции из functions_mcu/README.md:
-  - гоняем на нулевом RAM с R0-R3=0 (и парой паттернов аргументов),
-  - ловим: чистый возврат (pop{pc}/bx lr -> LR-sentinel) vs fetch-error/timeout,
-  - I/O-отпечаток: кол-во RAM-чтений/записей, затронутые periph-адреса.
+For each UNCOVERED @t-test function from functions_mcu/README.md:
+  - run on zero RAM with R0-R3=0 (and a couple argument patterns),
+  - catch: clean return (pop{pc}/bx lr -> LR-sentinel) vs fetch-error/timeout,
+  - I/O-footprint: number of RAM reads/writes, touched periph addresses.
 
-Диспозиция (first-pass эвристика):
-  clean   — возврат без ошибок, мало I/O  -> кандидат на @t-тест
-  io      — чистый возврат, но много RAM/periph I/O -> нужен managed setup
-  dirty   — fetch-error/timeout на нулевом RAM -> stateful/live/boot-blocked (нужен ручной анализ)
+Disposition (first-pass heuristic):
+  clean   - return without errors, low I/O  -> candidate for @t-test
+  io      - clean return, but high RAM/periph I/O -> managed setup needed
+  dirty   - fetch-error/timeout on zero RAM -> stateful/live/boot-blocked (manual analysis needed)
 
-Результат: CSV/MD-таблица + work-queue. Обновляем по мере добавления @t-тестов.
+Result: CSV/MD table + work-queue. Updated as @t-tests are added.
 
-Запуск:  python -X utf8 emu_coverage.py [--max-size N] [--min-size N] [--limit K]
+Usage:  python -X utf8 emu_coverage.py [--max-size N] [--min-size N] [--limit K]
 """
 import sys, os, re, argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'emulator')))
@@ -42,7 +42,7 @@ def load_tested():
 
 
 def run_func(off, size, max_insn=8000):
-    """Один прогон функции на нулевом RAM. -> dict(clean, insn, rds, wrs, periph)."""
+    """Single run of function on zero RAM. -> dict(clean, insn, rds, wrs, periph)."""
     emu = McuEmu(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -68,7 +68,7 @@ def run_func(off, size, max_insn=8000):
     def _st(uc_, a, s, u):
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + 0x23680 or FLASH1 <= aa < FLASH1 + 0x23680):
-            clean[0] = True  # вышли во внешний адрес = возврат в LR-sentinel
+            clean[0] = True  # returned to external address = return to LR-sentinel
             uc_.emu_stop()
 
     sh = uc.hook_add(UC_HOOK_CODE, _st)
@@ -82,10 +82,10 @@ def run_func(off, size, max_insn=8000):
         emu.insn = 0
         try:
             uc.emu_start(off | 1, 0, count=max_insn)
-            # дошли до конца окна без stop-hook -> вероятно, не вернулась (dirty)
+            # reached end of window without stop-hook -> likely did not return (dirty)
             clean[0] = False
         except UcError:
-            pass  # fetch-error / unmap = dirty (если clean уже True — это возврат)
+            pass  # fetch-error / unmap = dirty (if clean is already True — this is return)
     finally:
         uc.hook_del(sh)
     return {'clean': bool(clean[0]), 'insn': emu.insn, 'rds': rds[0],
@@ -119,7 +119,7 @@ def main():
     if args.limit:
         todo = todo[:args.limit]
 
-    print(f'покрыто @t: {len(tested)}; в работе (фильтр): {len(todo)}')
+    print(f'covered @t: {len(tested)}; in progress (filtered): {len(todo)}')
     rows = []
     for i, (off, size) in enumerate(todo):
         res = run_func(off, size, max_insn=args.max_insn)
@@ -129,7 +129,7 @@ def main():
         print(f'  [{i+1}/{len(todo)}] 0x{off:05x} {size:5d}B -> {disp:6s} '
               f'(insn={res["insn"]} rd={res["rds"]} wr={res["wrs"]} periph={len(res["periph"])})')
 
-    # сохранить (дополнить существующий CSV, если есть)
+    # save (append to existing CSV if present)
     import csv
     existing = []
     if os.path.exists(args.out):
@@ -147,11 +147,11 @@ def main():
         w.writeheader()
         for r in all_rows:
             w.writerow(r)
-    print(f'\nсохранено -> {args.out} (всего строк: {len(all_rows)})')
+    print(f'\nsaved -> {args.out} (total rows: {len(all_rows)})')
 
     from collections import Counter
     c = Counter(d for (_, _, d, _, _, _, _) in rows)
-    print('итог батча:', dict(c))
+    print('batch summary:', dict(c))
 
 
 if __name__ == '__main__':

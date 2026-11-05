@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
 """
-Получение LTMK из Mi Cloud для новых профилей самокатов ("Мои самокаты").
+Obtaining LTMK from Mi Cloud for new scooter profiles ("My Scooters").
 
-Переиспользует QR-логин и RC4-шифрованные вызовы облака из tools/xct/token_extractor.py
-(тем же кодом уже пользуется tools/fetch_firmware.py) — сессия в
-secrets/micloud_session.json общая для обоих, повторный QR не нужен, пока
-сессия валидна.
+Reuses QR login and RC4-encrypted cloud calls from tools/xct/token_extractor.py
+(same code used by tools/fetch_firmware.py) — session in
+secrets/micloud_session.json is shared, repeated QR is not needed while
+session remains valid.
 
-Схема получения ключа — docs/FACTS.md ("ltmk = ключ логина, происхождение и
-ротация") и docs/dreame_dfu_protocol.md §6.5, проверено на реальном аккаунте
+Key extraction flow — docs/FACTS.md ("ltmk = login key, origin and
+rotation") and docs/dreame_dfu_protocol.md §6.5, verified on real account
 2026-08-16:
 
     POST /app/share/askbluetoothkey {type:own, did, keyid:0}
     -> result.{key, encrypt_type}
     encrypt_type==0: ltmk = hex_decode(key)
-    encrypt_type==1 (задан PIN шаринга в Mi Home): ltmk = AES-128-CBC-NoPad(
-        key=MD5(pincode), iv=<зашитый в APK>, ct=hex_decode(key))
+    encrypt_type==1 (sharing PIN set in Mi Home): ltmk = AES-128-CBC-NoPad(
+        key=MD5(pincode), iv=<hardcoded in APK>, ct=hex_decode(key))
 
-Ключ никогда не логируется целиком и не возвращается по API без явного
-запроса "reveal" — только длина/факт получения (§6 CLAUDE.md).
+Key is never logged in full and not returned via API without explicit
+"reveal" request — only length/fact of receipt (§6 CLAUDE.md).
 
-НЕ ПРОВЕРЕНО на реальном аккаунте (в отличие от самой схемы askbluetoothkey,
-которая проверена — см. docs/dreame_dfu_protocol.md §6.5): разбор списка
-устройств (get_homes/get_devices) списан по структуре, использованной в
-tools/xct/token_extractor.py и аналогичных Xiaomi-cloud-tokens-extractor
-проектах, но конкретные ключи ответа (homelist/device_info/mac) на этом
-аккаунте вживую не сверялись — при расхождении см. list_devices() ниже,
-там есть fallback на альтернативные имена полей и понятная ошибка.
+NOT VERIFIED on real account (unlike askbluetoothkey scheme itself,
+which is verified — see docs/dreame_dfu_protocol.md §6.5): device list
+parsing (get_homes/get_devices) follows structure used in
+tools/xct/token_extractor.py and similar Xiaomi token extractor projects;
+see list_devices() below for fallback logic.
 """
 import hashlib
 import json
@@ -44,7 +42,7 @@ if _xct_path not in sys.path:
     sys.path.insert(0, _xct_path)
 
 _saved_argv = sys.argv
-sys.argv = ["qr"]  # token_extractor разбирает argv при импорте (argparse) — подменяем на время импорта
+sys.argv = ["qr"]  # token_extractor parses argv upon import (argparse) — substitute during import
 import token_extractor as tx  # noqa: E402
 sys.argv = _saved_argv
 
@@ -53,7 +51,7 @@ LTMK_ENCRYPT_IV = bytes.fromhex("7aa4c68c590d4031b980d98b41023800")
 
 
 class LtmkError(Exception):
-    """Ожидаемая отказная ветка (не залогинен, нужен PIN, устройство не найдено)."""
+    """Expected failure branch (not logged in, PIN needed, device not found)."""
 
 
 def _save_session(c):
@@ -90,7 +88,7 @@ def _session_valid(c):
         return False
 
 
-# ---- состояние текущей QR-сессии логина (один пользователь webui, локально) ----
+# ---- current QR login session state (single webui user, local) -----------------
 _state_lock = threading.Lock()
 _qr_state = {"status": "idle"}  # idle|waiting|done|error
 
@@ -105,29 +103,28 @@ def has_session():
 
 
 def start_qr_login():
-    """Возвращает (PNG QR-кода, login_url) сразу; сам логин идёт в фоновом
-    потоке — ожидание скана (long-polling внутри token_extractor) может занять
-    минуты. login_url — та же ссылка, что token_extractor.login_step_2()
-    печатает как "Alternatively you can visit..." — если на этом же
-    компьютере уже открыт браузер, залогиненный в аккаунт Xiaomi, переход по
-    ней завершает вход сам, без сканирования телефоном вообще."""
+    """Returns (QR code PNG, login_url) immediately; login runs in background
+    thread — waiting for scan (long-polling inside token_extractor) may take
+    minutes. login_url is the same link that token_extractor.login_step_2()
+    prints as "Alternatively you can visit..." — visiting it in an already logged-in
+    browser finishes login without phone scan."""
     with _state_lock:
         if _qr_state.get("status") == "waiting":
-            raise LtmkError("логин уже идёт")
+            raise LtmkError("login already in progress")
         _qr_state.clear()
         _qr_state["status"] = "waiting"
 
     c = tx.QrCodeXiaomiCloudConnector()
     if not c.login_step_1():
         with _state_lock:
-            _qr_state.update(status="error", error="не удалось начать логин (step1)")
-        raise LtmkError("не удалось начать логин (step1)")
+            _qr_state.update(status="error", error="failed to start login (step1)")
+        raise LtmkError("failed to start login (step1)")
 
     img = c._session.get(c._qr_image_url)
     if img.status_code != 200:
         with _state_lock:
-            _qr_state.update(status="error", error="не удалось получить QR-картинку")
-        raise LtmkError("не удалось получить QR-картинку")
+            _qr_state.update(status="error", error="failed to get QR image")
+        raise LtmkError("failed to get QR image")
     png = img.content
     login_url = c._login_url
 
@@ -138,20 +135,57 @@ def start_qr_login():
             ok = False
             err = f"{type(e).__name__}: {e}"
         else:
-            err = "логин отклонён/истёк таймаут ожидания скана"
+            err = "login declined or scan timeout expired" if not ok else None
         with _state_lock:
             if ok:
                 _save_session(c)
                 _qr_state.update(status="done")
             else:
-                _qr_state.update(status="error", error=err)
+                _qr_state.update(status="error", error=err or "login failed")
 
     threading.Thread(target=_wait, daemon=True).start()
     return png, login_url
 
 
+def login_with_password(username, password):
+    """Authenticates with Xiaomi Cloud via username (email/phone/ID) and password.
+    Saves session to secrets/micloud_session.json on success."""
+    clean_user = (username or "").strip()
+    clean_pwd = password or ""
+    if not clean_user or not clean_pwd:
+        raise LtmkError("Username and password are required")
+
+    c = tx.PasswordXiaomiCloudConnector(username=clean_user, password=clean_pwd)
+    try:
+        ok = c.login()
+    except Exception as e:
+        raise LtmkError(f"Login failed: {e}")
+
+    if not ok or not c._ssecurity or not c._serviceToken:
+        err = getattr(c, "_last_error", None) or "Invalid username or password, or 2FA required"
+        raise LtmkError(err)
+
+    _save_session(c)
+    with _state_lock:
+        _qr_state.clear()
+        _qr_state["status"] = "done"
+    return True
+
+
+def logout():
+    """Removes stored Mi Cloud session."""
+    if os.path.exists(SESSION_JSON):
+        try:
+            os.remove(SESSION_JSON)
+        except Exception:
+            pass
+    with _state_lock:
+        _qr_state.clear()
+        _qr_state["status"] = "idle"
+
+
 def get_connector():
-    """Готовый залогиненный коннектор или None."""
+    """Ready authenticated connector or None."""
     c = _load_session()
     if c and _session_valid(c):
         return c
@@ -159,12 +193,12 @@ def get_connector():
 
 
 def list_devices():
-    """Список устройств аккаунта (все дома, все сервера, до первого непустого) —
-    для ручного выбора нужного самоката. [{name, model, did, mac, country}],
-    mac может быть None если облако его не отдаёт под известными нам именами."""
+    """List of account devices (all homes, all servers, until first non-empty) —
+    for manual scooter selection. [{name, model, did, mac, country}],
+    mac may be None if cloud omits it."""
     c = get_connector()
     if not c:
-        raise LtmkError("нет активной сессии Mi Cloud — сначала войдите по QR")
+        raise LtmkError("no active Mi Cloud session — log in via QR first")
 
     devices = []
     seen_did = set()
@@ -198,7 +232,7 @@ def list_devices():
                     "country": country,
                 })
         if devices:
-            break  # нашли дом(а) на этом сервере — остальные сервера не пробуем
+            break  # found home(s) on this server — do not probe remaining servers
     return devices
 
 
@@ -211,23 +245,23 @@ def _decrypt_ltmk(key_hex, pincode):
 
 
 def fetch_ltmk(did, country="ru", pincode=None):
-    """Тянет LTMK из облака для конкретного did. Если ключ на этом аккаунте
-    зашифрован PIN'ом шаринга (encrypt_type==1) и pincode не передан — бросает
-    LtmkError('PIN_REQUIRED'), вызывающий код должен переспросить PIN."""
+    """Fetches LTMK from cloud for specific did. If key on this account
+    is encrypted with sharing PIN (encrypt_type==1) and pincode not provided — raises
+    LtmkError('PIN_REQUIRED'); caller must prompt for PIN."""
     c = get_connector()
     if not c:
-        raise LtmkError("нет активной сессии Mi Cloud — сначала войдите по QR")
+        raise LtmkError("no active Mi Cloud session — log in via QR first")
 
     url = c.get_api_url(country) + "/share/askbluetoothkey"
     params = {"data": json.dumps({"type": "own", "did": str(did), "keyid": 0})}
     resp = c.execute_api_call_encrypted(url, params)
     if not resp or resp.get("code") not in (0, None):
-        raise LtmkError(f"облако отказало (code={resp.get('code') if resp else '?'})")
+        raise LtmkError(f"cloud request rejected (code={resp.get('code') if resp else '?'})")
     result = resp.get("result") or {}
     key_hex = result.get("key")
     encrypt_type = result.get("encrypt_type", 0)
     if not key_hex:
-        raise LtmkError("облако не вернуло key")
+        raise LtmkError("cloud returned no key")
 
     if encrypt_type == 0:
         ltmk = bytes.fromhex(key_hex)
@@ -236,10 +270,10 @@ def fetch_ltmk(did, country="ru", pincode=None):
             raise LtmkError("PIN_REQUIRED")
         ltmk = _decrypt_ltmk(key_hex, pincode)
     else:
-        raise LtmkError(f"неизвестный encrypt_type={encrypt_type}")
+        raise LtmkError(f"unknown encrypt_type={encrypt_type}")
 
     if len(ltmk) != 32:
-        raise LtmkError(f"неожиданная длина ltmk: {len(ltmk)} байт (ожидалось 32)")
+        raise LtmkError(f"unexpected ltmk length: {len(ltmk)} bytes (expected 32)")
     return ltmk
 
 
@@ -253,13 +287,30 @@ def save_ltmk(mac, ltmk_bytes):
 
 
 def load_saved_ltmk_hex_exact(mac):
-    """Только точный per-MAC файл (secrets/ltmk_<MAC>.hex) — НЕ падает на общий
-    secrets/ltmk.hex, в отличие от dreame_auth.ltmk_path_for_mac. Для "показать
-    QR" это важно: иначе для нового MAC без своего файла показался бы ключ
-    ДРУГОГО (дефолтного) самоката — тихая и опасная путаница."""
+    """Exact per-MAC file only (secrets/ltmk_<MAC>.hex) — does NOT fall back to
+    secrets/ltmk.hex, unlike dreame_auth.ltmk_path_for_mac. For "show QR"
+    this prevents displaying the default scooter key for a new MAC."""
     safe = mac.upper().replace(":", "")
     path = os.path.join(SECRETS_DIR, f"ltmk_{safe}.hex")
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
+
+
+def save_manual_ltmk(mac, hex_str):
+    """Validates and saves a manually entered LTMK key (hex string) for a MAC address."""
+    clean = (hex_str or "").strip().replace(" ", "").replace(":", "").replace("-", "").lower()
+    if not clean:
+        raise LtmkError("LTMK key cannot be empty")
+    try:
+        key_bytes = bytes.fromhex(clean)
+    except ValueError:
+        raise LtmkError("Invalid hex format — use only hex characters 0-9, a-f")
+    if len(key_bytes) not in (16, 32):
+        raise LtmkError(
+            f"Invalid key length: {len(key_bytes)} bytes ({len(clean)} hex chars). "
+            f"Expected 32 bytes (64 hex characters) or 16 bytes (32 hex characters)"
+        )
+    path = save_ltmk(mac, key_bytes)
+    return path, len(key_bytes)

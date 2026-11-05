@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""§73.x: трасса FOC 0x1a938 — ЧТЕНИЯ + записи периферии (таймерные регионы).
+"""§73.x: FOC 0x1a938 trace — peripheral READS + writes (timer regions).
 
-Цель тактовой модели TIM: понять, какие регистры таймера firmware ПОЛЛИТ (читает)
-vs конфигурирует (пишет), и в каких регионах. periph_reads даёт адреса (значения чтений
-в этом Unicorn ненадёжны — только адрес достоверен).
+Goal of TIM clock model: understand which timer registers firmware POLLS (reads)
+vs configures (writes), and in which regions. periph_reads provides addresses (read values
+in this Unicorn are unreliable — only address is valid).
 """
 import struct, sys
 sys.path.insert(0, '.')
@@ -21,7 +21,7 @@ def run_foc(val=16384):
     r4 = RAM + 0x040
     emu.uc.mem_write(r4, bytes(0x80))
     emu.uc.mem_write(r4 + 2, struct.pack('<h', val))
-    # открыть гейт FOC (STAT бит15) + known CTRL
+    # open FOC gate (STAT bit15) + known CTRL
     emu.uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))
     emu.uc.mem_write(0x40012c30, struct.pack('<I', 0xFFFF))
     emu.trace_periph = True
@@ -62,8 +62,8 @@ def main():
         region('ADC 0x40010xxx', 0x40010000, 0x40011000),
     ]
 
-    print('=== FOC 0x1a938: периферийный footprint (value=16384) ===')
-    print(f'distinct адресов чтений: {len(read_addrs)}, записей: {len(writes)}\n')
+    print('=== FOC 0x1a938: peripheral footprint (value=16384) ===')
+    print(f'distinct read addresses: {len(read_addrs)}, writes: {len(writes)}\n')
     for name, f in regions:
         rs = sorted(a for a in read_addrs if f(a))
         ws = sorted(set((a, v) for a, v in writes if f(a)))
@@ -72,16 +72,16 @@ def main():
             if rs:
                 for a in rs:
                     pcs = emu.periph_reads[a]
-                    print(f'  ЧТЕНИЕ {a:#x} (off {a - 0x40012000 if f(a) else 0:#x}) '
+                    print(f'  READ {a:#x} (off {a - 0x40012000 if f(a) else 0:#x}) '
                           f'×{len(pcs)}: pc=' + ', '.join(f'{p:#x}' for p in pcs[:6]))
             if ws:
-                print('  ЗАПИСИ: ' + ', '.join(f'{a:#x}<-{v:#x}' for a, v in ws))
-    # все периферийные адреса (любой регион) для полноты
+                print('  WRITES: ' + ', '.join(f'{a:#x}<-{v:#x}' for a, v in ws))
+    # all peripheral addresses (any region) for completeness
     allr = sorted(a for a in read_addrs if 0x40000000 <= a < 0x50000000)
     allw = sorted(set(a for _, a, s, v in writes if 0x40000000 <= a < 0x50000000))
-    print('\n=== ВСЕ periph адреса (0x40000000-0x50000000) ===')
-    print(f'ЧТЕНИЯ ({len(allr)}): {", ".join(hex(a) for a in allr) or "нет"}')
-    print(f'ЗАПИСИ ({len(allw)}): {", ".join(hex(a) for a in allw) or "нет"}')
+    print('\n=== ALL periph addresses (0x40000000-0x50000000) ===')
+    print(f'READS ({len(allr)}): {", ".join(hex(a) for a in allr) or "none"}')
+    print(f'WRITES ({len(allw)}): {", ".join(hex(a) for a in allw) or "none"}')
 
 
 if __name__ == '__main__':

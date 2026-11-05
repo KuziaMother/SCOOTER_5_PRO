@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Дизассемблер с резолвом literal-пулов для ручного анализа функций MCU.
+"""Disassembler with literal-pool resolution for manual MCU function analysis.
 
 python research/mcu_disasm.py 0x1a938 0x1b67c [--pool]
-Для каждого ldr rX,[pc,#imm] печатает слово пула; для movw/movt — значение;
-подсвечивает обращения к целевым RAM-адресам RX-телеметрии.
+For each ldr rX,[pc,#imm] prints pool word; for movw/movt prints value;
+highlights accesses to target RX telemetry RAM addresses.
 """
 import os
 import struct
@@ -17,7 +17,7 @@ from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 FW = os.path.join(RES, "images", "mcu_0007.bin")
 RAM = 0x20000000
 
-# целевые поля RX (для подсветки)
+# target RX fields (for highlighting)
 FIELDS = {
     0x2b0: "41.u16BE", 0x2b2: "41.lo", 0x2b3: "41.hi", 0x2b4: "41.b6",
     0x2b5: "41.bit7", 0x2b6: "41.z", 0x2b7: "41.b7", 0x2b8: "41.b8",
@@ -40,7 +40,7 @@ def field_tag(v):
     off = v - RAM
     if off in FIELDS:
         return f"  <<< {FIELDS[off]}"
-    # диапазон буфера 46
+    # buffer 46 range
     if 0x2f2 <= off < 0x306:
         return f"  <<< 46.buf[{off-0x2f2}]"
     return ""

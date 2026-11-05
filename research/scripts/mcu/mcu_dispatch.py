@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Запуск диспетчера RX-кадров MCU (0x1e9e0) исполнением.
+Run MCU RX frame dispatcher (0x1e9e0) by execution.
 
-Диспетчер — ступенчатая машина: каждый вызов сдвигает шаг [0x200002c0] на один.
-Скрипт кладёт готовый кадр в RX-дескриптор слота 0, producer=1, step=0 и крутит
-0x1e9e0 до возврата шага к producer, снимая ВСЕ записи в RAM на каждом шаге.
+Dispatcher is a stepping machine: each call advances step [0x200002c0] by one.
+Script places ready frame in slot 0 RX descriptor, producer=1, step=0 and runs
+0x1e9e0 until step returns to producer, capturing ALL RAM writes at each step.
 
-Результат: проверенная исполнением таблица «поле кадра -> адрес RAM» + алгоритм
-контрольной суммы (то, что статика в §6.5 дала с оговорками).
+Result: execution-verified "frame field -> RAM address" table + checksum
+algorithm (what static analysis in §6.5 gave with caveats).
 
-Запуск:  python research/mcu_dispatch.py [--frame "74 42 05 aa bb cc dd ee 9c 0d"]
+Usage:  python research/mcu_dispatch.py [--frame "74 42 05 aa bb cc dd ee 9c 0d"]
 """
 import argparse
 import os
@@ -23,8 +23,8 @@ from mcu_emu import (McuEmu, RX_DESC_BASE, PERIPH, SYS, PERIPH_SIZE, SYS_SIZE,
                      STACK_TOP, UC_HOOK_CODE, UC_HOOK_MEM_WRITE, UcError)
 from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR
 
-STEP = 0x200002C0      # шаг/консьюмер
-PROD = 0x200002BF      # продюсер (слот ISR)
+STEP = 0x200002C0      # step/consumer
+PROD = 0x200002BF      # producer (ISR slot)
 
 
 class Dispatcher:
@@ -42,19 +42,19 @@ class Dispatcher:
     def seed(self, frame):
         e = self.emu.uc
         e.mem_write(RX_DESC_BASE, frame + bytes(150 - len(frame)))
-        e.mem_write(PROD, bytes([1]))          # один кадр в очереди
+        e.mem_write(PROD, bytes([1]))          # one frame in queue
         e.mem_write(STEP, bytes([0]))
         e.mem_write(0x20000038, struct.pack("<H", 0))
 
     def call_once(self):
-        """Один вызов диспетчера. Возврат: bx lr в незамапленное 0xDEAD0001 ->
-        базовый unmapped-хук останавливает эмуляцию; все записи уже сделаны."""
+        """Single dispatcher call. Return: bx lr into unmapped 0xDEAD0001 ->
+        base unmapped hook stops emulation; all writes have been made."""
         e = self.emu.uc
         self.writes = []
         self.stopped = None
         h2 = e.hook_add(UC_HOOK_MEM_WRITE, self._h_write)
         e.reg_write(UC_ARM_REG_SP, STACK_TOP)
-        e.reg_write(UC_ARM_REG_LR, 0xDEAD0001)   # возврат в незамапленное -> стоп
+        e.reg_write(UC_ARM_REG_LR, 0xDEAD0001)   # return to unmapped -> stop
         try:
             e.emu_start(0x1E9E1, 0, count=4000)
         except UcError as err:
@@ -72,11 +72,11 @@ def main():
 
     d = Dispatcher()
     d.seed(frame)
-    print(f"кадр: {frame.hex(' ')}")
+    print(f"frame: {frame.hex(' ')}")
     for step_no in range(30):
         step_before = d.emu.uc.mem_read(STEP, 1)[0]
         if step_before == d.emu.uc.mem_read(PROD, 1)[0]:
-            print(f"[{step_no}] step={step_before} == producer -> очередь пуста, стоп")
+            print(f"[{step_no}] step={step_before} == producer -> queue empty, stop")
             break
         writes, err = d.call_once()
         step_after = d.emu.uc.mem_read(STEP, 1)[0]
@@ -94,7 +94,7 @@ def main():
         if others:
             print("       ram : " + " ".join(others[:16]))
         if step_after == step_before and not writes:
-            print("       (без изменений — выход)")
+            print("       (no change - exit)")
             break
 
 

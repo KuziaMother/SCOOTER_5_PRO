@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Инструкционный эмулятор прошивки MCU (Unicorn) — исполняет РЕАЛЬНЫЙ код mcu_0007.bin.
+MCU firmware instruction emulator (Unicorn) — executes REAL mcu_0007.bin code.
 
-В отличие от emulator/ (поведенческая модель протокола), это исполнение настоящих
-ARM Thumb-инструкций контроллера. Цель — пробить «стену рантайм-RAM»: запустить код,
-дать ему инициализировать свои таблицы в RAM и/или перехватить, что он пишет в USART3
-(реальные ID/кадры команд, которых нет в статике).
+Unlike emulator/ (behavioral protocol model), this executes real
+ARM Thumb instructions of controller. Purpose — penetrate runtime RAM wall: run code,
+allow it to initialize tables in RAM and/or intercept USART3 writes
+(real command IDs/frames absent in static analysis).
 
-Границы честно: у нас только APP-регион OTA (нет вектор-таблицы/boot), периферия
-заглушена (status-регистры отдают «готов»), поэтому это ФУНКЦИОНАЛЬНАЯ эмуляция
-(вызов конкретной функции с поднятым состоянием), а не boot-from-reset.
+Boundaries: we only have the OTA APP region (no vector table/boot), peripherals
+are stubbed (status registers return "ready"), so this is FUNCTIONAL emulation
+(calling a specific function with initialized state) rather than boot-from-reset.
 
-Запуск:  python emulator/mcu_emu.py --func 0x1f600 [--max 200000] [--trace]
+Usage:   python emulator/mcu_emu.py --func 0x1f600 [--max 200000] [--trace]
 """
 import argparse
 import os
@@ -27,46 +27,46 @@ from unicorn.arm_const import (UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC,
 HERE = os.path.dirname(os.path.abspath(__file__))
 FW = os.path.join(os.path.dirname(HERE), "research", "images", "mcu_0007.bin")
 
-FLASH0 = 0x00000000          # база 0 (адрес == смещение в файле)
-FLASH1 = 0x08000000          # зеркало (некоторые литералы могут ждать эту базу)
+FLASH0 = 0x00000000          # base 0 (address == offset in file)
+FLASH1 = 0x08000000          # mirror (some literals may expect this base)
 RAM = 0x20000000
 RAM_SIZE = 0x20000           # 128K
 PERIPH = 0x40000000
 PERIPH_SIZE = 0x00100000
-# §59.3: расширенная область периферии чипа (блоки 0x48000400 DMA-подобный,
-# 0x48000C00 GPIO-подобный; используют 0x1D640/0x1BF48/0x1C040)
+# §59.3: extended chip peripheral region (blocks 0x48000400 DMA-like,
+# 0x48000C00 GPIO-like; used by 0x1D640/0x1BF48/0x1C040)
 PERIPH2 = 0x48000000
 PERIPH2_SIZE = 0x00020000
 SYS = 0xE0000000             # Cortex-M NVIC/SCB
 SYS_SIZE = 0x00100000
 STACK_TOP = 0x20018000
 
-USART3_DR = 0x40004804       # куда 0x1f1c0 пишет байт команды
+USART3_DR = 0x40004804       # destination where 0x1f1c0 writes command byte
 USART3_BASE = 0x40004800
 
-# §73: моторный таймер PWM = «TIMER_A» из каталога §60/§60.2 (подфункции FOC
-# 0x1be1c/0x1bd88). Обнаружен/подтверждён трассой полного входа FOC 0x1a938
-# (блок @0x1bde0-0x1bdfc). Блок регистров 0x40012c00..0x40012c54; данные/статус —
-# на sub-base 0x40012c40 (это и есть «TIMER_A» каталога), CTRL — на base+0x30.
+# §73: PWM motor timer = "TIMER_A" from catalog §60/§60.2 (FOC subfunctions
+# 0x1be1c/0x1bd88). Discovered/confirmed via full trace of FOC entry 0x1a938
+# (block @0x1bde0-0x1bdfc). Register block 0x40012c00..0x40012c54; data/status —
+# at sub-base 0x40012c40 (catalog "TIMER_A"), CTRL at base+0x30.
 MOTOR_TIM_BASE = 0x40012c00
-MOTOR_TIM_CTRL = MOTOR_TIM_BASE + 0x30    # FOC: ldr/ands #0xDFFF/str → clear бит 13
+MOTOR_TIM_CTRL = MOTOR_TIM_BASE + 0x30    # FOC: ldr/ands #0xDFFF/str -> clear bit 13
 MOTOR_TIM_DATA0 = MOTOR_TIM_BASE + 0x44   # = TIMER_A+4;  ← u16[RAM+0x386] (PWM duty)
 MOTOR_TIM_DATA1 = MOTOR_TIM_BASE + 0x48   # = TIMER_A+8;  ← u16[RAM+0x384]
 MOTOR_TIM_DATA2 = MOTOR_TIM_BASE + 0x4c   # = TIMER_A+0xc;← u16[RAM+0x382]
-MOTOR_TIM_STAT = MOTOR_TIM_BASE + 0x54    # = TIMER_A+0x14; read (бит15 low16 = гейт FOC)
+MOTOR_TIM_STAT = MOTOR_TIM_BASE + 0x54    # = TIMER_A+0x14; read (bit15 low16 = FOC gate)
 
-# A1: кастомный GPIO-блок «портов» (§39.1): 4 порта × stride, F4-подобный layout.
-# Эмпирика _gpio_layout_probe.py + дизасм драйвера 0x22000 (валидация port/pin/mode).
+# A1: custom GPIO "ports" block (§39.1): 4 ports * stride, F4-like layout.
+# Empirical from _gpio_layout_probe.py + driver 0x22000 disasm (port/pin/mode validation).
 GPIO_PORT_BASE = 0x48000000
-GPIO_PORT_STRIDE = 0x400        # порты: 0x48000000/0400/0800/0C00
+GPIO_PORT_STRIDE = 0x400        # ports: 0x48000000/0400/0800/0C00
 GPIO_NPORTS = 4
-GPIO_MODER = 0x2c               # режимы ВСЕХ 16 пинов, по 2 бита/пин: pin N → биты [2N+1:2N]
-                                # (наблюдено: порт0=0x666 [пины 0-5], порт1=0x66660000 [пины 12-15])
-GPIO_MODER_HI = 0x28            # вторичное поле (AF/напр.) — в motor-init = 0
-GPIO_OUTSEL = 0x10              # output/select (большие значения — mask в high-битах)
-GPIO_BIT_REGS = (0x14, 0x18, 0x1c, 0x20, 0x24)   # битовые регистры (сброс 0 в init)
+GPIO_MODER = 0x2c               # modes for ALL 16 pins, 2 bits/pin: pin N -> bits [2N+1:2N]
+                                # (observed: port0=0x666 [pins 0-5], port1=0x66660000 [pins 12-15])
+GPIO_MODER_HI = 0x28            # secondary field (AF/dir) — in motor-init = 0
+GPIO_OUTSEL = 0x10              # output/select (large values — mask in high bits)
+GPIO_BIT_REGS = (0x14, 0x18, 0x1c, 0x20, 0x24)   # bit registers (cleared to 0 in init)
 
-# дескрипторы планировщика USART3 (из REPORT §MCU)
+# USART3 scheduler descriptors (from REPORT §MCU)
 DESC_BASE = 0x20000A43
 STATE_BASE = 0x20000A40
 
@@ -81,12 +81,12 @@ class McuEmu:
         self.max_insn = max_insn
         self.insn = 0
         self.usart_out = bytearray()
-        self.ram_writes = []          # (pc, addr, size, val) в области дескрипторов
-        # --- периферия: диагностика + точные значения (§73) ---
-        self.periph_overrides = {}    # {addr: u32} точные значения регистров (после fill)
-        self.periph_writes = []       # [(pc, addr, size, value)] все записи в периферию
-        self.periph_reads = {}        # {addr: [pc,...]} трассировка чтений (trace_periph)
-        self.trace_periph = False     # включить логирование чтений периферии
+        self.ram_writes = []          # (pc, addr, size, val) in descriptor region
+        # --- peripherals: diagnostics + exact values (§73) ---
+        self.periph_overrides = {}    # {addr: u32} exact register values (after fill)
+        self.periph_writes = []       # [(pc, addr, size, value)] all writes to peripherals
+        self.periph_reads = {}        # {addr: [pc,...]} read trace (trace_periph)
+        self.trace_periph = False     # enable peripheral read logging
         self.stopped = None
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
         self._map()
@@ -114,19 +114,19 @@ class McuEmu:
     def _h_code(self, uc, address, size, user):
         self.insn += 1
         if self.insn > self.max_insn:
-            self.stopped = f"лимит инструкций {self.max_insn}"
+            self.stopped = f"instruction limit {self.max_insn}"
             uc.emu_stop()
             return
-        # детект зависания: один PC исполнен слишком много раз = spin-loop
+        # hang detection: single PC executed too many times = spin-loop
         if getattr(self, "broad", False):
             c = self.pc_hits.get(address, 0) + 1
             self.pc_hits[address] = c
             if c > self.spin_limit:
                 uc.reg_write(UC_ARM_REG_PC, uc.reg_read(UC_ARM_REG_LR) or 1)
                 self.spins += 1
-                # если совсем застряли (много разных спинов) — стоп
+                # if completely stuck (too many different spins) — stop
                 if self.spins > 400:
-                    self.stopped = f"слишком много spin-loop'ов (последний @0x{address:05x})"
+                    self.stopped = f"too many spin loops (last @0x{address:05x})"
                     uc.emu_stop()
         if self.trace and self.insn <= 60:
             print(f"    [{self.insn:>5}] pc=0x{address:05x}")
@@ -136,25 +136,25 @@ class McuEmu:
             self.usart_out.append(value & 0xFF)
             pc = uc.reg_read(UC_ARM_REG_PC)
             print(f"    >>> USART3 write @pc=0x{pc:05x}: 0x{value & 0xFF:02x}")
-        if 0x20000A00 <= address < 0x20000C10:      # область дескрипторов/стейта
+        if 0x20000A00 <= address < 0x20000C10:      # descriptor/state region
             pc = uc.reg_read(UC_ARM_REG_PC)
             self.ram_writes.append((pc, address, size, value))
-        # запись в периферию (TIM/ADC/GPIO) — логируем для анализа моторного контура
+        # write to peripherals (TIM/ADC/GPIO) — log for motor loop analysis
         if (PERIPH <= address < PERIPH + PERIPH_SIZE or
                 PERIPH2 <= address < PERIPH2 + PERIPH2_SIZE):
             pc = uc.reg_read(UC_ARM_REG_PC)
             self.periph_writes.append((pc, address, size, value))
 
     def _h_read(self, uc, access, address, size, value, user):
-        # периферия: status-регистры отдают «готов» (все биты), чтобы poll-циклы
-        # не зависали. Это грубо, но позволяет коду двигаться.
+        # peripherals: status registers return "ready" (all bits) so poll loops
+        # do not hang. This is rough, but allows code to progress.
         if self.trace_periph:
             pc = uc.reg_read(UC_ARM_REG_PC)
             self.periph_reads.setdefault(address, []).append(pc)
         return
 
     def _h_unmapped(self, uc, access, address, size, value, user):
-        # ШИРОКИЙ режим: маппим нулевую страницу по требованию и продолжаем
+        # BROAD mode: map zero page on demand and continue
         if getattr(self, "broad", False):
             page = address & ~0xFFF
             try:
@@ -164,25 +164,25 @@ class McuEmu:
             except UcError:
                 return True
         pc = uc.reg_read(UC_ARM_REG_PC)
-        self.stopped = f"обращение к незамапленному 0x{address:08x} @pc=0x{pc:05x} (access={access})"
-        return False       # остановить
+        self.stopped = f"access to unmapped 0x{address:08x} @pc=0x{pc:05x} (access={access})"
+        return False       # stop
 
     def hook_periph_ready(self):
-        """Периферию читаем как 0xFFFFFFFF (все ready-биты) — через отдельный
-        механизм: Unicorn не даёт менять значение в READ-хуке напрямую, поэтому
-        предзаполняем регион единицами."""
+        """Read peripherals as 0xFFFFFFFF (all ready bits) — via dedicated
+        mechanism: Unicorn does not allow altering values in READ hooks directly,
+        so prefill region with ones."""
         self.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
         self.uc.mem_write(PERIPH2, b"\x00" * PERIPH2_SIZE)
         self.uc.mem_write(SYS, b"\x00" * SYS_SIZE)
 
-    # --- §73: точные значения регистров периферии + отчёт по обращениям ---
+    # --- §73: exact peripheral register values + access report ---
     def set_periph(self, addr, value):
-        """Задать точное значение 32-битного регистра периферии (вместо blanket
-        0xFF/0x00). Применяется после hook_periph_ready/run_broad-заполнения."""
+        """Set exact value for 32-bit peripheral register (instead of blanket
+        0xFF/0x00). Applied after hook_periph_ready/run_broad fill."""
         self.periph_overrides[addr] = value & 0xFFFFFFFF
 
     def apply_periph_overrides(self):
-        """Пропитать periph_overrides в память (вызывать после заполнения fill)."""
+        """Apply periph_overrides into memory (call after fill)."""
         for addr, val in self.periph_overrides.items():
             try:
                 self.uc.mem_write(addr, struct.pack('<I', val))
@@ -190,13 +190,13 @@ class McuEmu:
                 pass
 
     def report_periph(self, max_addrs=40):
-        """Отчёт по обращениям к периферии (записи + чтения, сгруппировано по адресу)."""
+        """Report of peripheral accesses (writes + reads grouped by address)."""
         addrs = set(a for _, a, _, _ in self.periph_writes) | set(self.periph_reads)
         if not addrs:
-            print("[periph] обращений к периферии не было")
+            print("[periph] no peripheral accesses recorded")
             return
-        print(f"[periph] регистров затронуто: {len(addrs)} "
-              f"(записей {len(self.periph_writes)}, чтений в {len(self.periph_reads)} адр)")
+        print(f"[periph] registers accessed: {len(addrs)} "
+              f"(writes: {len(self.periph_writes)}, reads in {len(self.periph_reads)} addrs)")
         for a in sorted(addrs)[:max_addrs]:
             ws = [w for _, aa, _, w in self.periph_writes if aa == a]
             rs = self.periph_reads.get(a, [])
@@ -204,38 +204,38 @@ class McuEmu:
             wstr = ('[' + ','.join(hex(v) for v in wvals[:6]) + ']') if ws else ''
             print(f"  0x{a:08x}: W×{len(ws)} {wstr} R×{len(rs)}")
 
-    # --- E2: periph-write-trace facility (захват periph-writes на функцию) ---
+    # --- E2: periph-write-trace facility (capture periph-writes per function) ---
     def periph_write_map(self):
-        """E2: periph-writes сгруппированы по адресу {addr: [value,...]} (порядок записей).
-        Facility для верификации «функция X пишет в регистр Y значение Z» — улучшает все
-        модели A (GPIO/USART/SPI/TIM). Источник: self.periph_writes [(pc,addr,size,value)]."""
+        """E2: periph-writes grouped by address {addr: [value,...]} (order of writes).
+        Facility for verifying "function X writes value Z to register Y" — enhances all
+        A-models (GPIO/USART/SPI/TIM). Source: self.periph_writes [(pc,addr,size,value)]."""
         m = {}
         for _, addr, size, value in self.periph_writes:
             m.setdefault(addr, []).append(value)
         return m
 
     def periph_writes_since(self, mark):
-        """E2: periph-writes после снимка mark=len(periph_writes) — окно одного вызова."""
+        """E2: periph-writes after mark=len(periph_writes) snapshot — window of a single call."""
         return self.periph_writes[mark:]
 
     def seed_scheduler(self):
-        """Предусловия планировщика 0x1f600 (из литерального пула):
-        - [0x200002c2]=0 (слот 0), [0x200002c1]=1 (!= -> не beq);
-        - таймер 'сейчас' 0x200001e0 велик, 'послед.' 0x20000198 = 0 (elapsed>432);
-        - дескриптор слота 0 (0x20000a43, 150Б) — маркеры, чтобы увидеть путь в USART3."""
-        self.uc.mem_write(0x200002c2, b"\x00")            # слот 0
-        self.uc.mem_write(0x200002c1, b"\x01")            # != -> не beq
-        self.uc.mem_write(0x200001e0, struct.pack("<Q", 0x00100000))  # таймер now
-        self.uc.mem_write(0x20000198, struct.pack("<Q", 0))           # таймер last
-        # межбайтовый таймер [0x20000170+0x30/+0x34] > 8 (иначе ждёт 8 тиков)
+        """Preconditions for scheduler 0x1f600 (from literal pool):
+        - [0x200002c2]=0 (slot 0), [0x200002c1]=1 (!= -> not beq);
+        - timer 'now' 0x200001e0 large, 'last' 0x20000198 = 0 (elapsed>432);
+        - slot 0 descriptor (0x20000a43, 150B) — markers to trace path to USART3."""
+        self.uc.mem_write(0x200002c2, b"\x00")            # slot 0
+        self.uc.mem_write(0x200002c1, b"\x01")            # != -> not beq
+        self.uc.mem_write(0x200001e0, struct.pack("<Q", 0x00100000))  # timer now
+        self.uc.mem_write(0x20000198, struct.pack("<Q", 0))           # timer last
+        # interbyte timer [0x20000170+0x30/+0x34] > 8 (otherwise waits 8 ticks)
         self.uc.mem_write(0x200001a0, struct.pack("<II", 100, 0))
-        # дескриптор слота 0: узнаваемые байты D0 D1 D2 ... (первый = длина кадра)
+        # slot 0 descriptor: recognizable bytes D0 D1 D2 ... (first = frame length)
         self.uc.mem_write(DESC_BASE, bytes((0xD0 + i) & 0xFF for i in range(150)))
-        # USART3 SR [0x40004828] бит14 = 0 -> «не занято», путь отправки открыт
+        # USART3 SR [0x40004828] bit14 = 0 -> "not busy", transmission path open
 
     def run_broad(self, addr, budget=2000000, spin_limit=3000):
-        """Широкая эмуляция: прогнать init-функцию, дав рантайм-указателям поставиться.
-        Маппинг по требованию, детект spin-loop, толерантность к периферии."""
+        """Broad emulation: run init function allowing runtime pointers to be established.
+        On-demand mapping, spin-loop detection, peripheral fault tolerance."""
         self.broad = True
         self.max_insn = budget
         self.spin_limit = spin_limit
@@ -247,15 +247,15 @@ class McuEmu:
         self.uc.mem_write(SYS, bytes(SYS_SIZE))
         self.uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
         self.uc.reg_write(UC_ARM_REG_LR, 1)
-        print(f"[broad] запуск init 0x{addr:05x}, бюджет {budget}")
+        print(f"[broad] starting init 0x{addr:05x}, budget {budget}")
         try:
             self.uc.emu_start(addr | 1, 0, count=budget + 5)
         except UcError as e:
             if self.stopped is None:
                 self.stopped = f"UcError {e} @pc=0x{self.uc.reg_read(UC_ARM_REG_PC):05x}"
-        print(f"[broad] инструкций: {self.insn}, spin-loop'ов: {self.spins}, "
-              f"домапплено страниц: {self.mapped_pages}")
-        print(f"[broad] останов: {self.stopped or 'дошёл до конца'}")
+        print(f"[broad] instructions: {self.insn}, spin-loops: {self.spins}, "
+              f"mapped pages: {self.mapped_pages}")
+        print(f"[broad] stopped: {self.stopped or 'completed execution'}")
         return self
 
     def dump_ram(self, addr, size, label=""):
@@ -264,35 +264,35 @@ class McuEmu:
         except Exception:
             return
         nz = any(r)
-        print(f"[ram] 0x{addr:08x}..+0x{size:x} {label} {'(есть данные)' if nz else '(пусто)'}:")
+        print(f"[ram] 0x{addr:08x}..+0x{size:x} {label} {'(has data)' if nz else '(empty)'}:")
         if nz:
             for i in range(0, len(r), 16):
                 print(f"      +{i:03x}: {r[i:i+16].hex(' ')}")
 
     def run_func(self, addr, args=(), fill_desc=None, seed_sched=False):
         if seed_sched:
-            self.uc.mem_write(PERIPH, bytes(PERIPH_SIZE))   # status-биты сброшены
+            self.uc.mem_write(PERIPH, bytes(PERIPH_SIZE))   # status bits cleared
             self.uc.mem_write(PERIPH2, bytes(PERIPH2_SIZE))
             self.uc.mem_write(SYS, bytes(SYS_SIZE))
             self.seed_scheduler()
         else:
             self.hook_periph_ready()
-        self.apply_periph_overrides()      # точные значения регистров (§73)
-        # опционально засеять дескрипторы маркерами, чтобы увидеть их путь в USART3
+        self.apply_periph_overrides()      # exact register values (§73)
+        # optionally seed descriptors with markers to trace path to USART3
         if fill_desc is not None:
             self.uc.mem_write(DESC_BASE, fill_desc)
-        # стек
+        # stack
         self.uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
-        # аргументы r0..r3
+        # arguments r0..r3
         regs = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
         for r, v in zip(regs, args):
             self.uc.reg_write(r, v)
-        # адрес возврата — «магический», ловим его в code-хуке как конец
-        ret_magic = 0x00000001                      # BX к нечётному Thumb-адресу 0 -> поймаем
+        # magic return address, caught in code hook as exit condition
+        ret_magic = 0x00000001                      # BX to odd Thumb address 0 -> intercepted
         self.uc.reg_write(UC_ARM_REG_LR, ret_magic)
 
         start = addr | 1                            # Thumb bit
-        print(f"[emu] запуск функции 0x{addr:05x} (Thumb), макс {self.max_insn} инстр.")
+        print(f"[emu] running function 0x{addr:05x} (Thumb), max {self.max_insn} insn.")
         try:
             self.uc.emu_start(start, 0, count=self.max_insn + 5)
         except UcError as e:
@@ -302,19 +302,19 @@ class McuEmu:
         self._report()
 
     def _report(self):
-        print(f"\n[emu] инструкций выполнено: {self.insn}")
-        print(f"[emu] останов: {self.stopped or 'дошёл до конца'}")
-        print(f"[emu] байт записано в USART3: {len(self.usart_out)}")
+        print(f"\n[emu] instructions executed: {self.insn}")
+        print(f"[emu] stopped: {self.stopped or 'completed execution'}")
+        print(f"[emu] bytes written to USART3: {len(self.usart_out)}")
         if self.usart_out:
-            print(f"      данные: {bytes(self.usart_out).hex(' ')}")
+            print(f"      data: {bytes(self.usart_out).hex(' ')}")
         if self.ram_writes:
-            print(f"[emu] записей в область дескрипторов 0x20000A00..0C10: {len(self.ram_writes)}")
+            print(f"[emu] writes to descriptor region 0x20000A00..0C10: {len(self.ram_writes)}")
             for pc, addr, size, val in self.ram_writes[:20]:
                 print(f"      @pc=0x{pc:05x} [0x{addr:08x}] <- 0x{val:0{size*2}x} ({size}B)")
-        # дамп RAM-области дескрипторов после прогона
+        # dump RAM descriptor region after execution
         try:
             region = self.uc.mem_read(STATE_BASE, 0x60)
-            print(f"[emu] RAM 0x{STATE_BASE:08x}..+0x60 после прогона:")
+            print(f"[emu] RAM 0x{STATE_BASE:08x}..+0x60 after execution:")
             for i in range(0, len(region), 16):
                 print(f"      +{i:02x}: {region[i:i+16].hex(' ')}")
         except Exception:
@@ -322,21 +322,21 @@ class McuEmu:
 
 
 class TimModel:
-    """§73: поведенческая модель таймера — scoped-вид на регион в памяти Uc + реестр
-    записей + named-доступ. Записи firmware уже попадают в память (источник истины);
-    модель зеркалирует их для инспекции и даёт точку расширения под clock/status-флаги
-    (метод tick() — заглушка под будущую тактовую модель)."""
+    """§73: behavioral timer model — scoped view into Uc memory region + write log
+    + named access. Firmware writes land directly in memory (source of truth);
+    model mirrors them for inspection and provides extension point for clock/status flags
+    (tick() method — clock model hook)."""
     def __init__(self, emu, base=MOTOR_TIM_BASE, size=0x100, period=0x8000, step=1):
         self.emu = emu
         self.base = base
         self.size = size
-        self.writes = []      # [(pc, offset, size, value)] записи в этот таймер
-        # --- тактовая модель (§73.x): свободно-ходный счётчик + update-событие ---
-        self.period = period  # wrap-значение счётчика (ARR)
-        self.step = step      # приращение за такт
-        self.cnt = 0          # текущее значение счётчика
-        self.update = False   # флаг update-события (wrap)
-        self.ticks = 0        # число продвинутых тактов
+        self.writes = []      # [(pc, offset, size, value)] writes to this timer
+        # --- clock model (§73.x): free-running counter + update event ---
+        self.period = period  # counter wrap value (ARR)
+        self.step = step      # increment per tick
+        self.cnt = 0          # current counter value
+        self.update = False   # update event flag (wrap)
+        self.ticks = 0        # elapsed ticks count
         self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
                                      None, base, base + size)
 
@@ -351,7 +351,7 @@ class TimModel:
         self.emu.uc.mem_write(self.base + off, struct.pack('<I', val & 0xFFFFFFFF))
 
     def snapshot(self):
-        """Текущие значения ключевых регистров: {имя: u32}."""
+        """Current values of key registers: {name: u32}."""
         return {
             'ctrl': self.read(0x30),
             'data0': self.read(0x44),
@@ -361,50 +361,50 @@ class TimModel:
         }
 
     def tick(self, n=1):
-        """Продвинуть тактовую модель на n тактов. Возвращает число update-событий.
+        """Advance clock model by n ticks. Returns count of update events.
 
-        Свободно-ходный счётчик cnt += step, wrap по period; при wrap (cnt <= prev)
-        устанавливается self.update (аналог TIM update-события / события захвата).
-        Для моторного блока 0x40012xxx «такт» = один период контура управления;
-        update-событие соответствует тому, что firmware видит как STAT бит15 (гейт
-        режима FOC). Точный hardware-источник события и период статически не
-        определяются → модель параметризована (period/step задаёт вызывающий).
+        Free-running counter cnt += step, wrapping around period; on wrap (cnt <= prev)
+        self.update is set (analogous to TIM update / capture event).
+        For motor block 0x40012xxx, one "tick" = one control loop period;
+        update event corresponds to firmware STAT bit15 (FOC mode gate).
+        Exact hardware event source and period are not statically determined ->
+        model is parameterized (period/step provided by caller).
         """
         updates = 0
         for _ in range(n):
             self.ticks += 1
             prev = self.cnt
             self.cnt = (self.cnt + self.step) % self.period
-            if self.cnt <= prev:          # wrap (или step=0)
+            if self.cnt <= prev:          # wrap (or step=0)
                 self.update = True
                 updates += 1
         return updates
 
     def set_status_bits(self, addr, mask):
-        """Задать биты mask в периферийном регистре addr (RMW, 32-bit)."""
+        """Set mask bits in peripheral register addr (RMW, 32-bit)."""
         cur = struct.unpack('<I', self.emu.uc.mem_read(addr, 4))[0]
         self.emu.uc.mem_write(addr, struct.pack('<I', cur | mask))
 
     def clear_status_bits(self, addr, mask):
-        """Сбросить биты mask в периферийном регистре addr (RMW, 32-bit)."""
+        """Clear mask bits in peripheral register addr (RMW, 32-bit)."""
         cur = struct.unpack('<I', self.emu.uc.mem_read(addr, 4))[0]
         self.emu.uc.mem_write(addr, struct.pack('<I', cur & ~mask))
 
 
-# §73.x ADC: capture-регистра измерения фазных токов (ADC-inject PWM). 0x1be1c
-# читает T28/T2C/T30 и реконструирует токи: фаза = (T−C)<<4, третья фаза = −сумма
-# двух измеренных (закон Кирхгофа), финальный clamp [−30000,30000]. Гейт режима —
-# STAT бит15 (u32[0x40012c54]): =1 → capture, =0 → skip (только clamp).
+# §73.x ADC: capture registers of phase current measurement (ADC-inject PWM). 0x1be1c
+# reads T28/T2C/T30 and reconstructs currents: phase = (T-C)<<4, third phase = -sum
+# of measured two (Kirchhoff's law), final clamp [-30000, 30000]. Mode gate:
+# STAT bit15 (u32[0x40012c54]): =1 -> capture, =0 -> skip (clamp only).
 ADC_CAP_BASE = 0x40012440
 ADC_CAP_T28 = ADC_CAP_BASE + 0x28    # 0x40012468
 ADC_CAP_T2C = ADC_CAP_BASE + 0x2c    # 0x4001246c
 ADC_CAP_T30 = ADC_CAP_BASE + 0x30    # 0x40012470
-# sector → handler (конвенция каталога §60, поведение эмпирически верифицировано §73.x):
+# sector -> handler (catalog convention §60, empirically verified §73.x):
 # 0→null, 1→B, 2/3→C, 4/5→A, 6→B.
 ADC_SECTOR_HANDLER = {0: None, 1: 'B', 2: 'C', 3: 'C', 4: 'A', 5: 'A', 6: 'B'}
-# handler → измеренные фазы: (t_reg_off, c_struct_off, out_struct_off).
-# C-ссылки (zero-current refs) в struct FOC: C18=+0x18, C1A=+0x1a, C1C=+0x1c;
-# выходы: o_c=+0xc, o_10=+0x10, o_14=+0x14.
+# handler -> measured phases: (t_reg_off, c_struct_off, out_struct_off).
+# C-references (zero-current refs) in struct FOC: C18=+0x18, C1A=+0x1a, C1C=+0x1c;
+# outputs: o_c=+0xc, o_10=+0x10, o_14=+0x14.
 ADC_HANDLER_MEASURED = {
     'A': [(0x28, 0x18, 0xc), (0x2c, 0x1a, 0x10)],   # T28→o_c, T2C→o_10; o_14=−sum
     'B': [(0x2c, 0x1a, 0x10), (0x30, 0x1c, 0x14)],   # T2C→o_10, T30→o_14; o_c=−sum
@@ -413,12 +413,12 @@ ADC_HANDLER_MEASURED = {
 
 
 class AdcModel:
-    """§73.x: модель ADC/capture-канала фазных токов (вход FOC).
+    """§73.x: ADC/phase current capture channel model (FOC input).
 
-    Hardware: ADC-inject PWM — ADC сэмплирует ток, таймер захватывает момент
-    сравнения; 0x1be1c читает T28/T2C/T30 (periph) и реконструирует токи.
-    Модель даёт app доступ к T-регистрам (set_captures) и convenience set_currents
-    (инжект желаемых токов под C-ссылки). Ток квантуется ×16 (масштаб <<4).
+    Hardware: ADC-inject PWM — ADC samples current, timer captures compare event;
+    0x1be1c reads T28/T2C/T30 (periph) and reconstructs currents.
+    Model provides app access to T registers (set_captures) and convenience set_currents
+    (inject desired currents relative to C-references). Current quantized *16 (<<4 scale).
     """
     def __init__(self, emu):
         self.emu = emu
@@ -428,23 +428,23 @@ class AdcModel:
                               struct.pack('<I', val & 0xFFFFFFFF))
 
     def set_captures(self, t28, t2c, t30):
-        """Записать сырые capture-значения T28/T2C/T30 (periph)."""
+        """Write raw capture values T28/T2C/T30 (periph)."""
         self._w(0x28, t28)
         self._w(0x2c, t2c)
         self._w(0x30, t30)
 
     def get_captures(self):
-        """Прочитать текущие (T28, T2C, T30) как u32."""
+        """Read current (T28, T2C, T30) as u32."""
         return (struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T28, 4))[0],
                 struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T2C, 4))[0],
                 struct.unpack('<I', self.emu.uc.mem_read(ADC_CAP_T30, 4))[0])
 
     def set_currents(self, r0, currents, sector):
-        """Инжект желаемых pre-clamp токов, задав capture под C-ссылки из r0.
+        """Inject desired pre-clamp currents, setting capture relative to C-refs from r0.
 
-        currents = {0xc: o_c, 0x10: o_10, 0x14: o_14}. Для двух измеренных фаз
-        (по sector→handler) T = C + (ток>>4); третья фаза = −сумма (автоматически).
-        Ток квантуется ×16; sector определяет, какие 2 фазы измеряются.
+        currents = {0xc: o_c, 0x10: o_10, 0x14: o_14}. For two measured phases
+        (per sector->handler) T = C + (current>>4); third phase = -sum (automatically).
+        Current is quantized *16; sector determines which 2 phases are measured.
         """
         h = ADC_SECTOR_HANDLER.get(sector & 7)
         if h is None:
@@ -455,37 +455,37 @@ class AdcModel:
             self._w(t_off, (cref + (target >> 4)) & 0xFFFFFFFF)
 
 
-# §73.x скорость: V=u32[RAM+0x158]=timer-capture период; F=byte[RAM+0x100] гейт;
-# val=s16(48000/V) if F!=0 else 0 (0x1d874). val → u16[RAM+0x1768], читается PID 0x1d078.
-SPEED_V_OFF = 0x158        # u32 период (RAM+0x158)
-SPEED_F_OFF = 0x100        # byte гейт (RAM+0x100): 0 → val=0
-SPEED_SP0_OFF = 0x1768     # u16 вычисленный val (RAM+0x1768) — скорость для PID
-SPEED_DIV = 48000          # делитель: val = s16(48000/V)
+# §73.x speed: V=u32[RAM+0x158]=timer-capture period; F=byte[RAM+0x100] gate;
+# val=s16(48000/V) if F!=0 else 0 (0x1d874). val -> u16[RAM+0x1768], read by PID 0x1d078.
+SPEED_V_OFF = 0x158        # u32 period (RAM+0x158)
+SPEED_F_OFF = 0x100        # byte gate (RAM+0x100): 0 -> val=0
+SPEED_SP0_OFF = 0x1768     # u16 computed val (RAM+0x1768) — speed for PID
+SPEED_DIV = 48000          # divisor: val = s16(48000/V)
 
 
 class SpeedModel:
-    """§73.x: модель замера скорости (вход PID 0x1d078), замыкает контур.
+    """§73.x: speed measurement model (PID 0x1d078 input), closes loop.
 
-    Hardware: timer-capture период между импульсами энкодера → V; скорость ∝ 1/V.
+    Hardware: timer-capture period between encoder pulses -> V; speed proportional to 1/V.
     Firmware: val = s16(48000/V) if F=byte[RAM+0x100]!=0 else 0 (0x1d874),
-    val → u16[RAM+0x1768]. Модель задаёт V/F (set_period / set_speed / stop).
-    Точный ISR-писатель гейтится по аппаратному состоянию (импульс/pending) и в
-    изолированной эмуляции не триггерится (writer-sweep: 0 хитов) → модель
-    параметризована (app даёт измеренную скорость).
+    val -> u16[RAM+0x1768]. Model sets V/F (set_period / set_speed / stop).
+    Exact ISR writer is gated by hardware state (pulse/pending) and in
+    isolated emulation is not triggered (writer-sweep: 0 hits) -> model
+    is parameterized (app provides measured speed).
     """
     def __init__(self, emu):
         self.emu = emu
 
     def set_period(self, v):
-        """Записать период V (u32[RAM+0x158]) + открыть гейт F=1."""
+        """Write period V (u32[RAM+0x158]) + open gate F=1."""
         self.emu.uc.mem_write(RAM + SPEED_V_OFF,
                               struct.pack('<I', v & 0xFFFFFFFF))
         self.emu.uc.mem_write(RAM + SPEED_F_OFF, bytes([1]))
 
     def set_speed(self, val):
-        """Инжект желаемой измеренной скорости val: V = max(1, 48000//val).
+        """Inject desired measured speed val: V = max(1, 48000 // val).
 
-        val<=0 → stop() (F=0). val>48000 кэпится (V=1 → val=48000).
+        val<=0 -> stop() (F=0). val>48000 is capped (V=1 -> val=48000).
         """
         if val <= 0:
             self.stop()
@@ -494,25 +494,25 @@ class SpeedModel:
         self.set_period(v)
 
     def stop(self):
-        """Останов: F=0 → val=0."""
+        """Stop: F=0 -> val=0."""
         self.emu.uc.mem_write(RAM + SPEED_F_OFF, bytes([0]))
 
     def get_val(self):
-        """Прочитать вычисленный val (s16 u16[RAM+0x1768]) после прогона PID."""
+        """Read computed val (s16 u16[RAM+0x1768]) after PID execution."""
         return struct.unpack('<h', self.emu.uc.mem_read(RAM + SPEED_SP0_OFF, 2))[0]
 
 
 class MotorModel:
-    """§73.x: модель динамики мотора (plant): throttle → скорость во времени.
+    """motor dynamics model (plant): throttle -> speed over time.
 
-    Первый-порядковый lag к терминальной скорости для текущего throttle:
+    First-order lag toward terminal speed for current throttle:
       v_term = v_max * clamp(throttle/throttle_ref, 0, 1)
       speed += (dt/tau) * (v_term - speed)
-    Терминальная скорость при full throttle = v_max; tau — постоянная времени
-    (инерция + сопротивление). Параметры НЕ определяются firmware (физика
-    конкретного самоката) → модель параметризована. Единицы скорости = внутренние
-    val (§71): ~20.8 units/(км/ч); target 125≈6 км/ч, 208≈10 км/ч, 522≈25 км/ч (EU).
-    v_max=522 по умолчанию = максимальный target (~25 км/ч). Замыкает АВТОНОМНЫЙ симул:
+    Terminal speed at full throttle = v_max; tau — time constant
+    (inertia + drag). Parameters are NOT determined by firmware
+    (physics of specific scooter) -> model is parameterized. Speed units = internal
+    val (§71): ~20.8 units/(km/h); target 125~6 km/h, 208~10 km/h, 522~25 km/h (EU).
+    v_max=522 default = max target (~25 km/h). Closes AUTONOMOUS simulation:
       target → PID 0x1d078 → throttle(u16[RAM+0x42c]) → [MotorModel] → speed →
       SpeedModel.set_speed (V) → PID ...
     """
@@ -525,7 +525,7 @@ class MotorModel:
         self.speed = 0.0
 
     def step(self, throttle):
-        """Один шаг: throttle (PID-вывод) → новая скорость (val). Возвращает speed."""
+        """Single step: throttle (PID output) -> new speed (val). Returns speed."""
         tnorm = max(0.0, min(1.0, throttle / self.throttle_ref))
         v_term = self.v_max * tnorm
         self.speed += (self.dt / self.tau) * (v_term - self.speed)
@@ -537,24 +537,24 @@ class MotorModel:
         self.speed = float(speed)
 
 
-# §73.x батарея: SoC% = u16[RAM+0x306] (из i16@0x17a0 [415..535]→[0..100]%, §25).
-# FOC читает SoC@0x306 с порогами 90/10, clamp 100; гейт byte@0x22e. Защита: 4150
-# (max 4.15 В), 3000 (cutoff 3.0 В). Контур: ADC buf[2]→IIR÷256→×410+калибровка(BLE)
-# →блок 0x40023c00→i16@0x17a0→[0..100]%→u16@0x306.
+# §73.x battery: SoC% = u16[RAM+0x306] (from i16@0x17a0 [415..535]->[0..100]%, §25).
+# FOC reads SoC@0x306 with thresholds 90/10, clamp 100; gate byte@0x22e. Protection: 4150
+# (max 4.15 V), 3000 (cutoff 3.0 V). Loop: ADC buf[2]->IIR/256->*410+calib(BLE)
+# ->block 0x40023c00->i16@0x17a0->[0..100]%->u16@0x306.
 BATT_SOC_OFF = 0x306        # u16 SoC % (RAM+0x306)
-BATT_RAW_OFF = 0x17A0       # i16 сырое значение [415..535] (RAM+0x17a0)
+BATT_RAW_OFF = 0x17A0       # i16 raw value [415..535] (RAM+0x17a0)
 BATT_RAW_MIN = 415          # → 0%
 BATT_RAW_MAX = 535          # → 100%
 
 
 class BatteryModel:
-    """§73.x: модель аккумулятора. SoC% → u16[RAM+0x306] (+ сырое i16@0x17a0).
+    """§73.x: battery model. SoC% -> u16[RAM+0x306] (+ raw i16@0x17a0).
 
-    Контур (§25): ADC buf[2] → IIR÷256 (i16@0x272) → ×410 + калибровка u16@0x1ec
-    (из BLE, raw×41/48) → блок 0x40023c00 → i16@0x17a0 [415..535] → [0..100]% →
-    u16[RAM+0x306]. FOC читает SoC@0x306 с порогами 90/10 (гейт byte@0x22e — в изоляции
-    не срабатывает, проверено). Модель задаёт SoC (set_soc) и моделирует разряд
-    (discharge: SoC падает с нагрузкой во времени). Параметры разряда параметризованы.
+    Loop (§25): ADC buf[2] -> IIR/256 (i16@0x272) -> *410 + calibration u16@0x1ec
+    (from BLE, raw*41/48) -> block 0x40023c00 -> i16@0x17a0 [415..535] -> [0..100]% ->
+    u16[RAM+0x306]. FOC reads SoC@0x306 with 90/10 thresholds (gate byte@0x22e — in isolation
+    does not trigger, verified). Model sets SoC (set_soc) and simulates discharge
+    (discharge: SoC drops with load over time). Discharge parameters are parameterized.
     """
     def __init__(self, emu, soc=100.0):
         self.emu = emu
@@ -562,11 +562,11 @@ class BatteryModel:
 
     @staticmethod
     def _raw(pct):
-        """[0..100]% → сырое [415..535]."""
+        """[0..100]% -> raw [415..535]."""
         return BATT_RAW_MIN + int(round(pct * (BATT_RAW_MAX - BATT_RAW_MIN) / 100.0))
 
     def set_soc(self, pct):
-        """Записать SoC% (u16[RAM+0x306]) + согласованное сырое i16@0x17a0."""
+        """Write SoC% (u16[RAM+0x306]) + synchronized raw i16@0x17a0."""
         pct = max(0, min(100, int(pct)))
         self.soc = float(pct)
         self.emu.uc.mem_write(RAM + BATT_SOC_OFF, struct.pack('<H', pct))
@@ -574,16 +574,16 @@ class BatteryModel:
         return pct
 
     def get_soc(self):
-        """Прочитать SoC% (u16[RAM+0x306])."""
+        """Read SoC% (u16[RAM+0x306])."""
         return struct.unpack('<H', self.emu.uc.mem_read(RAM + BATT_SOC_OFF, 2))[0]
 
     def discharge(self, throttle, dt=1.0, full_throttle=32760.0, rate=0.05):
-        """Разряд: SoC падает пропорционально нагрузке (throttle как прокси тока).
+        """Discharge: SoC drops proportionally to load (throttle as current proxy).
 
-        rate — %/шаг при full throttle (параметризовано; подгонять под live-замер).
-        Float-накопление в self.soc (§74: set_soc тринкует до int и обнулял дробную
-        часть → разряд был ровно 1%/tick при любой нагрузке>0); в RAM пишется int.
-        Возвращает новый SoC (int).
+        rate — %/step at full throttle (parameterized; match to live measurement).
+        Float accumulator in self.soc (§74: set_soc truncates to int and cleared fractional
+        part -> discharge was exactly 1%/tick at any load>0); RAM receives int.
+        Returns new SoC (int).
         """
         load = max(0.0, min(1.0, throttle / full_throttle))
         self.soc = max(0.0, self.soc - rate * load * dt)
@@ -593,37 +593,37 @@ class BatteryModel:
         return pct
 
 
-# §73.x запас хода (0x1d898): читает i16@RAM+0x27A (батарея, ADC-регион §25),
-# пишет struct(RAM+0x3C8, общий с PID/FOC): +0x20 = X=(8000·v)>>16;
-# +0x40 = 10000·X/(500−X) (делитель 0x19994, div-by-zero→-1, отриц. знаменатель→отриц.).
-# Константы: SCALE=8000, REF=500, K=10000 (=scale/100% из §25). Формула вериф. 400/400 (v≥0).
-RANGE_VAL_OFF = 0x27A       # i16 вход (батарея)
-RANGE_CTX_OFF = 0x3C8       # struct-контекст (общий с PID/FOC)
+# §73.x range estimation (0x1d898): reads i16@RAM+0x27A (battery, ADC region §25),
+# writes struct(RAM+0x3C8, shared with PID/FOC): +0x20 = X=(8000*v)>>16;
+# +0x40 = 10000*X/(500-X) (divisor 0x19994, div-by-zero->-1, negative denom->negative).
+# Constants: SCALE=8000, REF=500, K=10000 (=scale/100% from §25). Formula verified 400/400 (v>=0).
+RANGE_VAL_OFF = 0x27A       # i16 input (battery)
+RANGE_CTX_OFF = 0x3C8       # struct context (shared with PID/FOC)
 RANGE_SCALE = 8000          # ×8000>>16
-RANGE_REF = 500             # full-scale (div-by-zero при X==500)
-RANGE_K = 10000             # масштаб числителя делителя
-# аккумулятор 0x1d898 (leaky integrator): new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF;
-# new_0x14=asr(new_0x3c,10)[i16]. delta=i16@RAM+0x26E. Вериф. 250/250.
-RANGE_ACC_OFF = 0x404       # u32 аккумулятор (struct+0x3c)
+RANGE_REF = 500             # full-scale (div-by-zero when X==500)
+RANGE_K = 10000             # numerator divisor scale
+# accumulator 0x1d898 (leaky integrator): new_0x3c=(old_0x3c+delta-prev_0x14)&0xFFFFFFFF;
+# new_0x14=asr(new_0x3c,10)[i16]. delta=i16@RAM+0x26E. Verified 250/250.
+RANGE_ACC_OFF = 0x404       # u32 accumulator (struct+0x3c)
 RANGE_ACC_SCALED_OFF = 0x3DC  # i16 = acc>>10 (struct+0x14)
-RANGE_DELTA_OFF = 0x26E     # i16 delta-вход
+RANGE_DELTA_OFF = 0x26E     # i16 delta input
 
 
 class RangeModel:
-    """§73.x: оценщик запаса хода (firmware 0x1d898).
+    """§73.x: range estimator (firmware 0x1d898).
 
-    v = i16@RAM+0x27A (батарея) → X = (8000·v)>>16; R = 10000·X/(500−X).
-    Формула верифицирована random-sweep 400/400 (v≥0, включая div-by-zero→-1 и
-    отрицательный знаменатель) против firmware. estimate() — closed-form; для сверки
-    вызывайте firmware напрямую: run.call(0x1D898, (0,0,0,0), max_insn=300000) →
-    X=u16[RAM+0x3E8], R=i32[RAM+0x408]. Физическая единица R не определена статически
-    (нужна live-корреляция); при v∈[415..535] (SoC) R≈1111..1494.
+    v = i16@RAM+0x27A (battery) -> X = (8000*v)>>16; R = 10000*X/(500-X).
+    Formula verified via random-sweep 400/400 (v>=0, including div-by-zero->-1 and
+    negative denominator) against firmware. estimate() is closed-form; to verify,
+    call firmware directly: run.call(0x1D898, (0,0,0,0), max_insn=300000) ->
+    X=u16[RAM+0x3E8], R=i32[RAM+0x408]. Physical unit of R is not statically determined
+    (requires live correlation); with v in [415..535] (SoC), R~1111..1494.
     """
     def __init__(self, emu):
         self.emu = emu
 
     def set_value(self, v):
-        """Записать входной i16@RAM+0x27A. Возвращает v."""
+        """Write input i16@RAM+0x27A. Returns v."""
         v = max(-32768, min(32767, int(v)))
         self.emu.uc.mem_write(RAM + RANGE_VAL_OFF, struct.pack('<h', v))
         return v
@@ -640,17 +640,17 @@ class RangeModel:
         return X, R
 
     def set_delta(self, d):
-        """Записать delta-вход аккумулятора i16@RAM+0x26E. Возвращает d."""
+        """Write accumulator delta input i16@RAM+0x26E. Returns d."""
         d = max(-32768, min(32767, int(d)))
         self.emu.uc.mem_write(RAM + RANGE_DELTA_OFF, struct.pack('<h', d))
         return d
 
     def acc_step(self, old_acc, old_scaled, delta):
-        """Leaky integrator (0x1d898): возвращает (new_acc u32, new_scaled i16).
+        """Leaky integrator (0x1d898): returns (new_acc u32, new_scaled i16).
 
-        new_acc = (old_acc + delta − old_scaled) & 0xFFFFFFFF
-        new_scaled = asr(new_acc, 10) как i16 (низкие 16 бит арифметического сдвига).
-        Верифицировано stateful-sweep 250/250 против firmware.
+        new_acc = (old_acc + delta - old_scaled) & 0xFFFFFFFF
+        new_scaled = asr(new_acc, 10) as i16 (low 16 bits of arithmetic shift).
+        Verified via stateful-sweep 250/250 against firmware.
         """
         new_acc = (old_acc + delta - old_scaled) & 0xFFFFFFFF
         s = new_acc if new_acc < 0x80000000 else new_acc - 0x100000000
@@ -660,21 +660,21 @@ class RangeModel:
         return new_acc, new_scaled
 
 
-# §74 Автономный моторный контур (time-driven warm-start control loop).
+# §74 Autonomous motor loop (time-driven warm-start control loop).
 PID_OFF = 0x1D078          # PID / speed-limit state machine
 FOC_OFF = 0x1A938          # FOC routine
-THROTTLE_OFF = 0x42C       # s16 PID-вывод (throttle)
+THROTTLE_OFF = 0x42C       # s16 PID output (throttle)
 CURR_REF_OFF = 0x224       # u16 FOC current-ref (upstream command, §73.15)
-FOC_CTX_OFF = 0x040        # R4 контекст FOC
+FOC_CTX_OFF = 0x040        # R4 FOC context
 FOC_CCR_OFFS = (0x382, 0x384, 0x386)   # PWM CCR A/B/C (RAM+off)
 
 
 class GpioModel:
-    """A1: поведенческая модель кастомного GPIO-блока «портов» (§39.1) — scoped-вид на
-    регион 0x48000000..+4×0x400 + реестр записей + декод режима пинов (2 бита/пин в
-    MODER_LO/HI). Записи firmware уже попадают в память (источник истины); модель
-    зеркалирует их для инспекции pin-config и даёт точку расширения под input-state.
-    (input-регистр — чтение, в init не пишется; см. расширение.)"""
+    """A1: behavioral model of custom GPIO "ports" block (§39.1) — scoped view onto
+    region 0x48000000..+4*0x400 + write log + pin mode decoder (2 bits/pin in
+    MODER_LO/HI). Firmware writes land directly in memory (source of truth); model
+    mirrors them for pin-config inspection and provides extension point for input-state.
+    (input register is read-only, not written in init; see extension.)"""
     def __init__(self, emu, base=GPIO_PORT_BASE, nports=GPIO_NPORTS, stride=GPIO_PORT_STRIDE):
         self.emu = emu
         self.base = base
@@ -698,15 +698,15 @@ class GpioModel:
                               struct.pack('<I', val & 0xFFFFFFFF))
 
     def pin_mode(self, port, pin):
-        """Режим пина (2 бита) из MODER (+0x2c): pin N → биты [2N+1:2N]."""
+        """Pin mode (2 bits) from MODER (+0x2c): pin N -> bits [2N+1:2N]."""
         return (self.read(port, GPIO_MODER) >> (pin * 2)) & 0x3
 
     def output(self, port):
-        """Значение output/select-регистра +0x10."""
+        """Value of output/select register +0x10."""
         return self.read(port, GPIO_OUTSEL)
 
     def config_report(self):
-        """{port: {pin: mode}} — только пины с ненулевым режимом (итоговое состояние)."""
+        """{port: {pin: mode}} — only pins with non-zero mode (final state)."""
         rep = {}
         for p in range(self.nports):
             pins = {pin: self.pin_mode(p, pin) for pin in range(16)
@@ -716,16 +716,16 @@ class GpioModel:
         return rep
 
 
-# A2: push-кадры 'a'/'a1' (сборщик 0x211f8 → TX-кольцо @0x10b5, кадр с 0x10b6).
-PUSH_RING_OFF = 0x10B5          # база TX-кольца
+# A2: push frames 'a'/'a1' (collector 0x211f8 -> TX ring @0x10b5, frame from 0x10b6).
+PUSH_RING_OFF = 0x10B5          # TX ring base
 PUSH_FRAME_HDR = 0x61
 PUSH_FRAME_TRAILER = 0x9E
 
 
 def decode_push_frames(data):
-    """Разобрать поток байтов на валидные push-кадры `61 [sub] [len] data[len] chk 9E`
-    (chk=SUM(байты до chk)&0xFF). Возвращает [(raw, sub, fields)]. Чистая функция —
-    работает и для эмулятора, и для live-захвата (перенос из probes/mcu_push_decode.py)."""
+    """Parse byte stream into valid push frames `61 [sub] [len] data[len] chk 9E`
+    (chk=SUM(bytes before chk)&0xFF). Returns [(raw, sub, fields)]. Pure function —
+    works for emulator and live capture alike (ported from probes/mcu_push_decode.py)."""
     out = []
     i, n = 0, len(data)
     while i < n:
@@ -744,11 +744,11 @@ def decode_push_frames(data):
             continue
         f = bytes(data[i:e])
         sub = f[1]
-        if sub == 0x30:      # 'a0' телеметрия (LEN=10)
+        if sub == 0x30:      # 'a0' telemetry (LEN=10)
             fields = {'mode': f[3], 'mask': f[5], 'cur_biased': f[6],
                       'abs_i290': f[7], 'status': f[8], 'pct_0x236': (f[9] << 8) | f[10],
                       'flag': f[11], 'bit3_0x244': f[12]}
-        elif sub == 0x31:    # 'a1' батарея (LEN=9)
+        elif sub == 0x31:    # 'a1' battery (LEN=9)
             fields = {'v_0x2e6': f[3], 'batt_pct': f[4], 'u16_0x308': (f[5] << 8) | f[6],
                       'u16_0x30a': (f[7] << 8) | f[8], 'temp_c': f[9],
                       'range': (f[10] << 8) | f[11]}
@@ -760,15 +760,15 @@ def decode_push_frames(data):
 
 
 class UsartTxModel:
-    """A2: модель push-TX pipeline (этап СБОРКИ). Прогоняет РЕАЛЬНЫЙ сборщик 0x211f8
-    (без аргументов — читает фикс. RAM-поля телеметрии), читает TX-кольцо @0x10b5 и
-    декодит кадры через decode_push_frames. Отправку в USART3_DR делает отдельный
-    TX-отправитель (usart_out) — эта модель моделирует именно сборку кадров."""
+    """A2: push-TX pipeline model (ASSEMBLY stage). Runs REAL collector 0x211f8
+    (without arguments — reads fixed RAM telemetry fields), reads TX ring @0x10b5,
+    and decodes frames via decode_push_frames. Delivery to USART3_DR is performed by a separate
+    TX sender (usart_out) — this model simulates frame assembly specifically."""
     def __init__(self, emu):
         self.emu = emu
 
     def assemble(self, run_off=0x211F8, window=(0x10B0, 0x140)):
-        """Прогнать сборщик с текущим RAM-состоянием → список [(raw, sub, fields)]."""
+        """Run collector with current RAM state -> list of [(raw, sub, fields)]."""
         uc = self.emu.uc
 
         def _st(uc_, a, s, u):
@@ -792,35 +792,35 @@ class UsartTxModel:
         return decode_push_frames(data)
 
 
-# A3: внешний SPI-flash (NVM). SPI1 @0x40013000; NVM ≤ 4KB (валидация addr в 0x221e6).
-SPI_FLASH_BASE = 0x40013000   # SPI1 (MOSI/MISO к внешнему flash с NVM)
+# A3: external SPI flash (NVM). SPI1 @0x40013000; NVM <= 4KB (addr validation in 0x221e6).
+SPI_FLASH_BASE = 0x40013000   # SPI1 (MOSI/MISO to external flash with NVM)
 NVM_SIZE = 0x1000             # ≤4KB
 
 class SpiFlashModel:
-    """A3: виртуальный буфер внешнего SPI-flash (NVM) + set/get. Содержимое NVM —
-    runtime-данные устройства (конфиг/калибровка); без live-дампа значения неизвестны
-    → дефолт 0xFF (стёртая flash), буфер settable. SPI-протокол: write-enable 0x221a4
-    (cmd 0x06) + page-program 0x221e6 (addr<0x1000, шаг слота 4Б); NVRAM-save 0x21A08
-    персистит 7+18Б конфига. Полное моделирование SPI-транзакции (MISO-возврат) —
-    остаток: SPI-контекст = struct в RAM (гейт [ctx+0x14] bit31), базу/состояние
-    нужно реконструировать под live."""
+    """A3: virtual buffer for external SPI flash (NVM) + set/get. NVM content is
+    device runtime data (config/calibration); without live dump, values are unknown ->
+    default 0xFF (erased flash), buffer is settable. SPI protocol: write-enable 0x221a4
+    (cmd 0x06) + page-program 0x221e6 (addr<0x1000, slot step 4B); NVRAM-save 0x21A08
+    persists 7+18B of config. Full modeling of SPI transactions (MISO return) —
+    future work: SPI context = struct in RAM (gate [ctx+0x14] bit31), base/state
+    needs reconstruction for live."""
     def __init__(self, emu, size=NVM_SIZE):
         self.emu = emu
         self.size = size
-        self.flash = bytearray(b'\xff' * size)   # виртуальное содержимое NVM
+        self.flash = bytearray(b'\xff' * size)   # virtual NVM content
 
     def set(self, addr, data):
-        """Записать data в NVM по addr (эмуляция page-program)."""
+        """Write data into NVM at addr (emulates page-program)."""
         if addr < 0 or addr + len(data) > self.size:
-            raise ValueError(f'NVM-адрес вне диапазона: {addr}+{len(data)} > {self.size}')
+            raise ValueError(f'NVM address out of range: {addr}+{len(data)} > {self.size}')
         self.flash[addr:addr + len(data)] = data
 
     def get(self, addr, n=1):
-        """Прочитать n байт из NVM по addr (эмуляция read)."""
+        """Read n bytes from NVM at addr (emulates read)."""
         return bytes(self.flash[addr:addr + n])
 
     def seed(self, mapping):
-        """Засеять NVM словарём {addr: int_or_bytes} (для тестов/симуляции)."""
+        """Seed NVM with dict of {addr: int_or_bytes} (for tests/simulation)."""
         for addr, val in mapping.items():
             if isinstance(val, (bytes, bytearray)):
                 self.set(addr, bytes(val))
@@ -828,21 +828,21 @@ class SpiFlashModel:
                 self.set(addr, val.to_bytes(max(1, (val.bit_length() + 7) // 8), 'little'))
 
 
-# B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
+# B1: custom command control block @0x40021000 (u32 fields +0x10/+0x18/+0x1c).
 CMD_CTRL_BASE = 0x40021000
 CMD_CTRL_FIELDS = (0x10, 0x18, 0x1c)
 
 
 class CmdControlModel:
-    """B1: scoped-вид на кастомный блок управления @0x40021000 — ловит set/clear/pulse
-    битов в полях +0x10/+0x18/+0x1c (примитивы 0xc664/0xc684/0xc6a4; dispatcher 0x2e0c,
-    handler 0x97f4). Записи firmware уже в памяти; модель зеркалирует для инспекции
-    «какие управляющие биты пошевелила команда». Точная таблица ID→бит — через command-ID
-    из RX-парсера (B2) / live."""
+    """B1: scoped view into custom control block @0x40021000 — captures set/clear/pulse
+    bits in fields +0x10/+0x18/+0x1c (primitives 0xc664/0xc684/0xc6a4; dispatcher 0x2e0c,
+    handler 0x97f4). Firmware writes land in memory; model mirrors them for inspecting
+    "which control bits were touched by command". Exact ID->bit mapping is resolved via
+    command-ID from RX parser (B2) / live."""
     def __init__(self, emu, base=CMD_CTRL_BASE):
         self.emu = emu
         self.base = base
-        self.ops = []      # [(pc, offset, value)] записи в поля блока
+        self.ops = []      # [(pc, offset, value)] writes to block fields
         self._hook = emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_w,
                                      None, base, base + 0x40)
 
@@ -856,12 +856,12 @@ class CmdControlModel:
         self.emu.uc.mem_write(self.base + off, struct.pack('<I', val & 0xFFFFFFFF))
 
 
-# B2: USART3 RX-протокол (BLE→MCU) — ASCII-command-ID. Парсер 0x1e9e0 (1914 Б).
-# 15 команд (ASCII-символы), 2 категории:
-#   cat=2 (@ G K c)      — response/status-команды;
-#   cat=0xa (остальные)  — SET-params (копируют [d+2] в [r0+3]).
-# RX-кадр: [+1]=cmd(ASCII), [+2]=len/param, [+3..]=payload. Ответные кадры строятся
-# с sub 'd'(0x64)/'K'(0x4b) + sum-chk. Точная семантика полей — по handler-адресам.
+# B2: USART3 RX protocol (BLE->MCU) — ASCII command-IDs. Parser 0x1e9e0 (1914 B).
+# 15 commands (ASCII characters), 2 categories:
+#   cat=2 (@ G K c)      — response/status commands;
+#   cat=0xa (others)     — SET-params (copy [d+2] to [r0+3]).
+# RX frame: [+1]=cmd(ASCII), [+2]=len/param, [+3..]=payload. Response frames are built
+# with sub 'd'(0x64)/'K'(0x4b) + sum-chk. Field semantics derived from handler addresses.
 USART_RX_PARSER = 0x1E9E0
 USART_RX_COMMANDS = {
     '@': (0x1EB92, 2,   'complement-param: val=0xFF-[d+?], store [r0+6]'),
@@ -873,7 +873,7 @@ USART_RX_COMMANDS = {
     'C': (0x1EDBA, 0xA, 'SET: [d+3..d+8] -> RAM bytes'),
     'F': (0x1EE86, 0xA, 'variable-length data copy (len=[d+2], <=0x14) -> buffer'),
     'D': (0x1EEB4, 0xA, 'SET with clamps ([d+3]<=0xfe,[d+4]<=0x64) + u16 pairs'),
-    'E': (0x1EF08, 0xA, 'bulk u16 SET (6 пар из [d+3..d+0xf])'),
+    'E': (0x1EF08, 0xA, 'bulk u16 SET (6 pairs from [d+3..d+0xf])'),
     'H': (0x1EF58, 0xA, 'SET 4B + resp "d"/0x2c len=4'),
     'I': (0x1EFC8, 0xA, 'variable-length copy + resp 0x2e'),
     'J': (0x1F036, 0xA, 'variable-length copy + resp 0x2f'),
@@ -883,29 +883,29 @@ USART_RX_COMMANDS = {
 
 
 def usart_rx_cmd(cmd_byte):
-    """B2: идентифицировать USART3-RX команду по байту (ASCII). Возвращает
-    (handler_off, cat, desc) или None для неизвестного cmd."""
+    """B2: identify USART3-RX command by byte (ASCII). Returns
+    (handler_off, cat, desc) or None for unknown cmd."""
     if isinstance(cmd_byte, int):
         cmd_byte = chr(cmd_byte)
     return USART_RX_COMMANDS.get(cmd_byte)
 
 
-# C1: LUT-блоки range-эстиматора 0x1d898 (u32-слова, шаг 4; значения из NVM/live).
-RANGE_LUT0_OFF = 0x614    # блок0: 0x614..0x6c4
+# C1: LUT blocks of range estimator 0x1d898 (u32 words, step 4; values from NVM/live).
+RANGE_LUT0_OFF = 0x614    # block0: 0x614..0x6c4
 RANGE_LUT0_WORDS = 45
-RANGE_LUT1_OFF = 0x738    # блок1: 0x738..0x808
+RANGE_LUT1_OFF = 0x738    # block1: 0x738..0x808
 RANGE_LUT1_WORDS = 53
-RANGE_FLAG_OFFS = (0x286, 0x290, 0x294, 0x29e, 0x2a8, 0x2ac)   # status-гейты (§73.13)
+RANGE_FLAG_OFFS = (0x286, 0x290, 0x294, 0x29e, 0x2a8, 0x2ac)   # status gates (§73.13)
 
 
 class LutModel:
-    """C1: scoped-вид на LUT-блоки range-эстиматора @RAM+0x614 / RAM+0x738 (u32-слова,
-    шаг 4). Ловит ЧТЕНИЯ firmware (какие оффсеты просканировал 0x1d898), seed/get для
-    synthetic/live значений. Реальные значения — из NVM (live-дамп); дефолт 0. 0x1d898
-    сканирует оба блока, читая каждое слово по разу (табличный проход)."""
+    """C1: scoped view onto range estimator LUT blocks @RAM+0x614 / RAM+0x738 (u32 words,
+    step 4). Captures firmware READS (which offsets 0x1d898 scanned), seed/get for
+    synthetic/live values. Real values come from NVM (live dump); default 0. 0x1d898
+    scans both blocks, reading each word once (table traversal)."""
     def __init__(self, emu):
         self.emu = emu
-        self.reads = set()   # RAM-relative оффсеты, прочитанные firmware
+        self.reads = set()   # RAM-relative offsets read by firmware
         self._hooks = []
         for off, words in ((RANGE_LUT0_OFF, RANGE_LUT0_WORDS),
                            (RANGE_LUT1_OFF, RANGE_LUT1_WORDS)):
@@ -923,31 +923,31 @@ class LutModel:
         self.emu.uc.mem_write(RAM + off, struct.pack('<I', val & 0xFFFFFFFF))
 
     def seed_block(self, off, words):
-        """words: list[int] (или int = константа на всё слово-блока)."""
+        """words: list[int] (or int = constant across entire block)."""
         if isinstance(words, int):
             words = [words]
         for i, w in enumerate(words):
             self.set_word(off + i * 4, w)
 
     def scanned(self, off, words):
-        """True если firmware прочитал все words слов блока @off."""
+        """True if firmware read all words of block @off."""
         return all((off + i * 4) in self.reads for i in range(words))
 
 
-# C2: FOC-рутина 0x1a938 — value-gated pipeline (не дискретный FSM).
+# C2: FOC routine 0x1a938 — value-gated pipeline (not discrete FSM).
 FOC_ROUTINE = 0x1A938
 FOC_REF_OFF = 0x224        # u16 current-reference (upstream input)
 FOC_P_OFF = 0x388          # u32 P = [ref] (1:1, §73.15)
-FOC_PHASE_OFFS = (0x382, 0x384, 0x386)   # u16 PWM-фазы (финальный вывод FOC)
-FOC_PHASE_CENTER = 1125    # center (idle): все фазы = 1125
+FOC_PHASE_OFFS = (0x382, 0x384, 0x386)   # u16 PWM phases (final FOC output)
+FOC_PHASE_CENTER = 1125    # center (idle): all phases = 1125
 
 
 class FocPipelineModel:
-    """C2: scoped-вид на FOC-рутину 0x1a938 как value-gated pipeline (TIM capture ->
-    cross/dot -> inline -> fixed-point -> 2D rotate -> sector -> PWM). НЕ дискретный FSM:
-    ветвления по значениям (токи/пороги), не по state-регистру (§60.3; одиночные byte-
-    флаги путь не меняют). Ловит ВЫХОДЫ (P@0x388, PWM-фазы @0x382/4/6); seed для
-    current-ref @0x224. Transfer: фазы = 1125 ± ~0.0103·|ref| (2-фазный split, §73.14)."""
+    """C2: scoped view onto FOC routine 0x1a938 as value-gated pipeline (TIM capture ->
+    cross/dot -> inline -> fixed-point -> 2D rotate -> sector -> PWM). NOT a discrete FSM:
+    branches on values (currents/thresholds), not state register (§60.3; single byte
+    flags do not alter path). Captures OUTPUTS (P@0x388, PWM phases @0x382/4/6); seed for
+    current-ref @0x224. Transfer: phases = 1125 +/- ~0.0103*|ref| (2-phase split, §73.14)."""
     def __init__(self, emu):
         self.emu = emu
         self.writes = {}   # RAM-off -> last value
@@ -969,25 +969,25 @@ class FocPipelineModel:
                      for o in FOC_PHASE_OFFS)
 
 
-# D1: main-loop диспетчер 0x1f600 — round-robin по N слотам (потолок §74.1).
+# D1: main-loop dispatcher 0x1f600 — round-robin across N slots (ceiling §74.1).
 SCHEDULER_FN = 0x1F600
-SCHED_SLOT_INDEX_OFF = 0x2C2   # byte текущий слот (wrap 0..3)
-SCHED_SLOT_TABLE_OFF = 0xA43   # база slot-descriptor'ов, stride 0x96 (§74)
+SCHED_SLOT_INDEX_OFF = 0x2C2   # byte current slot (wrap 0..3)
+SCHED_SLOT_TABLE_OFF = 0xA43   # base of slot-descriptors, stride 0x96 (§74)
 SCHED_SLOT_STRIDE = 0x96
 SCHED_N_SLOTS = 4
-SCHED_TICK_WORDS_OFF = 0x17F78   # u32-слова tick/last (эмпирика D1)
+SCHED_TICK_WORDS_OFF = 0x17F78   # u32 words tick/last (empirical D1)
 
 
 class SchedulerModel:
-    """D1: scoped-вид на main-loop диспетчер 0x1f600 (round-robin по N слотам). Ловит
-    ЧТЕНИЯ/ЗАПИСИ состояния (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick-слова
-    @0x17F78+); seed для slot_index. **ПОТОЛОК §74.1:** task function-pointers — runtime
-    RAM (set при init); в нулевом RAM dispatch упирается в unmapped fetch (jump to 0) ДО
-    завершения ротации, т.к. 0x1f600 читает byte из slot-descriptor и вызывает 0x1f1c0
-    (store-byte), а исполнение отделено и требует runtime-указателей."""
+    """D1: scoped view onto main-loop dispatcher 0x1f600 (round-robin across N slots). Captures
+    READS/WRITES of state (slot_index @0x2C2, slot-table @0xA43 stride 0x96, tick-words
+    @0x17F78+); seed for slot_index. **LIMITATION §74.1:** task function pointers reside in runtime
+    RAM (set during init); in zero RAM dispatch hits unmapped fetch (jump to 0) BEFORE
+    completing rotation, because 0x1f600 reads byte from slot-descriptor and calls 0x1f1c0
+    (store-byte), while execution is detached and requires runtime pointers."""
     def __init__(self, emu):
         self.emu = emu
-        self.reads = set()   # RAM-relative оффсеты, прочитанные
+        self.reads = set()   # RAM-relative offsets read
         self.writes = {}     # RAM-off -> last value
         self._hr = emu.uc.hook_add(UC_HOOK_MEM_READ, self._on_r,
                                    None, RAM, RAM + 0x20000)
@@ -1009,30 +1009,30 @@ class SchedulerModel:
         return bytes(self.emu.uc.mem_read(RAM + SCHED_SLOT_INDEX_OFF, 1))[0]
 
     def touched(self, off):
-        """True если диспетчер прочитал или записал оффсет @off."""
+        """True if dispatcher read or wrote offset @off."""
         return off in self.reads or off in self.writes
 
 
 class ControlLoop:
-    """§74 Автономный моторный контур — time-driven warm-start.
+    """§74 Autonomous motor loop — time-driven warm-start.
 
-    Виртуальные часы + реальный firmware PID/FOC на каждом tick + поведенческие модели
-    plant/speed/battery/range. НЕ boot от reset и НЕ полный scheduler (slot-table
-    устанавливается runtime, boot-blocked §73.15) — PID/FOC вызываются напрямую на их
-    реальной частоте (валидная абстракция контура: speed-controller → torque → FOC).
+    Virtual clock + real firmware PID/FOC on each tick + behavioral models of
+    plant/speed/battery/range. NOT a boot-from-reset and NOT a complete scheduler (slot-table
+    is populated at runtime, boot-blocked §73.15) — PID/FOC are invoked directly at their
+    actual rates (valid control loop abstraction: speed controller -> torque -> FOC).
 
-    Цепочка на tick:
-      measured_speed → SpeedModel.set_speed (V)          [вход PID]
-      target → PID 0x1d078 → throttle s16[RAM+0x42c]     [реальный firmware]
-      throttle → current-ref u16[RAM+0x224] → FOC 0x1a938 → PWM CCR  [реальный firmware]
+    Tick pipeline:
+      measured_speed -> SpeedModel.set_speed (V)          [PID input]
+      target -> PID 0x1d078 -> throttle s16[RAM+0x42c]     [real firmware]
+      throttle -> current-ref u16[RAM+0x224] -> FOC 0x1a938 -> PWM CCR  [real firmware]
       throttle → MotorModel.step → speed                 [plant, first-order lag]
-      throttle → BatteryModel.discharge → SoC            [разряд]
-      SoC → RangeModel.estimate → запас хода             [closed-form]
+      throttle -> BatteryModel.discharge -> SoC            [battery discharge]
+      SoC -> RangeModel.estimate -> remaining range        [closed-form]
     """
     def __init__(self, emu=None, v_max=522.0, tau=15.0, throttle_ref=28624.0,
                  batt_rate=0.05, run_foc=True):
-        # throttle_ref = full-scale PID-вывода (0x42c ~28624..32760), НЕ 4000 (§73.9 дефолт
-        # дал насыщение plant: speed не сходится к target, а уходит в v_max).
+        # throttle_ref = full-scale PID output (0x42c ~28624..32760), NOT 4000 (§73.9 default
+        # caused plant saturation: speed diverged to v_max instead of converging to target).
         self.emu = emu or McuEmu(max_insn=400000)
         self.sm = SpeedModel(self.emu)
         self.mm = MotorModel(self.emu, v_max=v_max, tau=tau,
@@ -1044,7 +1044,7 @@ class ControlLoop:
         self.now = 0
 
     def setup(self, target, mode=3, soc=100.0):
-        """Засеять RAM: режим, target, power-enable, гейты, батарея (см. §73.9-73.15)."""
+        """Seed RAM: mode, target, power-enable, gates, battery (see §73.9-73.15)."""
         uc = self.emu.uc
         uc.mem_write(RAM, bytes(0x20000))
         uc.mem_write(RAM + 0x229, bytes([mode]))                          # mode
@@ -1063,7 +1063,7 @@ class ControlLoop:
         return (FLASH0 <= aa < FLASH0 + L) or (FLASH1 <= aa < FLASH1 + L)
 
     def _run_pid(self):
-        """Реальный PID 0x1d078 → throttle s16[RAM+0x42c]."""
+        """Real PID 0x1d078 -> throttle s16[RAM+0x42c]."""
         uc = self.emu.uc
         sh = uc.hook_add(UC_HOOK_CODE,
                          lambda u, a, s, ud: u.emu_stop() if not self._in_flash(a & ~1) else None)
@@ -1079,7 +1079,7 @@ class ControlLoop:
         return struct.unpack('<h', uc.mem_read(RAM + THROTTLE_OFF, 2))[0]
 
     def _run_foc(self, current_ref):
-        """Реальный FOC 0x1a938 (R4=RAM+0x040, ref=u16[RAM+0x224]) → PWM CCR."""
+        """Real FOC 0x1a938 (R4=RAM+0x040, ref=u16[RAM+0x224]) -> PWM CCR."""
         uc = self.emu.uc
         r4 = RAM + FOC_CTX_OFF
         uc.mem_write(r4, bytes(0x80))
@@ -1099,7 +1099,7 @@ class ControlLoop:
         return tuple(struct.unpack('<H', uc.mem_read(RAM + o, 2))[0] for o in FOC_CCR_OFFS)
 
     def tick(self):
-        """Один шаг контура. Возвращает dict состояния."""
+        """Single loop step. Returns state dict."""
         self.sm.set_speed(int(self.mm.speed))          # measured speed → PID input
         thr = self._run_pid()                          # real firmware: PID → throttle
         if self.run_foc:
@@ -1111,19 +1111,19 @@ class ControlLoop:
         self.mm.step(thr)                              # plant: throttle → speed
         self.bm.discharge(thr, dt=1.0, rate=self.batt_rate)   # battery
         soc = self.bm.get_soc()
-        v_batt = BatteryModel._raw(int(soc))           # SoC → сырое [415..535]
-        X, R = self.rm.estimate(v_batt)                # запас хода (closed-form)
+        v_batt = BatteryModel._raw(int(soc))           # SoC -> raw [415..535]
+        X, R = self.rm.estimate(v_batt)                # range estimation (closed-form)
         self.now += 1
         return dict(t=self.now, speed=round(self.mm.speed, 1), throttle=thr,
                     pwm_amp=round(amp, 1), soc=round(soc, 2), range=R)
 
     def run(self, ticks):
-        """Прогнать ticks шагов. Возвращает список состояний."""
+        """Run ticks steps. Returns list of states."""
         return [self.tick() for _ in range(ticks)]
 
 
 def find_func_starts():
-    """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
+    """Function entries = push {..,lr} (0xB5xx) prologue in code sections."""
     import struct as _s
     d = open(FW, "rb").read()
     CODE = [(0x01200, 0x02400), (0x02600, 0x10200), (0x10400, 0x10e00),
@@ -1139,10 +1139,10 @@ def find_func_starts():
 
 
 def sweep_writers(target_lo=0x20000A00, target_hi=0x20000C10, cap=8000):
-    """Прогнать каждую функцию и найти те, что пишут в область дескрипторов.
-    Динамический taint — то, чего статика не даёт (база указателя в рантайме)."""
+    """Run each function and identify those writing to descriptor region.
+    Dynamic taint analysis — uncovers runtime base pointers absent in static code."""
     starts = find_func_starts()
-    print(f"[sweep] функций: {len(starts)}, ищу запись в 0x{target_lo:08x}..0x{target_hi:08x}")
+    print(f"[sweep] functions: {len(starts)}, searching writes to 0x{target_lo:08x}..0x{target_hi:08x}")
     hits = {}
     for idx, addr in enumerate(starts):
         emu = McuEmu(trace=False, max_insn=cap)
@@ -1165,10 +1165,10 @@ def sweep_writers(target_lo=0x20000A00, target_hi=0x20000C10, cap=8000):
         if recorded:
             hits[addr] = recorded
         del emu
-    print(f"\n[sweep] функций, пишущих в область дескрипторов: {len(hits)}")
+    print(f"\n[sweep] functions writing to descriptor region: {len(hits)}")
     for addr, recs in sorted(hits.items(), key=lambda kv: -len(kv[1]))[:25]:
         addrs = sorted(set(r[1] for r in recs))
-        print(f"  func 0x{addr:05x}: {len(recs)} записей, адреса "
+        print(f"  func 0x{addr:05x}: {len(recs)} writes, addresses "
               f"{[hex(a) for a in addrs[:8]]}{' …' if len(addrs) > 8 else ''}")
     return hits
 
@@ -1179,11 +1179,11 @@ def main():
     ap.add_argument("--max", type=int, default=200000)
     ap.add_argument("--trace", action="store_true")
     ap.add_argument("--seed-desc", action="store_true",
-                    help="засеять дескрипторы маркерами 0xA0..0xAF")
+                    help="seed descriptors with markers 0xA0..0xAF")
     ap.add_argument("--seed-sched", action="store_true",
-                    help="поднять предусловия планировщика 0x1f600")
+                    help="set up preconditions for scheduler 0x1f600")
     ap.add_argument("--find-writers", action="store_true",
-                    help="прогнать все функции, найти пишущих в дескрипторы")
+                    help="sweep all functions to find descriptor writers")
     a = ap.parse_args()
     if a.find_writers:
         sweep_writers()

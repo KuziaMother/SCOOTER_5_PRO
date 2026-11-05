@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Трасса периферийного footprint полного входа FOC 0x1a938 (с новой диагностикой McuEmu).
-Цель: увидеть, какие TIM/ADC/GPIO-регистры реально трогает FOC, до фолта/зависания."""
+"""Trace of peripheral footprint for full FOC 0x1a938 entry (with new McuEmu diagnostics).
+Goal: see which TIM/ADC/GPIO registers FOC actually touches before fault/hang."""
 import struct
 import sys
 
@@ -17,7 +17,7 @@ FW_LEN = 0x25000
 
 def main():
     emu = McuEmu(trace=False, max_insn=200000)
-    emu.uc.mem_write(RAM, bytes(0x20000))          # чистая RAM
+    emu.uc.mem_write(RAM, bytes(0x20000))          # clean RAM
     emu.hook_periph_ready()                        # periph = 0xFF (ready)
     emu.trace_periph = True
     r4 = RAM + 0x040
@@ -38,20 +38,20 @@ def main():
     except Exception as e:
         print("ex:", str(e)[:80])
     emu.uc.hook_del(sh)
-    print(f"инструкций: {emu.insn}, останов: {emu.stopped}")
+    print(f"instructions: {emu.insn}, stop: {emu.stopped}")
     print(f"PC: 0x{emu.uc.reg_read(11) & 0xFFFFF:05x}")
     emu.report_periph(max_addrs=60)
-    print("\n=== детали записей (pc, addr, size, value) ===")
+    print("\n=== write details (pc, addr, size, value) ===")
     for pc, addr, size, val in emu.periph_writes:
         print(f"  @pc=0x{pc & 0xFFFFF:05x} [0x{addr:08x}] <- 0x{val:x} ({size}B)")
-    print("=== чтения (addr: [pc...]) ===")
+    print("=== reads (addr: [pc...]) ===")
     for addr, pcs in emu.periph_reads.items():
         print(f"  0x{addr:08x}: {[hex(p & 0xFFFFF) for p in pcs]}")
-    # что FOC посчитал в RAM+0x382/384/386 (источники CCR)
+    # what FOC computed in RAM+0x382/384/386 (CCR sources)
     for off in (0x382, 0x384, 0x386):
         v = struct.unpack('<H', emu.uc.mem_read(RAM + off, 2))[0]
         print(f"  RAM+{off:#05x} = {v} ({v:#x})")
-    # детерминизм: 2-й прогон с тем же setup
+    # determinism: 2nd run with the same setup
     w1 = list(emu.periph_writes)
     emu2 = McuEmu(max_insn=200000); emu2.uc.mem_write(RAM, bytes(0x20000))
     emu2.hook_periph_ready(); r4b = RAM + 0x040
@@ -68,8 +68,8 @@ def main():
     except Exception:
         pass
     emu2.uc.hook_del(sh2)
-    print(f"\nдетерминизм: прогон1 записей={len(w1)}, прогон2={len(emu2.periph_writes)}, "
-          f"совпадение={w1 == emu2.periph_writes}")
+    print(f"\ndeterminism: run1 writes={len(w1)}, run2={len(emu2.periph_writes)}, "
+          f"match={w1 == emu2.periph_writes}")
 
 
 if __name__ == '__main__':

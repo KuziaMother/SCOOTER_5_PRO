@@ -1,22 +1,11 @@
 #!/usr/bin/env python
-"""ESP32 (MicroPython) как UART-сниффер линии MCU⇄BLE — захват в RAM через REPL.
+"""ESP32 (MicroPython) UART sniffer for MCU-BLE line — captures into RAM via REPL.
 
-ESP32: Amperka DevKit, COM4, MicroPython v1.28. Образ записан в 0x1000
-(баг платы: бит A12 флеш зажат — см. todo.md B2). UART2: RX=GPIO16, TX=GPIO17.
-
-FFS на этой плате ненадёжен (теряются чанки) — поэтому НИЧЕГО не пишем в файлы:
-сниффер-поток копит байты в bytearray в RAM, хост вытаскивает их hex'ом через REPL.
-
-Подключение к самокату (GD32 USART3, логика 3.3 В, только RX-тап):
-  ESP32 GPIO16 (RX) -> PB10 (USART3_TX GD32)
-  ESP32 GND         -> GND самоката
-  (GPIO17/TX пока не подключать — пассивный режим)
-
-Команды:
+Commands:
   python tools/esp32_sniff.py sniff out.bin [--seconds 60] [--baud 115200]
-      стартует захват, ждёт N секунд, выгружает буфер в out.bin
+      starts capture, waits N seconds, dumps buffer to out.bin
   python tools/esp32_sniff.py check
-      живость REPL + свободная RAM
+      tests REPL responsiveness and free RAM
 """
 import argparse
 import sys
@@ -25,7 +14,7 @@ import time
 try:
     import serial
 except ImportError:
-    sys.exit("нужен pyserial: pip install pyserial")
+    sys.exit("pyserial required: pip install pyserial")
 
 PORT = "COM4"
 BAUD_REPL = 115200
@@ -45,18 +34,18 @@ print("SNIF_OK")
 
 def conn():
     s = serial.Serial(PORT, BAUD_REPL, timeout=2)
-    # ждём готовность REPL: newline -> '>>> ' (баннер после сброса может задерживаться)
+    # wait for REPL readiness: newline -> '>>> ' (banner after reset may be delayed)
     deadline = time.time() + 10
     last_nl = 0.0
     while time.time() < deadline:
         d = s.read(65536)
         if b">>>" in d:
             break
-        if time.time() - last_nl > 1.5:  # REPL молчит — подтолкнуть
+        if time.time() - last_nl > 1.5:  # REPL silent — nudge
             s.write(b"\n")
             last_nl = time.time()
     else:
-        sys.exit("REPL не ответил за 10 с (нет '>>>')")
+        sys.exit("REPL did not respond within 10 s (no '>>>')")
     time.sleep(0.2)
     s.reset_input_buffer()
     return s
@@ -85,13 +74,13 @@ def check():
     out = cmd(s, "import gc; print('CHECK', gc.mem_free())", 1.0)
     line = [l for l in out.splitlines() if l.startswith("CHECK")]
     if not line:
-        sys.exit(f"REPL не отвечает:\n{out}")
-    print("REPL жив, свободная RAM:", line[-1].split()[1], "Б")
+        sys.exit(f"REPL not responding:\n{out}")
+    print("REPL alive, free RAM:", line[-1].split()[1], "B")
     s.close()
 
 
 def probe(s):
-    """Первая команда: если REPL был занят (баннер/main.py) — Ctrl-C и повтор."""
+    """Initial probe command: if REPL was busy (banner/main.py), send Ctrl-C and retry."""
     out = cmd(s, "print('CHECK', 1)", 1.0)
     if "CHECK" not in out:
         s.write(b"\x03")
@@ -105,26 +94,26 @@ def sniff(out_path, seconds, baud):
     s = conn()
     out = probe(s)
     if "CHECK" not in out:
-        sys.exit(f"REPL недоступен (перепрошить: esptool write-flash --erase-all 0x1000 ...):\n{out}")
-    print("запуск захвата:", seconds, "с @", baud)
-    # многострочный ввод в REPL: пустая строка в конце закрывает блоки
+        sys.exit(f"REPL unavailable (reflash: esptool write-flash --erase-all 0x1000 ...):\n{out}")
+    print("starting capture:", seconds, "s @", baud)
+    # multiline input in REPL: empty line at the end closes blocks
     out = cmd(s, START_TMPL.format(baud=baud) + "\n", 1.5)
     if "SNIF_OK" not in out:
-        sys.exit(f"поток не стартовал:\n{out}")
+        sys.exit(f"thread did not start:\n{out}")
     time.sleep(seconds)
     out = cmd(s, "print('SIZE', len(BUF))", 1.0)
     line = [l for l in out.splitlines() if l.startswith("SIZE")]
     size = int(line[-1].split()[1]) if line else -1
     if size < 0:
-        sys.exit(f"не удалось узнать размер буфера:\n{out}")
-    print(f"буфер: {size} Б, выгружаю...")
+        sys.exit(f"failed to determine buffer size:\n{out}")
+    print(f"buffer: {size} B, downloading...")
     data = bytearray()
     pos = 0
     while pos < size:
         out = cmd(s, f"print('H', BUF[{pos}:{pos+512}].hex())", 0.6)
         hline = [l for l in out.splitlines() if l.startswith("H ")]
         if not hline:
-            sys.exit(f"обрыв выгрузки на {pos}/{size}:\n{out}")
+            sys.exit(f"download interrupted at {pos}/{size}:\n{out}")
         data += bytes.fromhex(hline[-1][2:])
         pos += 512
         if pos % 8192 == 0:
@@ -132,7 +121,7 @@ def sniff(out_path, seconds, baud):
     open(out_path, "wb").write(bytes(data))
     cmd(s, "del BUF", 0.5)
     s.close()
-    print(f"сохранено: {out_path} ({len(data)} Б)")
+    print(f"saved: {out_path} ({len(data)} B)")
 
 
 if __name__ == "__main__":

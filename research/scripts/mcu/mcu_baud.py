@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Поиск baud rate UART'ов MCU⇄BLE исполнением (не статикой).
+"""""Search for MCU<->BLE UART baud rate by execution (not static analysis).
 
-Прогоняем каждую функцию mcu_0007.bin под Unicorn и ловим записи в:
-  - USART3 (0x40004800..+0x40) и UART4 (0x40004C00..+0x40): BRR=+0x0C, CR1/2/3;
-  - RCC (0x40021000..+0x40): CR/CFGR — для восстановления PCLK.
+Run each function of mcu_0007.bin under Unicorn and catch writes to:
+  - USART3 (0x40004800..+0x40) and UART4 (0x40004C00..+0x40): BRR=+0x0C, CR1/2/3;
+  - RCC (0x40021000..+0x40): CR/CFGR - to recover PCLK.
 BRR (F1) = mantissa<<4 | fraction, baud = PCLK / (mantissa + fraction/16).
-Из найденных BRR перебором (PCLK, baud) восстанавливаем и то и другое.
+From recovered BRR values, brute-force (PCLK, baud) to recover both.
 """
 import sys
 from pathlib import Path
@@ -27,7 +27,7 @@ REG_NAMES = {
 
 def sweep():
     starts = find_func_starts()
-    print(f"[baud] функций: {len(starts)}")
+    print(f"[baud] functions: {len(starts)}")
     hits = {}   # func -> [(region, addr, size, value)]
     for idx, addr in enumerate(starts):
         emu = McuEmu(trace=False, max_insn=20000)
@@ -52,12 +52,12 @@ def sweep():
             hits[addr] = rec
         del emu
         if (idx + 1) % 200 == 0:
-            print(f"[baud] {idx+1}/{len(starts)} функций, попаданий: {len(hits)}")
+            print(f"[baud] {idx+1}/{len(starts)} functions, hits: {len(hits)}")
     return hits
 
 
 def decode_brr(brr):
-    """Возможные (PCLK, baud) для найденного BRR."""
+    """Possible (PCLK, baud) for discovered BRR."""
     m = brr >> 4
     f = brr & 0xF
     if m == 0:
@@ -69,25 +69,25 @@ def decode_brr(brr):
         else:
             baud = pclk / (m + f / 16.0)
         for std in (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600):
-            if abs(baud - std) / std < 0.005:   # допуск <0.5% (реальные UART так и делают)
+            if abs(baud - std) / std < 0.005:   # tolerance <0.5% (real UARTs do this)
                 out.append((pclk, std))
     return out
 
 
 def main():
     hits = sweep()
-    print(f"\n[baud] функций с записями в USART3/UART4/RCC: {len(hits)}")
+    print(f"\n[baud] functions writing to USART3/UART4/RCC: {len(hits)}")
     for addr, recs in sorted(hits.items(), key=lambda kv: -len(kv[1]))[:30]:
         regs = sorted(set(r[1] for r in recs))
         names = [REG_NAMES.get(r, f"+0x{r:x}") for r in regs]
-        print(f"  func 0x{addr:05x}: {len(recs)} записей: {names[:10]}")
-        # BRR-записи — самое ценное
+        print(f"  func 0x{addr:05x}: {len(recs)} writes: {names[:10]}")
+        # BRR writes - most valuable
         for lo, off, size, val in recs:
             if off == 0x08 and size == 4:
                 reg = "USART3" if lo == USART3[0] else ("UART4" if lo == UART4[0] else "?")
                 cands = decode_brr(val)
-                print(f"    >>> {reg}_BRR <- 0x{val:08x}  варианты: {cands or 'нет точных — смотреть вручную'}")
-        # RCC — для PCLK
+                print(f"    >>> {reg}_BRR <- 0x{val:08x}  candidates: {cands or 'no exact matches - inspect manually'}")
+        # RCC - for PCLK
         for lo, off, size, val in recs:
             if lo == RCC[0] and off in (0x00, 0x08):
                 nm = "RCC_CR" if off == 0 else "RCC_CFGR"

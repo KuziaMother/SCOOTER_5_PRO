@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Разбор btsnoop: ATT write/notify по хендлам (какие каналы реально использует Mi Home)."""
+"""Parse btsnoop: ATT write/notify by handles (which channels Mi Home actually uses)."""
 import struct
 import sys
 from collections import Counter, defaultdict
@@ -25,7 +25,7 @@ while off + 24 <= len(data):
     if len(pkt) < 1:
         continue
     frames += 1
-    if pkt[0] != 0x02:              # только ACL
+    if pkt[0] != 0x02:              # ACL only
         continue
     # ACL: [02][handle+flags u16][acl_len u16][l2cap_len u16][cid u16][att...]
     if len(pkt) < 9:
@@ -44,11 +44,11 @@ while off + 24 <= len(data):
         h = struct.unpack("<H", att[1:3])[0]
         per_handle[h].append((ATT_OPS.get(op, hex(op)), att[3:], ts))
 
-print(f"фреймов: {frames}")
-print("ATT-опкоды:", dict(opcount))
-print("\n=== трафик по хендлам ===")
+print(f"frames: {frames}")
+print("ATT opcodes:", dict(opcount))
+print("\n=== traffic by handles ===")
 for h, items in sorted(per_handle.items()):
     kinds = Counter(k for k, _, _ in items)
-    print(f"\nhandle 0x{h:04x}: {len(items)} шт  {dict(kinds)}")
+    print(f"\nhandle 0x{h:04x}: {len(items)} pkts  {dict(kinds)}")
     for kind, payload, ts in items[:14]:
         print(f"   {kind:<10} {payload.hex()}")

@@ -1,24 +1,26 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scooter 5 Pro — панель</title>
+<title data-i18n="page_title">Scooter 5 Pro — Dashboard</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
-  // Синхронно, до отрисовки — иначе будет вспышка не той темы при перезагрузке.
   (function () {
     try {
       var t = localStorage.getItem("scooter_theme");
       if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      var l = localStorage.getItem("scooter_lang");
+      if (l === "en" || l === "ru") document.documentElement.lang = l;
     } catch (e) {}
   })();
 </script>
 </head>
 <body>
 <div class="corner-actions">
-  <button id="pin-toggle" class="pin-toggle" type="button" title="PIN для разблокировки">🔑</button>
-  <button id="theme-toggle" class="theme-toggle" type="button" title="Светлая/тёмная тема">🌙</button>
+  <button id="lang-toggle" class="lang-toggle" type="button" title="Language / Language switch">🌐 EN</button>
+  <button id="pin-toggle" class="pin-toggle" type="button" title="Unlock PIN">🔑</button>
+  <button id="theme-toggle" class="theme-toggle" type="button" title="Light / Dark theme">🌙</button>
 </div>
 
 <header class="topbar">
@@ -26,16 +28,16 @@
   <span id="badge" class="badge idle">idle</span>
   <div class="topbar-actions">
     <span id="conn" class="conn">—</span>
-    <button id="scooter-toggle" class="scooter-toggle" type="button" title="Мои самокаты — выбор устройства для подключения">📡 —</button>
-    <button id="ridemode-toggle" class="ridemode-toggle" type="button" title="Режим езды — крупные цифры для руля">🏍️</button>
-    <button id="write-toggle" class="write-toggle" type="button" title="Разрешить управление настройками (SET)">🔒 Только чтение</button>
-    <a href="/service" class="scooter-toggle" style="text-decoration:none;" title="Сервис — прошивка">🔧 Сервис</a>
+    <button id="scooter-toggle" class="scooter-toggle" type="button" data-i18n-title="scooter_btn_title" title="My scooters — select device to connect">📡 —</button>
+    <button id="ridemode-toggle" class="ridemode-toggle" type="button" data-i18n-title="ridemode_btn_title" title="Ride mode — large digits for handlebar">🏍️</button>
+    <button id="write-toggle" class="write-toggle" type="button" data-i18n-title="write_btn_title_ro" title="Enable settings control (SET)"><span data-i18n="write_btn_readonly">🔒 Read only</span></button>
+    <a href="/service" class="scooter-toggle" style="text-decoration:none;" data-i18n-title="service_link_title" title="Service — firmware"><span data-i18n="service_link_text">🔧 Service</span></a>
   </div>
 </header>
 
 <section class="panel controls">
   <label>
-    Режим
+    <span data-i18n="mode_label">Mode</span>
     <select id="mode">
       <option value="poll" selected>poll</option>
       <option value="once">once</option>
@@ -43,20 +45,20 @@
     </select>
   </label>
   <label>
-    Интервал, с
+    <span data-i18n="interval_label">Interval, s</span>
     <input id="interval" type="number" min="1" max="60" step="0.5" value="3">
   </label>
   <label>
-    Static-интервал, с
+    <span data-i18n="static_interval_label">Static interval, s</span>
     <input id="static_interval" type="number" min="10" max="600" step="5" value="60">
   </label>
-  <button id="start">Старт</button>
-  <button id="stop" disabled>Стоп</button>
+  <button id="start" data-i18n="start_btn">Start</button>
+  <button id="stop" disabled data-i18n="stop_btn">Stop</button>
   <span class="spacer"></span>
-  <span class="stat">режим: <b id="mode-val">—</b></span>
-  <span class="stat">пуши: <b id="pushes">0</b></span>
-  <span class="stat">rx: <span id="rx">∅</span></span>
-  <span class="stat">обновлено: <b id="updated">—</b></span>
+  <span class="stat"><span data-i18n="stat_mode">mode:</span> <b id="mode-val">—</b></span>
+  <span class="stat"><span data-i18n="stat_pushes">pushes:</span> <b id="pushes">0</b></span>
+  <span class="stat"><span data-i18n="stat_rx">rx:</span> <span id="rx">∅</span></span>
+  <span class="stat"><span data-i18n="stat_updated">updated:</span> <b id="updated">—</b></span>
 </section>
 <div id="msg" class="msg"></div>
 
@@ -66,39 +68,39 @@
   <div id="groups" class="groups"></div>
 
   <section class="panel">
-    <h2 data-icon="📜">История (раунды) <span id="histcount" class="dim"></span></h2>
+    <h2 data-icon="📜"><span data-i18n="history_title">History (rounds)</span> <span id="histcount" class="dim"></span></h2>
     <div id="history" class="log"></div>
   </section>
 
   <section class="panel">
-    <h2 data-icon="🛰️">События</h2>
+    <h2 data-icon="🛰️"><span data-i18n="events_title">Events</span></h2>
     <div id="events" class="log"></div>
   </section>
 </main>
 
-<footer class="dim">
-  Только чтение · bind 127.0.0.1 · секреты (OOB_CODE/SN) скрыты
+<footer class="dim" data-i18n="footer_text">
+  Read-only · bind 127.0.0.1 · secrets (OOB_CODE/SN) hidden
 </footer>
 
 <section id="ridemode" class="ridemode" hidden>
   <div id="rm-fault-banner" class="rm-fault-banner" hidden></div>
   <div class="rm-topbar">
-    <button id="ridemode-exit" class="rm-exit" type="button" aria-label="Выйти из режима езды">✕</button>
+    <button id="ridemode-exit" class="rm-exit" type="button" data-i18n-aria-label="rm_exit_label" aria-label="Exit ride mode">✕</button>
     <div id="rm-chips" class="rm-chips"></div>
   </div>
   <div class="rm-body">
     <aside class="rm-sidebar">
-      <div class="rm-side-stat"><span class="rm-stat-label">Пробег</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
-      <div class="rm-side-stat"><span class="rm-stat-label">Время в пути</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label" data-i18n="rm_trip_dist">Trip</span><span id="rm-trip-dist" class="rm-stat-value">—</span></div>
+      <div class="rm-side-stat"><span class="rm-stat-label" data-i18n="rm_trip_time">Riding time</span><span id="rm-trip-time" class="rm-stat-value">—</span></div>
     </aside>
     <div class="rm-main">
       <div id="rm-mode" class="rm-mode" hidden></div>
-      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit">км/ч</span></div>
+      <div class="rm-speed"><span id="rm-speed-val">—</span><span class="rm-speed-unit" data-i18n="rm_speed_unit">km/h</span></div>
     </div>
   </div>
   <div class="rm-footer">
-    <div class="rm-stat"><span class="rm-stat-label">Заряд</span><span id="rm-battery" class="rm-stat-value">—</span></div>
-    <div class="rm-stat"><span class="rm-stat-label">Запас хода</span><span id="rm-range" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label" data-i18n="rm_battery">Battery</span><span id="rm-battery" class="rm-stat-value">—</span></div>
+    <div class="rm-stat"><span class="rm-stat-label" data-i18n="rm_range">Range</span><span id="rm-range" class="rm-stat-value">—</span></div>
   </div>
 </section>
 
@@ -108,37 +110,38 @@
     <div id="modal-msg" class="modal-msg"></div>
     <input id="modal-input" class="modal-input" type="password" inputmode="numeric" autocomplete="off" hidden>
     <div class="modal-actions">
-      <button id="modal-cancel" type="button" class="modal-btn modal-cancel">Отмена</button>
-      <button id="modal-ok" type="button" class="modal-btn modal-ok">Подтвердить</button>
+      <button id="modal-cancel" type="button" class="modal-btn modal-cancel" data-i18n="modal_cancel">Cancel</button>
+      <button id="modal-ok" type="button" class="modal-btn modal-ok" data-i18n="modal_ok">Confirm</button>
     </div>
   </div>
 </div>
 
 <div id="scooters-overlay" class="modal-overlay" hidden>
   <div class="modal scooters-modal">
-    <div class="modal-title">Мои самокаты</div>
+    <div class="modal-title" data-i18n="scooters_title">My Scooters</div>
     <div id="scooters-list" class="scooters-list"></div>
     <div id="scooters-scan-results" class="scooters-list" hidden></div>
     <div class="modal-actions scooters-modal-actions">
       <div class="scooters-add-actions">
-        <button id="scooters-scan-btn" type="button" class="modal-btn">🔍 Сканировать</button>
-        <button id="scooters-add" type="button" class="modal-btn">+ Вручную</button>
+        <button id="scooters-scan-btn" type="button" class="modal-btn" data-i18n="scooters_scan_btn">🔍 Scan</button>
+        <button id="scooters-add" type="button" class="modal-btn" data-i18n="scooters_add_btn">+ Manual</button>
       </div>
-      <button id="scooters-close" type="button" class="modal-btn modal-ok">Готово</button>
+      <button id="scooters-close" type="button" class="modal-btn modal-ok" data-i18n="modal_done">Done</button>
     </div>
   </div>
 </div>
 
 <div id="ltmk-overlay" class="modal-overlay" hidden>
   <div class="modal ltmk-modal">
-    <div class="modal-title">Получить LTMK</div>
+    <div class="modal-title" data-i18n="ltmk_title">Get LTMK</div>
     <div id="ltmk-body"></div>
     <div class="modal-actions">
-      <button id="ltmk-close" type="button" class="modal-btn modal-ok">Закрыть</button>
+      <button id="ltmk-close" type="button" class="modal-btn modal-ok" data-i18n="modal_close">Close</button>
     </div>
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
 <script src="{{ url_for('static', filename='theme.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

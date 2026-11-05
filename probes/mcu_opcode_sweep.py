@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Перебор опкодов MCU-канала 0x001c (без логина) в поисках телеметрии
-(батарея, скорость, пробег, температура, ошибки).
+Opcode sweep of MCU channel 0x001c (unauthenticated) searching for telemetry
+(battery, speed, mileage, temperature, errors).
 
-БЕЗОПАСНОСТЬ: отправляются ТОЛЬКО однобайтовые кадры [op] — в протоколе MCU
-геттер = [op], сеттер = [op][len][data]. Без len-байта устройство не может
-принять полезную нагрузку, поэтому перебор смещён в сторону чтения.
+SAFETY: sends single-byte frames [op] ONLY — in MCU protocol
+getter = [op], setter = [op][len][data]. Without len-byte device cannot
+accept payload, ensuring queries are purely read operations.
 
-Известные (уже разобранные) опкоды: 0, 1=mcu_version, 3=hardware, 8=serial.
+Known (already decoded) opcodes: 0, 1=mcu_version, 3=hardware, 8=serial.
 
-Запуск:  python mcu_opcode_sweep.py [--max 63] [--mac 2C:19:5C:DE:DE:88]
+Usage:  python mcu_opcode_sweep.py [--max 63] [--mac 2C:19:5C:DE:DE:88]
 """
 import argparse
 import asyncio
@@ -25,7 +25,7 @@ KNOWN = {0: "?", 1: "mcu_version", 3: "hardware", 8: "serial/newSN"}
 
 
 def describe(payload: bytes) -> str:
-    """Догадки о смысле полезной нагрузки."""
+    """Payload interpretation guesses."""
     hints = []
     if payload and all(32 <= c < 127 for c in payload):
         hints.append(f"ascii='{payload.decode('ascii')}'")
@@ -33,16 +33,16 @@ def describe(payload: bytes) -> str:
         v = payload[0]
         hints.append(f"u8={v}")
         if 0 <= v <= 100:
-            hints.append("МОЖЕТ БЫТЬ %")
+            hints.append("MAY BE %")
     if len(payload) == 2:
         le = int.from_bytes(payload, "little")
         be = int.from_bytes(payload, "big")
         hints.append(f"u16le={le} u16be={be}")
         for name, val in (("le", le), ("be", be)):
             if 3000 <= val <= 4300:
-                hints.append(f"МОЖЕТ БЫТЬ мВ ячейки ({name})")
+                hints.append(f"MAY BE cell mV ({name})")
             elif 30000 <= val <= 45000:
-                hints.append(f"МОЖЕТ БЫТЬ мВ пакета/10 ({name})")
+                hints.append(f"MAY BE pack mV/10 ({name})")
     if len(payload) == 4:
         hints.append(f"u32le={int.from_bytes(payload, 'little')}")
     if len(payload) >= 4 and len(payload) % 2 == 0:
@@ -56,7 +56,7 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
     t = Transport(mac)
     await t.connect()
     if CH_MCU not in t.chars:
-        print("[!] характеристика 0x001c не найдена")
+        print("[!] characteristic 0x001c not found")
         return
 
     inbox = []
@@ -65,7 +65,7 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
         if sid(sender) == CH_MCU:
             inbox.append(bytes(data))
 
-    # ядро уже подписалось в connect(); добавим свой сборщик
+    # core already subscribed in connect(); add collector
     await t.client.start_notify(t.chars[CH_MCU], on_mcu)
 
     async def query(op: int, wait: float = 1.0):
@@ -74,9 +74,9 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
         await asyncio.sleep(wait)
         return list(inbox)
 
-    print(f"\n=== перебор опкодов 0..{max_op} на 0x001c ===\n")
+    print(f"\n=== probing opcodes 0..{max_op} on 0x001c ===\n")
     found, silent = [], []
-    # err 0x02 = опкода нет; любой другой код = опкод ЕСТЬ, но кадр не подошёл
+    # err 0x02 = opcode absent; any other code = opcode EXISTS, frame rejected
     unsupported, needs_param = [], []
 
     for op in range(max_op + 1):
@@ -84,17 +84,17 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
         tag = f"[{KNOWN[op]}]" if op in KNOWN else ""
         if not replies:
             silent.append(op)
-            print(f"op {op:>3} {tag:<14} — тишина")
+            print(f"op {op:>3} {tag:<14} — silence")
             continue
         for r in replies:
             if r and r[0] == 0xFF:
                 err = r[3] if len(r) > 3 else None
                 if err == 0x02:
                     unsupported.append(op)
-                    print(f"op {op:>3} {tag:<14} нет опкода   {r.hex()}")
+                    print(f"op {op:>3} {tag:<14} no opcode     {r.hex()}")
                 else:
                     needs_param.append((op, err))
-                    print(f"op {op:>3} {tag:<14} ЕСТЬ, err=0x{err:02x} <<<  {r.hex()}")
+                    print(f"op {op:>3} {tag:<14} EXISTS, err=0x{err:02x} <<< {r.hex()}")
                 continue
             payload = r[2:2 + r[1]] if len(r) >= 2 else b""
             found.append((op, r, payload))
@@ -102,9 +102,9 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
             if payload:
                 print(f"{'':>21}{describe(payload)}")
 
-    # повторный опрос найденных: что меняется = живая телеметрия
+    # re-polling found opcodes: variable values = live telemetry
     if repeat and found:
-        print(f"\n=== повторный опрос отвечающих опкодов ({repeat} проходов) ===")
+        print(f"\n=== re-polling responsive opcodes ({repeat} passes) ===")
         history = {op: [] for op, _, _ in found}
         for _ in range(repeat):
             for op in list(history):
@@ -112,17 +112,17 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
                 r = replies[0] if replies else b""
                 history[op].append(r.hex())
             await asyncio.sleep(0.5)
-        print("\n--- динамика ---")
+        print("\n--- dynamics ---")
         for op, vals in history.items():
             uniq = len(set(vals))
-            mark = "ИЗМЕНЯЕТСЯ <<<" if uniq > 1 else "статично"
+            mark = "CHANGING <<<" if uniq > 1 else "static"
             print(f"op {op:>3}: {mark}  {vals}")
 
-    print("\n=== ИТОГ ===")
-    print(f"отдали данные      : {[op for op, _, _ in found]}")
-    print(f"ЕСТЬ, нужен параметр: {[(op, hex(e)) for op, e in needs_param]}")
-    print(f"нет опкода (err 02) : {len(unsupported)} шт: {unsupported}")
-    print(f"тишина              : {silent}")
+    print("\n=== SUMMARY ===")
+    print(f"returned data      : {[op for op, _, _ in found]}")
+    print(f"EXISTS, needs param: {[(op, hex(e)) for op, e in needs_param]}")
+    print(f"no opcode (err 02) : {len(unsupported)} count: {unsupported}")
+    print(f"silence             : {silent}")
 
     try:
         await t.client.stop_notify(t.chars[CH_MCU])
@@ -134,11 +134,11 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mac", default=MAC_DEFAULT)
-    ap.add_argument("--max", type=int, default=63, help="верхняя граница опкода")
+    ap.add_argument("--max", type=int, default=63, help="upper opcode boundary")
     ap.add_argument("--repeat", type=int, default=3,
-                    help="проходов повторного опроса найденных (0 = выключить)")
+                    help="re-polling passes for discovered opcodes (0 = disable)")
     ap.add_argument("--wait", type=float, default=1.0,
-                    help="пауза после каждого опкода, с")
+                    help="pause after each opcode, s")
     a = ap.parse_args()
     asyncio.run(sweep(a.mac, a.max, a.repeat, a.wait))
 

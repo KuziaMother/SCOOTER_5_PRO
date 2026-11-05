@@ -1,4 +1,10 @@
-# Справочник по функциям BLE-образа (PLAIN-регионы)
+# Справочник по функциям BLE-образа (PLAIN-регионы) / BLE Firmware Function Reference (PLAIN regions)
+
+> 📄 **Язык / Language:** [🇷🇺 Русский](#-русский) · [🇬🇧 English](#-english)
+
+---
+
+## 🇷🇺 Русский
 
 Образ: `ble_2.7.0_0015.bin` (153890 Б), база флеша `0x01800000`.
 Детекция (два прохода): пролог `push {..,lr}` / `push.w {..,lr}` (T4) + подтверждение эпилогом (`pop {..,pc}` / `bx lr` / «pop-lr»+b|bx — pop-lr = `pop {..,lr}` | `ldmfd sp!,{..,lr}` | `ldr lr,[sp]`; косвенный `bx rX`; `b` на трамплин — горячая цель >=3 или блок, начинающийся с эпилога; цепочки трамплинов разрешаются фиксированной точкой по реальным целям ветвлений). Проход 2 расширяет окно только через НЕподтверждённых кандидатов. Граница функции = максимум, достижимый из пролога в верифицированном окне (BFS: fallthrough + ветвления, в т.ч. tbb; bl/bx не разыгрываются) — захватывает split-body/cold-пути. «Размер кода» не включает literal-пулы: компилятор кладёт их далеко (вплоть до следующих функций), поэтому слова пулов печатаются таблицей по абсолютным offset'ам с пометкой «ВНЕ границ».
@@ -17,7 +23,32 @@
 
 Перегенерация: `python research/scripts/gen_functions.py`.
 
-| offset | vaddr | размер | регион | строки | callers |
+---
+
+## 🇬🇧 English
+
+Image: `ble_2.7.0_0015.bin` (153,890 bytes), flash base `0x01800000`.
+Detection (two passes): prologue `push {..,lr}` / `push.w {..,lr}` (T4) + epilogue verification (`pop {..,pc}` / `bx lr` / "pop-lr"+b|bx — where pop-lr = `pop {..,lr}` | `ldmfd sp!,{..,lr}` | `ldr lr,[sp]`; indirect `bx rX`; `b` to trampoline — hot target >=3 or block beginning with an epilogue; trampoline chains resolved by fixed-point iteration over branch targets). Pass 2 expands the window only through unconfirmed candidates. Function boundary = maximum reachable from prologue within verified window (BFS traversal: fallthrough + branches including tbb; bl/bx are not expanded) — capturing split-body and cold paths. "Code size" does not include literal pools: the compiler places them distantly (sometimes across subsequent functions), so pool words are rendered as an absolute-offset table marked "OUTSIDE bounds".
+
+> **Code mode:** PLAIN regions are STRICTLY Thumb mode (no ARM instructions; pattern `E92D` is 32-bit T4 `push.w`, not ARM PUSH). Branch-link (`bl`) targets to `0x15xxxxxx`/`0x16xxxxxx`/`0x17xxxxxx` are runtime-RAM (code copied into SRAM during boot) and do not exist in the raw binary image.
+
+Confirmed functions: **170**; false positives on data: 2.
+
+> **Takeaway:** PLAIN regions contain low-level code (bootloader + flash/OTA driver): the disassembled functions contain ZERO string references — all ldr[pc]/movw-movt literals address peripherals (0x4xxxxxxx), RAM (0x2xxxxxxx / 0x002xxxxx), and internal image addresses. Any "strings" matched via regex in these regions are random byte noise. Genuine strings and readable logic reside exclusively in the encrypted APP region `0x0a200-0x25400` (decrypted only via XIP/SWD on real hardware, see `REPORT.md`).
+
+Distribution of regex "strings" across regions (for reference; in PLAIN regions these are noise):
+- `0x0a200-0x25400` (ENC APP): 1333
+- `0x06000-0x0a200` (PLAIN flash/OTA): 155
+- other: 152
+- `0x00400-0x02a00` (PLAIN bootloader): 113
+
+Regeneration script: `python research/scripts/gen_functions.py`.
+
+---
+
+## Функции / Functions
+
+| offset | vaddr | размер / size | регион / region | строки / strings | callers |
 |---|---|---|---|---|---|
 | [`0x00400`](func_0x00400.md) | `0x01800400` | 34 | заголовок + bootloader | — | 0 |
 | [`0x00438`](func_0x00438.md) | `0x01800438` | 146 | заголовок + bootloader | — | 1 |
@@ -190,7 +221,7 @@
 | [`0x09f4c`](func_0x09f4c.md) | `0x01809f4c` | 52 | flash-драйвер / OTA-код | — | 0 |
 | [`0x09f80`](func_0x09f80.md) | `0x01809f80` | 488 | flash-драйвер / OTA-код | — | 0 |
 
-## Ложные срабатывания детектора (данные, не код)
+## Ложные срабатывания детектора (данные, не код) / False Positives (data, not code)
 
-- `0x01e10` (заголовок + bootloader)
-- `0x0a1f6` (flash-драйвер / OTA-код) — пролог у края PLAIN-региона: тело, вероятно, продолжается в зашифрованной области (эпилог недостижим)
+- `0x01e10` (заголовок + bootloader / header + bootloader)
+- `0x0a1f6` (flash-драйвер / OTA-код / flash driver / OTA code) — пролог у края PLAIN-региона: тело, вероятно, продолжается в зашифрованной области (эпилог недостижим) / prologue at edge of PLAIN region: body likely continues into encrypted area (epilogue unreachable)

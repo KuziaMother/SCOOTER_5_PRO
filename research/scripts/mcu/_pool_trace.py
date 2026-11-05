@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Трассировка RAM-доступов pool-функции.
+"""Tracing RAM accesses of pool function.
 
-Запускает функцию в свежем McuEmu (чистый RAM) и собирает все адреса RAM,
-которые функция читает/пишет. Это раскрывает base-указатель (загружается из
-flash literal-pool автоматически) + смещения полей — то, что нужно для
-pre-populate и верификации stateful-функции.
+Runs function in fresh McuEmu (clean RAM) and collects all RAM addresses
+that the function reads/writes. This reveals base pointer (loaded from
+flash literal-pool automatically) + field offsets — needed for
+pre-populating and verifying stateful functions.
 
-Использование:  python -X utf8 _pool_trace.py 0xADDR [0xADDR2 ...]
+Usage:  python -X utf8 _pool_trace.py 0xADDR [0xADDR2 ...]
 """
 import sys, os
 HERE = os.path.dirname(os.path.abspath(__file__))          # research/scripts/mcu

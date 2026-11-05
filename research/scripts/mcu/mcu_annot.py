@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Аннотированный дизассемблер окна MCU-образа: ldr rX,[pc,#imm] -> значение слова пула.
+"""Annotated disassembler of MCU image window: ldr rX,[pc,#imm] -> pool word value.
 
-Использование: python mcu_annot.py <start> <end> [start end ...]
+Usage: python mcu_annot.py <start> <end> [start end ...]
 """
 import os, struct, sys
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
