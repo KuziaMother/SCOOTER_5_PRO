@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: F405  (имена из star-import от fv_core)
 """E2-b61..63 (8204-9459)."""
 from fv_core import *  # noqa: F401,F403
 from fv_core import _fresh_call, _intercept  # noqa: F401
@@ -486,7 +487,7 @@ def _t_22c70(run, rng):
         exp = enc(v0, a0, a1, k, r6, a8, ex, a10)
         assert got == exp, (f'base={base:#x} a0={a0} a1={a1} k={k} r6={r6:#x} '
                             f'a8={a8} ex={ex} a10={a10:#x} v0={v0:#x}: 0x54={got:#x} ≠ {exp:#x}')
-        assert run.ram_read(0x31A, 1)[0] == 1, f'byte[struct+0x1A] ≠ 1'
+        assert run.ram_read(0x31A, 1)[0] == 1, 'byte[struct+0x1A] ≠ 1'
         assert ret[0] == 0x20000300, f'ret={ret[0]:#x}'
 
 t(0x22C70, 'E2-b62: 0x22c70(ptr,args) DIER-сеттер: base∈{TIM4/5-8}, k∈{0..3}, r6≤0xFF, ex∈{0,1} (иначе спин); [base+0x54]=(v0&0xFFFF8000)|a0<<11|a1<<10|k<<8|r6, &0xEFFF|a8<<12, &0xDFFF|ex<<13, &0xBFFF|a10<<14; byte[struct+0x1A]=1')(_t_22c70)
@@ -629,7 +630,7 @@ def _t_1395c(run, rng):
         gp2 = run.ram_read(P2, 1)[0]
         if p1 == 0:
             assert gp1 == 0 and gp2 == p2, f'P1=0: P1={gp1} P2={gp2}'
-            assert not state['i2c'], f'P1=0: I2C выполнен'
+            assert not state['i2c'], 'P1=0: I2C выполнен'
             continue
         if src != 0:
             assert gp1 == 0 and gp2 == 0, f'SRC={src}: P1={gp1} P2={gp2}'

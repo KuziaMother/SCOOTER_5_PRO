@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: F405  (имена из star-import от fv_core)
 """E1: §74 ControlLoop, модели A/B/C/D, CRC-7/E1 close-out (4332-4902)."""
 from fv_core import *  # noqa: F401,F403
 from fv_core import _fresh_call, _intercept  # noqa: F401

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: F405  (имена из star-import от fv_core)
 """E1: duty/throttle, PB15, batch9, ADC1, §69-73.x модели контура (2326-4331)."""
 from fv_core import *  # noqa: F401,F403
 from fv_core import _fresh_call, _intercept  # noqa: F401

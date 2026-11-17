@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: F405  (имена из star-import от fv_core)
 """E2-batch57 + пороговые счётчики (7177-8203)."""
 from fv_core import *  # noqa: F401,F403
 from fv_core import _fresh_call, _intercept  # noqa: F401

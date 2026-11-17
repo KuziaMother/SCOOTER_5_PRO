@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: F405  (имена из star-import от fv_core)
 """E1: u64/CRC/BCD/getters/RCC/FLASH/I2C/SysTick/интерполяция (стр. 332-2325)."""
 from fv_core import *  # noqa: F401,F403
 from fv_core import _fresh_call, _intercept  # noqa: F401
