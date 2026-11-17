@@ -8201,6 +8201,326 @@ def _t_fbf8(run, rng):
             f'mode={mode} fa1={fa1:#x} f9d={f9d:#x} e90={e90:#x} e92={e92:#x} fbf={fbf:#x}: fa1={got_fa1:#x} e90={got_e90:#x} e92={got_e92:#x} want {exp_fa1:#x}/{exp_e90:#x}/{exp_e92:#x}'
 t(0xFBF8, 'E2-b60: 0xfbf8() threshold #1: A/B(mode 0/2, !бит0 0xFA1): 0xF9D>=0xE755 -> 0x9E0++, >=0x2401 -> set бит0; C: бит0(0xFA1): mode1&0xFBF>=0x64 -> clear+0x9E2=0, иначе 0xF9D>0xB430 -> 0x9E2=0, иначе 0x9E2++, >=0x7E4 -> clear+0x9E2=0')(_t_fbf8)
 
+# --- E2-b61: 8 функций (NVIC setter, retry-счётчик, bulk erase, TIM-init, clamp, TIM-reg update, mode setter, counter-каскад) ---
+
+def _t_21b6c(run, rng):
+    # 0x21b6c(r0): s32(r0) >= 0 → u32[0xE000E100] = 1 << (r0 & 31), ret = 1<<(r0&31)
+    #              s32(r0) <  0 → запись нет, ret = r0
+    for _ in range(12):
+        if rng.getrandbits(1):
+            r0 = rng.choice([0, 1, 5, 16, 31, 32, 33, 40, 0x1F, 0x7FFFFFFF,
+                             rng.getrandbits(31)])
+        else:
+            r0 = rng.choice([0x80000000, 0x80000001, 0xFFFFFFFE, 0xFFFFFFFF,
+                             (0x80000000 | rng.getrandbits(31))])
+        init = rng.getrandbits(32)
+        run.periph_write(0xE000E100, init)
+        ret = run.call(0x21B6C, (r0,), max_insn=1000)
+        got = run.periph_read(0xE000E100)
+        if r0 < 0x80000000:
+            exp = 1 << (r0 & 31)
+            assert got == exp, f'r0={r0:#x}: E100={got:#x}, ждали {exp:#x}'
+            assert ret[0] == exp, f'r0={r0:#x}: ret={ret[0]:#x} ≠ {exp:#x}'
+        else:
+            assert got == init, f'r0={r0:#x}: E100={got:#x} изменился (дали {init:#x})'
+            assert ret[0] == r0, f'r0={r0:#x}: ret={ret[0]:#x} ≠ r0'
+
+t(0x21B6C, 'E2-b61: 0x21b6c(r0) NVIC ISER0 setter: s32(r0)>=0 → u32[0xE000E100]=1<<(r0&31) (ret=значение), иначе skip+ret=r0')(_t_21b6c)
+
+
+def _t_15ce0(run, rng):
+    # 0x15ce0(): gate = byte[0xC7F]; counter = byte[0xC84]
+    #   gate==0 → counter=0, быстрый возврат
+    #   gate!=0 → counter++; counter<=2 → быстрый возврат
+    #              counter==3 → bl 0xd878 + 0xdd80 (I2C-цепочка — спин в эмуляторе)
+    for _ in range(10):
+        gate = rng.choice([0, 0, 1, 2, rng.getrandbits(8)])
+        if gate == 0:
+            cnt = rng.getrandbits(8)
+        else:
+            cnt = rng.choice([0, 1, 2, rng.getrandbits(8)])
+        run.ram_write(0xC7F, bytes([gate]))
+        run.ram_write(0xC84, bytes([cnt]))
+        run.call(0x15CE0, max_insn=5000)
+        got = run.ram_read(0xC84, 1)[0]
+        if gate == 0:
+            assert got == 0, f'gate=0 cnt={cnt}: counter={got:#x} ≠ 0'
+        elif cnt + 1 <= 2:
+            assert got == cnt + 1, f'gate={gate} cnt={cnt}: counter={got:#x} ≠ {cnt+1}'
+        else:
+            assert got == (cnt + 1) & 0xFF, f'gate={gate} cnt={cnt}: counter={got:#x} ≠ {(cnt+1)&0xFF}'
+
+t(0x15CE0, 'E2-b61: 0x15ce0() retry-счётчик: gate byte[0xC7F]==0 → 0xC84=0; иначе 0xC84++ (wrap), ≤2 → return, ==3 → bl 0xd878+0xdd80 (спин в эмуляторе)')(_t_15ce0)
+
+
+def _t_7e70(run, rng):
+    # 0x7e70(base, n): цикл i=0..n-1: ret = 0x7e98(base + i*0x800)
+    #   0x7e98 в эмуляторе всегда возвращает 0 → при n>0 первый сектор → ret 0
+    #   n==0 → цикл не выполняется → ret 1
+    for _ in range(10):
+        n = rng.choice([0, 0, 1, 2, 3, 5])
+        if rng.getrandbits(1):
+            base = 0x08003000 + rng.choice(range(0, 0x10000, 0x800))
+        else:
+            base = rng.getrandbits(32) & ~0x7FF
+        ret = run.call(0x7E70, (base, n), max_insn=200000)
+        if n == 0:
+            assert ret[0] == 1, f'n=0: ret={ret[0]:#x} ≠ 1'
+        else:
+            assert ret[0] == 0, f'base={base:#x} n={n}: ret={ret[0]:#x} ≠ 0'
+
+t(0x7E70, 'E2-b61: 0x7e70(base,n) bulk erase: n==0 → ret1; иначе 0x7e98(base+i*0x800) — в эмуляторе всегда 0 → ret0 после первого сектора')(_t_7e70)
+
+
+def _t_22234(run, rng):
+    # 0x22234(): bl 0x22994 (TIM2/clock init: u32[RAM+0x10]=0xFA0, +0x14=0x190, +0x18=0x28,
+    #   SysTick RVR=0xFFFFFF/CVR/CTRL=5) → затем toggle-цикл P+0x21000 bit0x10 с
+    #   задержками 0x22a0c — в эмуляторе 0x22994 зависает в задержке (CVR-poll),
+    #   toggle-цикл не достигается; наблюдаемо = сайд-эффекты 0x22994 + спин.
+    for _ in range(3):
+        run.periph_write(0x40021000, rng.getrandbits(32))
+        run.periph_write(0xE000E014, 0)
+        run.periph_write(0xE000E018, 0)
+        run.periph_write(0xE000E010, 0)
+        run.call(0x22234, max_insn=30000)
+        r10 = struct.unpack('<I', run.ram_read(0x10, 4))[0]
+        r14 = struct.unpack('<I', run.ram_read(0x14, 4))[0]
+        r18 = struct.unpack('<I', run.ram_read(0x18, 4))[0]
+        assert r10 == 0xFA0, f'u32[0x10]={r10:#x} ≠ 0xfa0'
+        assert r14 == 0x190, f'u32[0x14]={r14:#x} ≠ 0x190'
+        assert r18 == 0x28, f'u32[0x18]={r18:#x} ≠ 0x28'
+        assert run.periph_read(0xE000E014) == 0xFFFFFF, 'SysTick RVR ≠ 0xffffff'
+        assert run.periph_read(0xE000E018) == 0xFFFFFF, 'SysTick CVR ≠ 0xffffff'
+        assert run.periph_read(0xE000E010) == 0x5, f'SysTick CTRL={run.periph_read(0xE000E010):#x} ≠ 0x5'
+        assert run.emu.insn == 30000, f'insn={run.emu.insn}: ожидался спин в задержке'
+
+t(0x22234, 'E2-b61: 0x22234() TIM-init: bl 0x22994 (u32[0x10]=0xFA0/+0x14=0x190/+0x18=0x28, SysTick RVR/CVR=0xFFFFFF CTRL=5) → toggle-цикл P+0x21000 недостижим (спин в задержке 0x22994)')(_t_22234)
+
+
+def _t_e704(run, rng):
+    # 0xe704(): v = s32 u32[RAM+0x138A] (getter 0x1654c);
+    #   v>=0 → |v| = v; v<0 → |v| = -v (v==-2^31 → 0x7FFFFFFF)
+    #   |v| > 0xC8 → byte[RAM+0x1310] = 0, ret 0
+    #   иначе ret = raw u32[0x138A]
+    def ref(v):
+        sv = v - 0x100000000 if v >= 0x80000000 else v
+        if sv >= 0:
+            av = sv
+        elif sv == -0x80000000:
+            av = 0x7FFFFFFF
+        else:
+            av = -sv
+        clear = av > 0xC8
+        return (0 if clear else v), clear
+    for _ in range(12):
+        if rng.getrandbits(1):
+            v = rng.choice([0, 100, 200, 201, 0xFFFFFF9C, 0xFFFFFF38, 0xFFFFFF37,
+                            0xFFFFFF36, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF, 0x1F4])
+        else:
+            v = rng.getrandbits(32)
+        init = rng.getrandbits(8)
+        run.ram_write(0x1310, bytes([init]))
+        run.ram_write(0x138A, struct.pack('<I', v))
+        ret = run.call(0xE704, max_insn=50000)
+        got = run.ram_read(0x1310, 1)[0]
+        exp_ret, clear = ref(v)
+        exp_byte = 0 if clear else init
+        assert ret[0] == exp_ret, f'v={v:#x}: ret={ret[0]:#x} ≠ {exp_ret:#x}'
+        assert got == exp_byte, f'v={v:#x}: byte[0x1310]={got:#x} ≠ {exp_byte:#x}'
+
+t(0xE704, 'E2-b61: 0xe704() clamp: v=s32 u32[0x138A] (0x1654c); |v|>0xC8 → byte[0x1310]=0+ret0; иначе ret=raw (v==-2^31 → |v|=0x7FFFFFFF)')(_t_e704)
+
+
+def _t_22e0c(run, rng):
+    # 0x22e0c(base, args): CCMR1 [base+0x28] = (old & ~0x7300) | (k<<12)
+    #   DIER [base+0x30]: &=~0x10; &=~0x20 | (j<<5)  (j = byte[args+8])
+    #   base == 0x40012C00: ex=byte[args+9] ∈ {0,1} иначе cpsid+спин; &=~0x80|(ex<<7); &=~0x40
+    #   base ∈ {0x40014000, 0x40014400, 0x40014800, 0x40014C00}: без ex-гейта (bits[7:5]=j)
+    #   иначе: [base+0x48] = u32[args+4], return
+    #   xc=byte[args+0xC] ∈ {0,1} иначе спин; xb=byte[args+0xB] ∈ {0,1} иначе спин
+    #   [base+0x04] = (old & ~0xC00) | (xb<<10) | (xc<<11); [base+0x48] = u32[args+4]; ret = base
+    VALID = (0x40014000, 0x40014400, 0x40014800, 0x40014C00)
+    for _ in range(10):
+        base = rng.choice([0x40012C00] + list(VALID) +
+                          [0x40010000 + rng.choice(range(0, 0x2C00, 0x400))])
+        k = rng.getrandbits(2)
+        j = rng.getrandbits(3)
+        ex = rng.choice([0, 1, 2, 3, 7])
+        xb = rng.choice([0, 1, 2])
+        xc = rng.choice([0, 1, 2])
+        u32v = rng.getrandbits(16)
+        old28 = rng.getrandbits(16)
+        old30 = rng.getrandbits(8)
+        old4 = rng.getrandbits(16)
+        old48 = rng.getrandbits(32)
+        run.periph_write(base + 0x28, old28)
+        run.periph_write(base + 0x30, old30)
+        run.periph_write(base + 0x04, old4)
+        run.periph_write(base + 0x48, old48)
+        s = bytearray(0x20)
+        s[0] = k; s[4] = u32v & 0xFF; s[5] = (u32v >> 8) & 0xFF
+        s[8] = j; s[9] = ex; s[0xB] = xb; s[0xC] = xc
+        run.ram_write(0x1000, bytes(s))
+        # модель
+        ccmr1 = (old28 & ~0x7300) | ((k & 3) << 12)
+        dier = (old30 & ~0x10) & ~0x20 | ((j & 7) << 5)
+        spin = None
+        if base == 0x40012C00:
+            if ex not in (0, 1):
+                spin = 'ex'
+            else:
+                dier = (dier & ~0x80) | ((ex & 1) << 7)
+                dier &= ~0x40
+        elif base not in VALID:
+            run.call(0x22E0C, (base, 0x20001000), max_insn=2000)
+            assert run.periph_read(base + 0x28) == ccmr1, f'invalid {base:#x}: CCMR1={run.periph_read(base + 0x28):#x} ≠ {ccmr1:#x}'
+            assert run.periph_read(base + 0x30) == dier, f'invalid {base:#x}: DIER={run.periph_read(base + 0x30):#x} ≠ {dier:#x}'
+            assert run.periph_read(base + 0x48) == u32v, f'invalid {base:#x}: +0x48={run.periph_read(base + 0x48):#x} ≠ {u32v:#x}'
+            assert run.emu.insn < 2000, f'invalid {base:#x}: insn={run.emu.insn}'
+            continue
+        if spin is None and xc not in (0, 1):
+            spin = 'xc'
+        if spin is None and xb not in (0, 1):
+            spin = 'xb'
+        run.call(0x22E0C, (base, 0x20001000), max_insn=2000)
+        assert run.periph_read(base + 0x28) == ccmr1, f'k={k} {base:#x}: CCMR1={run.periph_read(base + 0x28):#x} ≠ {ccmr1:#x}'
+        assert run.periph_read(base + 0x30) == dier, f'j={j} ex={ex} {base:#x}: DIER={run.periph_read(base + 0x30):#x} ≠ {dier:#x}'
+        if spin:
+            assert run.emu.insn == 2000, f'spin={spin}: insn={run.emu.insn}'
+        else:
+            exp4 = (old4 & ~0xC00) | ((xb & 1) << 10) | ((xc & 1) << 11)
+            assert run.periph_read(base + 0x04) == exp4, \
+                f'xb={xb} xc={xc}: +0x4={run.periph_read(base + 0x04):#x} ≠ {exp4:#x}'
+            assert run.periph_read(base + 0x48) == u32v, f'+0x48={run.periph_read(base + 0x48):#x} ≠ {u32v:#x}'
+            assert run.emu.insn < 2000, f'не спин, а insn={run.emu.insn}'
+
+t(0x22E0C, 'E2-b61: 0x22e0c(base,args) TIM-reg update: CCMR1=(old&~0x7300)|(k<<12); DIER: &=~0x10, &=~0x20|(j<<5); 0x40012C00: ex∈{0,1}+&=~0x80|(ex<<7)+&=~0x40; TIM5/6/7/8: без ex; иначе +0x48=u32[args+4]; xc/xb∈{0,1} (иначе спин); +0x4=(old&~0xC00)|(xb<<10)|(xc<<11)')(_t_22e0c)
+
+
+def _t_17554(run, rng):
+    # 0x17554(r0): r0 ∈ {0,1} → byte[RAM+0x11C] = r0; ret = r0
+    for _ in range(10):
+        if rng.getrandbits(1):
+            a = rng.choice([0, 1])
+        else:
+            a = rng.choice([2, 3, 5, 0xFF, 0x100, 0x80000000, rng.getrandbits(32)])
+        init = rng.getrandbits(8)
+        run.ram_write(0x11C, bytes([init]))
+        ret = run.call(0x17554, (a,), max_insn=1000)
+        got = run.ram_read(0x11C, 1)[0]
+        exp = a if a in (0, 1) else init
+        assert got == exp, f'arg={a:#x}: byte[0x11C]={got:#x} ≠ {exp:#x}'
+        assert ret[0] == (a & M32), f'arg={a:#x}: ret={ret[0]:#x} ≠ {a:#x}'
+
+t(0x17554, 'E2-b61: 0x17554(r0) mode setter: r0 ∈ {0,1} → byte[0x11C]=r0; иначе нет записи; ret=r0')(_t_17554)
+
+
+def _t_2186c(run, rng):
+    # 0x2186c(): каскад счётчиков @RAM+0x2B0..0x2BA (u16b0=0 в тесте — 0x19968(0,·)=0)
+    #   cnt=u16[0x2BA] < 1000 → ничего
+    #   иначе cnt=0; c2=(b9+1)&FF; c2<0x3C → стоп
+    #   b9=0; c3=(b8+1)&FF; c3<0x3C → стоп
+    #   b8=0; c4=(b7+1)&FF; cap = 0x18 если b5==1 else 0x0C; c4<cap → стоп
+    #   b7=0; дальше по b5/b6/b2 (см. модель)
+    def ref(cnt, b9, b8, b7, b6, b5, b4, b3, b2):
+        st = {'b9': b9, 'b8': b8, 'b7': b7, 'b6': b6, 'b4': b4, 'b3': b3, 'b2': b2}
+        if cnt < 1000:
+            return None
+        st['b9'] = (b9 + 1) & 0xFF
+        if st['b9'] < 0x3C:
+            return st
+        st['b9'] = 0
+        st['b8'] = (b8 + 1) & 0xFF
+        if st['b8'] < 0x3C:
+            return st
+        st['b8'] = 0
+        st['b7'] = (b7 + 1) & 0xFF
+        cap = 0x18 if b5 == 1 else 0x0C
+        if st['b7'] < cap:
+            return st
+        st['b7'] = 0
+        ip = (b4 + 1) & 0xFF
+        r1b3 = (b3 + 1) & 0xFF
+        r2b2 = (b2 + 1) & 0xFF
+        if b5 == 1:
+            st['b4'] = ip
+            st['b3'] = r1b3 if r1b3 <= 7 else 1
+            if b2 == 2:
+                if ip > 0x1D:
+                    st['b4'] = 1
+                    st['b2'] = 3
+                return st
+            if b2 in (4, 6, 9, 0xB):
+                if ip > 0x1E:
+                    st['b4'] = 1
+                    st['b2'] = r2b2
+                if st['b2'] > 0xC:
+                    st['b2'] = 1
+                return st
+            if ip > 0x1F:
+                st['b4'] = 1
+                st['b2'] = r2b2
+            if st['b2'] > 0xC:
+                st['b2'] = 1
+            return st
+        # b5 == 0
+        st['b6'] = (b6 + 1) & 1
+        if st['b6'] == 0:
+            st['b4'] = ip
+            st['b3'] = r1b3 if r1b3 <= 7 else 1
+        if b2 == 2:
+            if st['b4'] > 0x1D:
+                st['b4'] = 1
+                st['b2'] = 3
+            return st
+        if b2 in (4, 6, 9, 0xB):
+            if st['b4'] > 0x1E:
+                st['b4'] = 1
+                st['b2'] = r2b2
+            if st['b2'] > 0xC:
+                st['b2'] = 1
+            return st
+        if st['b4'] > 0x1F:
+            st['b4'] = 1
+            st['b2'] = r2b2
+        if st['b2'] > 0xC:
+            st['b2'] = 1
+        return st
+
+    OFFS = {'b9': 0x2B9, 'b8': 0x2B8, 'b7': 0x2B7, 'b6': 0x2B6,
+            'b5': 0x2B5, 'b4': 0x2B4, 'b3': 0x2B3, 'b2': 0x2B2}
+    for _ in range(14):
+        fam = rng.getrandbits(4)
+        cnt = rng.choice([0, 500, 999, 1000, 63488, 0xFFFF]) if fam >= 2 else rng.choice([0, 999])
+        b9 = rng.choice([0, 0x3B, 0x3C, 0xFF]) if fam >= 4 else rng.choice([0, 1])
+        b8 = rng.choice([0, 0x3B, 0x3C]) if fam >= 6 else rng.choice([0, 1])
+        b7 = rng.choice([0, 0xB, 0xC, 0x16, 0x17, 0x18]) if fam >= 8 else rng.choice([0, 0xB])
+        b6 = rng.getrandbits(1)
+        b5 = rng.getrandbits(1) if fam >= 10 else 0
+        b4 = rng.choice([0, 1, 0x1C, 0x20]) if fam >= 12 else 0
+        b3 = rng.choice([0, 6, 7, 8]) if fam >= 13 else 0
+        b2 = rng.choice([0, 2, 4]) if fam >= 13 else 0
+        seed = dict(b9=b9, b8=b8, b7=b7, b6=b6, b5=b5, b4=b4, b3=b3, b2=b2)
+        run.ram_write(0x2BA, struct.pack('<H', cnt))
+        for name, off in OFFS.items():
+            run.ram_write(off, bytes([seed[name]]))
+        run.ram_write(0x2B0, struct.pack('<H', 0))
+        run.call(0x2186C, max_insn=50000)
+        exp = ref(cnt, b9, b8, b7, b6, b5, b4, b3, b2)
+        got_cnt = struct.unpack('<H', run.ram_read(0x2BA, 2))[0]
+        if exp is None:
+            assert got_cnt == cnt, f'cnt={cnt}: u16[0x2BA]={got_cnt:#x} изменился'
+        else:
+            assert got_cnt == 0, f'cnt={cnt}: u16[0x2BA]={got_cnt:#x} ≠ 0'
+        for name, off in OFFS.items():
+            g = run.ram_read(off, 1)[0]
+            e = exp[name] if exp and name in exp else seed[name]
+            assert g == e, f'{name}@0x{off:x}: {g:#x} ≠ {e:#x} (fam={fam} cnt={cnt} b9={b9:#x} b8={b8:#x} b7={b7:#x} b5={b5} b6={b6} b4={b4:#x} b3={b3:#x} b2={b2:#x})'
+        assert run.emu.insn < 50000, f'insn={run.emu.insn}: спин?'
+
+t(0x2186C, 'E2-b61: 0x2186c() counter-каскад: u16[0x2BA]≥1000 → =0, b9++(cap 0x3C), b8++(cap 0x3C), b7++(cap 0xC/0x18 по b5), далее b6-toggle/b4/b3-цепочка и b2-dispatch {2,4,6,9,0xB}')(_t_2186c)
+
+
 
 if __name__ == '__main__':
     sys.exit(main())
