@@ -36,6 +36,7 @@ import fv_tests_e2e  # noqa: F401,E402  (E2-batch49..53)
 import fv_tests_e2f  # noqa: F401,E402  (E2-batch54..56)
 import fv_tests_e2g  # noqa: F401,E402  (E2-batch57 + пороговые счётчики)
 import fv_tests_e2h  # noqa: F401,E402  (E2-b61..63)
+import fv_tests_e2i  # noqa: F401,E402  (E2-b64)
 
 if __name__ == '__main__':
     sys.exit(main())
