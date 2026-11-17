@@ -8973,5 +8973,489 @@ t(0xE408, 'E2-b62: 0xe408(t,mn,rate,sb + стек [SP0+0]=below fp-src, [SP0+4]=
 
 
 
+def _cleanc(run):
+    """чистый возврат: LR-sentinel даёт FETCH_UNMAPPED — это норма для run.call()"""
+    le = run.last_error
+    assert le in (None, 'Invalid memory fetch (UC_ERR_FETCH_UNMAPPED)'), le
+
+# --- E2-b63: 8 функций (WWDG CFR/CR-декодеры, threshold #5, threshold-счётчик #2, signed fixed-point, double bsearch u32/u16, u16-бит setter) ---
+
+def _t_cc1c(run, rng):
+    """0xcc1c(mode, out*): v=u32[0x40002804]&0x00FFFF3F (WWDG CFR).
+    out[3]=(v>>16)&0xFF, out[1]=(v>>8)&0x1F, out[2]=v&0x3F, out[0]=(v>>13)&0x7.
+    mode==0 → out[1..3] = BCD→десятичный (0xc9a8: hi*10+lo); out[0] не кодируется."""
+    OUT = 0x500
+    for _ in range(12):
+        mode = rng.choice([0, 1])
+        v = rng.getrandbits(32)
+        run.periph_write(0x40002804, v)
+        run.ram_write(OUT, bytes(4))
+        ret = run.call(0xCC1C, (mode, RAM + OUT), max_insn=2000)
+        _cleanc(run)
+        m = v & 0x00FFFF3F
+        o3 = (m >> 16) & 0xFF
+        o1 = (m >> 8) & 0x1F
+        o2 = m & 0x3F
+        o0 = (m >> 0xD) & 0x7
+        if mode == 0:
+            o3 = (o3 >> 4) * 10 + (o3 & 0xF)
+            o1 = (o1 >> 4) * 10 + (o1 & 0xF)
+            o2 = (o2 >> 4) * 10 + (o2 & 0xF)
+        got = run.ram_read(OUT, 4)
+        assert got[0] == o0, f'v={v:#x} mode={mode}: out[0]={got[0]} ≠ {o0}'
+        assert got[1] == o1, f'v={v:#x} mode={mode}: out[1]={got[1]} ≠ {o1}'
+        assert got[2] == o2, f'v={v:#x} mode={mode}: out[2]={got[2]} ≠ {o2}'
+        assert got[3] == o3, f'v={v:#x} mode={mode}: out[3]={got[3]} ≠ {o3}'
+
+def _t_ccbc(run, rng):
+    """0xccbc(mode, out*): v=u32[0x40002800]&0x007F7F7F (WWDG CR).
+    out[0]=(v>>16)&0x3F, out[1]=(v>>8)&0x7F, out[2]=v&0x7F, out[3]=(v>>16)&1.
+    mode==0 → out[0..2] = BCD→десятичный (0xc9a8); out[3] не кодируется."""
+    OUT = 0x500
+    for _ in range(12):
+        mode = rng.choice([0, 1])
+        v = rng.getrandbits(32)
+        run.periph_write(0x40002800, v)
+        run.ram_write(OUT, bytes(4))
+        ret = run.call(0xCCBC, (mode, RAM + OUT), max_insn=2000)
+        _cleanc(run)
+        m = v & 0x007F7F7F
+        o0 = (m >> 16) & 0x3F
+        o1 = (m >> 8) & 0x7F
+        o2 = m & 0x7F
+        o3 = 0x40 if (m & 0x400000) else 0   # (v&0x400000)>>0x10
+        if mode == 0:
+            o0 = (o0 >> 4) * 10 + (o0 & 0xF)
+            o1 = (o1 >> 4) * 10 + (o1 & 0xF)
+            o2 = (o2 >> 4) * 10 + (o2 & 0xF)
+        got = run.ram_read(OUT, 4)
+        assert got[0] == o0, f'v={v:#x} mode={mode}: out[0]={got[0]} ≠ {o0}'
+        assert got[1] == o1, f'v={v:#x} mode={mode}: out[1]={got[1]} ≠ {o1}'
+        assert got[2] == o2, f'v={v:#x} mode={mode}: out[2]={got[2]} ≠ {o2}'
+        assert got[3] == o3, f'v={v:#x} mode={mode}: out[3]={got[3]} ≠ {o3}'
+
+def _t_f40c(run, rng):
+    """0xf40c(): threshold #5 (без push) + tail-блок 0xf4d8 (threshold #4) —
+    функция падает в него перед bx lr (0xf5a4). gate = bit4 byte[0xF72]
+    (toggle-флаг; тот же байт, что и gate4=bit0):
+    v1=u16[0xF9D], v2=u16[0xF9B] (RAM), d=|v1-v2|:
+    gate=0: d < u16[0x19D8E+0x12] (flash) → u16[0xA2A]=0;
+      u16[0xF9B] ≤ 0xC1C → u16[0xA2A]=0; иначе u16[0xA2A]+=1;
+      cap u16[0x19D8E+0x16] ≤ new → byte[0xF72]|=0x10, u16[0xA2A]=0
+    gate=1: d > u16[0x19D8E+0x14] → u16[0xA2C]=0; иначе u16[0xA2C]+=1;
+      cap u16[0x19D8E+0x18] ≤ new → byte[0xF72]&=~0x10, u16[0xA2C]=0
+    tail (gate4=bit0 byte[0xF72]):
+    gate4=0: d < u16[0x19D8E+2] или u16[0xF9B] ≤ 0xC1C → u16[0xA26]=0, ret=0;
+      иначе u16[0xA26]+=1; cap u16[0x19D8E+6] ≤ new → byte[0xF72]|=1, 0xA26=0, ret=0;
+      else ret=u16[0x19D8E+6]
+    gate4=1: d > u16[0x19D8E+4] → u16[0xA28]=0, ret=0; иначе u16[0xA28]+=1;
+      cap u16[0x19D8E+8] ≤ new → byte[0xF72]&=~1, 0xA28=0, ret=0; else ret=u16[0x19D8E+8]"""
+    FL = 0x08019D8E
+    for _ in range(16):
+        gb = rng.getrandbits(8)
+        v1 = rng.getrandbits(16)
+        v2 = rng.getrandbits(16)
+        w = {off: rng.getrandbits(16) for off in (2, 4, 6, 8, 0x12, 0x14, 0x16, 0x18)}
+        cnt_a = rng.getrandbits(16)
+        cnt_b = rng.getrandbits(16)
+        cnt_26 = rng.getrandbits(16)
+        cnt_28 = rng.getrandbits(16)
+        run.ram_write(0xF72, bytes([gb]))
+        run.ram_write(0xF95 + 6, struct.pack('<H', v2))
+        run.ram_write(0xF95 + 8, struct.pack('<H', v1))
+        run.ram_write(0xA2A, struct.pack('<H', cnt_a))
+        run.ram_write(0xA2C, struct.pack('<H', cnt_b))
+        run.ram_write(0xA26, struct.pack('<H', cnt_26))
+        run.ram_write(0xA28, struct.pack('<H', cnt_28))
+        for off, val in w.items():
+            run.uc.mem_write(FL + off, struct.pack('<H', val))
+        d = abs(v1 - v2)
+        ret = run.call(0xF40C, (), max_insn=2000)
+        _cleanc(run)
+        # --- модель ---
+        e_a, e_b, e_26, e_28, e_gb, e_ret = cnt_a, cnt_b, cnt_26, cnt_28, gb, 0
+        gate = (gb >> 4) & 1
+        if gate == 0:
+            if d < w[0x12] or v2 <= 0xC1C:
+                e_a = 0
+            else:
+                new = (cnt_a + 1) & 0xFFFF
+                e_a = new
+                if w[0x16] <= new:
+                    e_gb = (gb & ~0x10) | 0x10
+                    e_a = 0
+        else:
+            if d > w[0x14]:
+                e_b = 0
+            else:
+                new = (cnt_b + 1) & 0xFFFF
+                e_b = new
+                if w[0x18] <= new:
+                    e_gb = gb & ~0x10
+                    e_b = 0
+        gate4 = e_gb & 1
+        if gate4 == 0:
+            if d < w[2] or v2 <= 0xC1C:
+                e_26 = 0
+                e_ret = 0
+            else:
+                new = (cnt_26 + 1) & 0xFFFF
+                e_26 = new
+                if w[6] <= new:
+                    e_gb = (e_gb & ~1) | 1
+                    e_26 = 0
+                    e_ret = 0
+                else:
+                    e_ret = w[6]
+        else:
+            if d > w[4]:
+                e_28 = 0
+                e_ret = 0
+            else:
+                new = (cnt_28 + 1) & 0xFFFF
+                e_28 = new
+                if w[8] <= new:
+                    e_gb = e_gb & ~1
+                    e_28 = 0
+                    e_ret = 0
+                else:
+                    e_ret = w[8]
+        # --- проверка ---
+        f72 = run.ram_read(0xF72, 1)[0]
+        got_a = struct.unpack('<H', run.ram_read(0xA2A, 2))[0]
+        got_b = struct.unpack('<H', run.ram_read(0xA2C, 2))[0]
+        got_26 = struct.unpack('<H', run.ram_read(0xA26, 2))[0]
+        got_28 = struct.unpack('<H', run.ram_read(0xA28, 2))[0]
+        assert ret[0] == e_ret,             f'gb={gb:#x} d={d}: ret={ret[0]:#x} ≠ {e_ret:#x}'
+        assert f72 == e_gb, f'gb={gb:#x}: F72={f72:#x} ≠ {e_gb:#x}'
+        assert got_a == e_a, f'A2A={got_a:#x} ≠ {e_a:#x}'
+        assert got_b == e_b, f'A2C={got_b:#x} ≠ {e_b:#x}'
+        assert got_26 == e_26, f'A26={got_26:#x} ≠ {e_26:#x}'
+        assert got_28 == e_28, f'A28={got_28:#x} ≠ {e_28:#x}'
+
+def _t_fcd0(run, rng):
+    """0xfcd0(): threshold-счётчик #2, ДВЕ фазы (ret ≠ 0 на нек-рых путях).
+    Фаза 1: gate = byte[0x80] ∈ {1,2} И bit3 byte[0xFA1]==0:
+      v=u16[0xF9B] > ref=u16[0x19DAA+0xE] → u16[0x9FC]=0;
+      иначе u16[0x9FC]+=1; cap=u16[0x19DAA+0x12] ≤ new → FA1|=8, 9FC=0, 9FE=0,
+      ret=0; else ret=cap (р0 несёт cap дальше)
+    Фаза 2 (всегда, если bit3 FA1):
+      byte[0x80]==0 И u32[0xFBB+4] ≥ 0x64 → FA1&=~8, 9FE=0, ret=0;
+      иначе (byte[0x80]≠0 или u32[0xFBB+4]<0x64):
+        v < u16[0x19DAA+0x10] → 9FE=0, ret=0;
+        иначе 9FE+=1; cap2=u16[0x19DAA+0x14] ≤ new2 → FA1&=~8, 9FE=0, ret=0;
+        else ret=cap2"""
+    FL = 0x08019DAA
+    for _ in range(14):
+        b80 = rng.choice([0, 0, 1, 2, 3])
+        fa1 = (rng.getrandbits(8) & ~8) | (rng.choice([0, 0, 1]) << 3)
+        v = rng.getrandbits(16)
+        ref_e = rng.choice([v, v - 1 if v else 0, v + 1, rng.getrandbits(16)])
+        ref_10 = rng.choice([v, v - 1 if v else 0, v + 1, rng.getrandbits(16)])
+        cnt_fc = rng.getrandbits(16)
+        cnt_fe = rng.getrandbits(16)
+        fbf = rng.getrandbits(32)
+        cap_12 = rng.getrandbits(16)
+        cap_14 = rng.getrandbits(16)
+        run.ram_write(0x80, bytes([b80]))
+        run.ram_write(0xFA1, bytes([fa1]))
+        run.ram_write(0xF95 + 6, struct.pack('<H', v))
+        run.ram_write(0x9FC, struct.pack('<H', cnt_fc))
+        run.ram_write(0x9FE, struct.pack('<H', cnt_fe))
+        run.ram_write(0xFBB + 4, struct.pack('<I', fbf))
+        run.uc.mem_write(FL + 0xE, struct.pack('<H', ref_e))
+        run.uc.mem_write(FL + 0x10, struct.pack('<H', ref_10))
+        run.uc.mem_write(FL + 0x12, struct.pack('<H', cap_12))
+        run.uc.mem_write(FL + 0x14, struct.pack('<H', cap_14))
+        ret = run.call(0xFCD0, (), max_insn=2000)
+        _cleanc(run)
+        # --- модель ---
+        e_fa1, e_fc, e_fe, e_ret = fa1, cnt_fc, cnt_fe, 0
+        if b80 in (1, 2) and not (e_fa1 & 8):
+            if v > ref_e:   # ldrh → zero-extend → сравнение unsigned
+                e_fc = 0
+            else:
+                new = (cnt_fc + 1) & 0xFFFF
+                e_fc = new
+                if cap_12 <= new:
+                    e_fa1 |= 8
+                    e_fc = 0
+                    e_fe = 0
+                    e_ret = 0
+                else:
+                    e_ret = cap_12
+        if e_fa1 & 8:
+            if b80 == 0 and fbf >= 0x64:
+                e_fa1 &= ~8
+                e_fe = 0
+                e_ret = 0
+            else:
+                if v < ref_10:   # unsigned
+                    e_fe = 0
+                    e_ret = 0
+                else:
+                    new2 = (e_fe + 1) & 0xFFFF
+                    e_fe = new2
+                    if cap_14 <= new2:
+                        e_fa1 &= ~8
+                        e_fe = 0
+                        e_ret = 0
+                    else:
+                        e_ret = cap_14
+        else:
+            e_ret = 0     # фаза 2 с бит3=0 затирает r0 (ubfx) → ret=0
+        # --- проверка ---
+        g_fa1 = run.ram_read(0xFA1, 1)[0]
+        g_fc = struct.unpack('<H', run.ram_read(0x9FC, 2))[0]
+        g_fe = struct.unpack('<H', run.ram_read(0x9FE, 2))[0]
+        assert ret[0] == (e_ret & M32),             f'b80={b80} fa1={fa1:#x} v={v} fbf={fbf:#x}: ret={ret[0]:#x} ≠ {e_ret:#x}'
+        assert g_fa1 == e_fa1, f'FA1={g_fa1:#x} ≠ {e_fa1:#x}'
+        assert g_fc == e_fc, f'9FC={g_fc:#x} ≠ {e_fc:#x}'
+        assert g_fe == e_fe, f'9FE={g_fe:#x} ≠ {e_fe:#x}'
+
+def ref_19b64(a, b, a2=0):
+    """0x19b64(a,b) — signed fixed-point умножение/нормализация (bit-точная модель).
+    r2 = u32[0x19C68] = 0x0059460E (константа; r3 = её sign-bit = 0)."""
+    a &= M32
+    b &= M32
+    r0s = (a << 1) & M32
+    if r0s == 0:
+        return 0
+    r2s = (b << 1) & M32
+    if r2s == 0:
+        return 0
+    r1 = (r0s >> 24) + (r2s >> 24)    # полный u32 (без & 0xFF)
+    r0 = ((a << 9) & M32) >> 9     # a & 0x7FFFFF
+    r2 = ((b << 9) & M32) >> 9     # b & 0x7FFFFF
+    r4 = (r0 + r2) & M32
+    r5 = (r4 << 7) & M32
+    prod = (r2 * r0) & M32
+    r6 = (r4 << 0x17) & M32
+    prod_hi = ((r2 >> 8) * (r0 >> 8)) & M32
+    r4a = (prod + r6) & M32
+    r2a = (prod_hi + r5) & M32
+    r2a = ((M32 - (r4a >> 16)) + r2a) & M32
+    r2b = (r2a >> 16)
+    r2b = (r2b + 1 + 0x4000) & M32
+    r2b = (r2b << 16) & M32
+    r1s = (r1 - 0x7F) & M32
+    r4a_sh = (r4a << 16) & M32
+    if r4a_sh != 0:                # beq после lsls r4: инкремент при r4a_sh != 0
+        r2b = (r2b + 1) & M32
+    # orrs r0, r2: r0 = (r4a >> 16) (от lsrs 0x19b96) | r2b
+    r0 = (r2b | ((r4a >> 16) & 0xFFFF)) & M32
+    if (r0 >> 31) == 0:
+        r0 = (r0 << 1) & M32
+        r1s = (r1s - 1) & M32
+    lo = r0 & 0xFF            # uxtb ПОСЛЕ нормализации <<1
+    r0 = ((((r1s << 24) & M32) + (r0 >> 7) + 1) & M32) >> 1   # adds mod 2^32
+    if lo == 0x80:
+        r0 = ((r0 >> 1) << 1) & M32
+    if (r1s & 0x80000000):
+        r0 = 0
+    r3 = ((a2 ^ b) & M32) & 0x80000000   # eor r2,a2 → sign-bit; а2 обычно 0
+    return (r0 | r3) & M32               # orrs r0, r3 (даже при r1s<0)
+
+def _t_19b64(run, rng):
+    """0x19b64(a,b): signed fixed-point умножение/нормализация (см. ref_19b64)."""
+    for _ in range(30):
+        a = rng.choice([0, 1, -1, 0x40000000, -0x40000000,
+                        rng.getrandbits(16), -rng.getrandbits(16),
+                        rng.getrandbits(32), -rng.getrandbits(32)])
+        b = rng.choice([0, 1, -1, 0x40000000, -0x40000000,
+                        rng.getrandbits(16), -rng.getrandbits(16),
+                        rng.getrandbits(32), -rng.getrandbits(32)])
+        ret = run.call(0x19B64, (a & M32, b & M32, 0), max_insn=2000)  # a2=0: r3=sign(b)
+        _cleanc(run)
+        exp = ref_19b64(a, b)
+        assert ret[0] == exp, f'a={a} b={b}: ret={ret[0]:#x} ≠ {exp:#x}'
+
+def _lb_idx(vals, k):
+    """lower_bound: первый i с vals[i] > k (0..n); fast-path x[last]<=k → n"""
+    lo, hi = 0, len(vals)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if vals[mid] <= k:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+def _t_16f42(run, rng):
+    """0x16f42(kx, ky, struct*, y*): double binary search (u32-x-таблица).
+    struct = u32[nx, ny, x2.., X] (x[0]=nx, x[1]=ny, x[nx]=sentinel);
+    y = i16[y0.., Y] (y[ny]=sentinel). Стек: [SP0+0]=byte-таблица,
+    [SP0+4]=size-поинтер (== struct), [SP0+8]=sb (шаг).
+    idx1: nx ≥ kx → 0; x[nx] ≤ kx → nx; else last i<nx: x[i] ≤ kx.
+    idx2: ky ≤ y[0] → 0; y[ny] ≤ ky → ny; else last i<ny: y[i] ≤ ky.
+    ret = byte[r8 + idx1 + sb*idx2]."""
+    ST, YS, BT = 0x600, 0x680, 0x700
+    for _ in range(10):
+        nx = rng.randint(1, 8)
+        ny = rng.randint(max(nx, 1), max(nx, 1) + 8)
+        rest = sorted(rng.sample(range(ny, 4000), max(nx - 2, 0)))
+        xs = [nx, ny] + rest                  # x[0]=nx, x[1]=ny
+        if nx >= 2:
+            xs = xs + [50000]   # x[nx] sentinel (nx=1: x[1]=ny)
+        ys = sorted(rng.sample(range(-2000, 2000), ny))
+        ys = ys + [32767]                     # y[ny] sentinel
+        bt_len = (nx + 1) * (ny + 1) + 64
+        bt = [rng.getrandbits(8) for _ in range(bt_len)]
+        sb = nx
+        run.ram_write(ST, struct.pack(f'<{nx + 1}I', *xs))
+        run.ram_write(YS, struct.pack(f'<{ny + 1}h', *ys))
+        run.ram_write(BT, struct.pack(f'<{bt_len}B', *bt))
+        run.ram_write(0x18000, struct.pack('<I', RAM + BT))
+        run.ram_write(0x18004, struct.pack('<I', RAM + ST))
+        run.ram_write(0x18008, struct.pack('<I', sb))
+        kx = rng.choice([xs[0] - 1, xs[0], rng.choice(xs[:nx]),
+                         (xs[0] + xs[nx - 1]) // 2, xs[nx - 1], xs[nx - 1] + 7])
+        ky = rng.choice([ys[0] - 1, ys[0], rng.choice(ys[:ny]),
+                         ys[ny - 1], ys[ny - 1] + 1, -3000, 3000])
+        ret = run.call(0x16F42, (kx, ky, RAM + ST, RAM + YS), max_insn=5000)
+        _cleanc(run)
+        if nx >= kx:
+            i1 = 0
+        elif xs[nx] <= kx:
+            i1 = nx
+        else:
+            i1 = max(i for i in range(nx) if xs[i] <= kx)
+        if ky <= ys[0]:
+            i2 = 0
+        elif ys[ny] <= ky:
+            i2 = ny
+        else:
+            i2 = max(i for i in range(ny) if ys[i] <= ky)
+        exp = bt[i1 + sb * i2]
+        assert ret[0] == (exp & M32),             f'kx={kx} ky={ky} i=({i1},{i2}): ret={ret[0]:#x} ≠ {exp:#x}'
+
+def _t_16fde(run, rng):
+    """0x16fde(kx, ky, u16x*, y*): twin 0x16f42 с u16-x-таблицей.
+    u16x = u16[nx, ny, x2.., X] (x[nx]=sentinel); size-блок u32[nx, ny]
+    по [SP0+4] (отдельный); [SP0+0]=i16-таблица; [SP0+8]=sb.
+    ret = i16[r8 + 2*(idx1 + sb*idx2)] (sign-extended)."""
+    SU, X16, YS, BT = 0x580, 0x600, 0x680, 0x700
+    for _ in range(10):
+        nx = rng.randint(1, 8)
+        ny = rng.randint(max(nx, 1), max(nx, 1) + 8)
+        rest = sorted(rng.sample(range(ny, 4000), max(nx - 2, 0)))
+        xs = [nx, ny] + rest                  # x[0]=nx, x[1]=ny
+        if nx >= 2:
+            xs = xs + [50000]   # x[nx] sentinel (nx=1: x[1]=ny)
+        ys = sorted(rng.sample(range(-2000, 2000), ny))
+        ys = ys + [32767]                     # y[ny] sentinel
+        bt_len = (nx + 1) * (ny + 1) + 64
+        bt = [rng.getrandbits(16) for _ in range(bt_len)]
+        sb = nx
+        run.ram_write(SU, struct.pack('<2I', nx, ny))
+        run.ram_write(X16, struct.pack(f'<{nx + 1}H', *xs))
+        run.ram_write(YS, struct.pack(f'<{ny + 1}h', *ys))
+        run.ram_write(BT, struct.pack(f'<{bt_len}H', *bt))
+        run.ram_write(0x18000, struct.pack('<I', RAM + BT))
+        run.ram_write(0x18004, struct.pack('<I', RAM + SU))
+        run.ram_write(0x18008, struct.pack('<I', sb))
+        kx = rng.choice([xs[0] - 1, xs[0], rng.choice(xs[:nx]),
+                         (xs[0] + xs[nx - 1]) // 2, xs[nx - 1], xs[nx - 1] + 7])
+        ky = rng.choice([ys[0] - 1, ys[0], rng.choice(ys[:ny]),
+                         ys[ny - 1], ys[ny - 1] + 1, -3000, 3000])
+        ret = run.call(0x16FDE, (kx, ky, RAM + X16, RAM + YS), max_insn=5000)
+        _cleanc(run)
+        if nx >= kx:
+            i1 = 0
+        elif xs[nx] <= kx:
+            i1 = nx
+        else:
+            i1 = max(i for i in range(nx) if xs[i] <= kx)
+        if ky <= ys[0]:
+            i2 = 0
+        elif ys[ny] <= ky:
+            i2 = ny
+        else:
+            i2 = max(i for i in range(ny) if ys[i] <= ky)
+        v = bt[i1 + sb * i2]
+        exp = v - 0x10000 if v >= 0x8000 else v
+        assert ret[0] == (exp & M32),             f'kx={kx} ky={ky} i=({i1},{i2}): ret={ret[0]:#x} ≠ {exp & M32:#x}'
+
+t(0x16F42, 'E2-b63: 0x16f42(kx,ky,struct*,y*+стек r8/sb/struct) double bsearch: idx1=floor-idx u32-x-таблицы, idx2=floor-idx i16-y-таблицы (clamped 0..size), ret=byte[r8+idx1+sb*idx2]')(_t_16f42)
+t(0x16FDE, 'E2-b63: 0x16fde(kx,ky,u16x*,y*) twin 0x16f42 с u16-x-таблицей: ret=i16[r8+2*(idx1+sb*idx2)] (sign-extended)')(_t_16fde)
+t(0xCC1C, 'E2-b63: 0xcc1c(mode,out*) WWDG CFR(+4) декодер: v=u32[0x40002804]&0x00FFFF3F; out[3]=(v>>16)&FF, out[1]=(v>>8)&0x1F, out[2]=v&0x3F, out[0]=(v>>13)&7; mode=0 → out[1..3]=BCD→decimal (0xc9a8)')(_t_cc1c)
+t(0xCCBC, 'E2-b63: 0xccbc(mode,out*) WWDG CR(+0) декодер: v=u32[0x40002800]&0x007F7F7F; out[0]=(v>>16)&0x3F, out[1]=(v>>8)&0x7F, out[2]=v&0x7F, out[3]=(v>>16)&1; mode=0 → out[0..2]=BCD→decimal')(_t_ccbc)
+t(0xF40C, 'E2-b63: 0xf40c() threshold #5 (gate bit4[0xF72]): gate0: d=|u16[0x19D8E+8]-u16[0x19D8E+6]|, d<u16[0x19D8E+0x12]→A2C=0; u16[0xF9B]≤0xC1C→A2C=0; иначе new=u16[0xA2A]+1→A2C, cap A3A≤new → F97=(F72&~0x10)|0x10, A2A=0; gate1: d=|u16[0xF9D]-u16[0xF9B]|, d>A3E→A2C=0; иначе new=u16[0xA26]+1→A2C, cap u16[0x19D8E+0x18]≤new → F97&=~0x10, A2C=0; ret=0')(_t_f40c)
+t(0xFCD0, 'E2-b63: 0xfcd0() threshold-счётчик #2: гейт byte[0x80]∈{1,2} и bit3[0xFA1]=0; u16[0x19DAA+6]>u16[0xA0A]→9FE=0; иначе new=u16[0x9FE]+1→9FC; cap u16[0x19DAA+0x12]≤new → FA1=(byte[0x19DAA+0xC]&~8)|8, 9FE=0, FBB=0; ret=0')(_t_fcd0)
+t(0x19B64, 'E2-b63: 0x19b64(a,b) signed fixed-point умножение/нормализация: (a<<1|b<<1)==0→0; prod=(a*b)+(a+b)<<7-компоновка Q-формат, +0x4000 rounding, нормализация (r0≥0 → <<1), sign-bit если знаки различны (bit-точная модель ref_19b64)')(_t_19b64)
+def _t_c708(run, rng):
+    """0xc708(out*): расчёт частоты тактирования (RCC-реестры → struct из 6 u32).
+    CFGR0=u32[RCC+4], CFGR2=u32[RCC+0x24], CFGR3=u32[RCC+0x2C], X=u32[RCC+0x40];
+    m=CFGR0&0x083C0000; r3 = 0x1F0-(m>>18)+1 если m&0x8000000, иначе 2+(m>>18);
+    r2 = r3 * (0x7A1200 если (CFGR0&0x10000 ? (CFGR0&0x20000) : X&1) else 0xF42400);
+    X&2 → r2>>=1; s=CFGR0&0xC:
+      s==0/other → T2[(CFGR2>>4)&7], s==4/8 → 0xF42400, s==0xC → r2 (T2=u32[0x0801A920..]);
+    *out=f; +4=f>>T0[(CFGR0&0xF0)>>4]; +8=(+4)>>T0[(CFGR0&0x700)>>8];
+    +0xC=(+4)>>T0[(CFGR0&0x3800)>>0xB]; +0x14=(+4)/T1[CFGR3&0xF] (udiv);
+    +0x10=r2/T3[((CFGR3&0x1F0)>>4)&0xF] (udiv). ret=ptr."""
+    T0 = bytes([0xC5, 0x60, 0x02, 0x25, 0x0D, 0x70, 0x03, 0x25,
+                0x4D, 0x70, 0x45, 0x69, 0x1D, 0x43, 0x45, 0x61])
+    T1 = bytes([0x01, 0x25, 0x25, 0x70, 0x8D, 0x88, 0x6D, 0x1E,
+                0x8D, 0x80, 0xFB, 0xD2, 0xFF, 0x25, 0xF5, 0x35])
+    T2 = [0x40012C40, 0x20000102, 0x20000218, 0x1388,
+          0x8CA, 0x20000246, 0x4CFEB5F0, 0xB08748FC]
+    T3 = [0x808D, 0x6945, 0x439D, 0x6145, 0x7022, 0x8888, 0x1E43, 0x808B,
+          0xD2FB, 0x808F, 0x2004, 0x7008, 0x7048, 0x4806, 0x7002, 0xBDF0]
+    RCC = 0x40021000
+    OUT = 0x500
+
+    def sh32(v, n):
+        n &= 0xFF
+        if n == 0:
+            return v
+        if n >= 32:
+            return 0
+        return v >> n
+
+    for _ in range(10):
+        cfgr0 = rng.getrandbits(32)
+        cfgr2 = rng.getrandbits(32)
+        cfgr3 = rng.getrandbits(32)
+        x40 = rng.getrandbits(32)
+        run.periph_write(RCC + 4, cfgr0)
+        run.periph_write(RCC + 0x24, cfgr2)
+        run.periph_write(RCC + 0x2C, cfgr3)
+        run.periph_write(RCC + 0x40, x40)
+        run.ram_write(OUT, bytes(24))
+        ret = run.call(0xC708, (RAM + OUT,), max_insn=2000)
+        _cleanc(run)
+        m = cfgr0 & 0x083C0000
+        r3 = ((m >> 18) - 0x1F0 + 1) & M32 if (m & 0x8000000) else (2 + (m >> 18)) & M32
+        src_sel = ((cfgr0 & 0x20000) != 0) if (cfgr0 & 0x10000) else ((x40 & 1) != 0)
+        r2 = (r3 * (0x7A1200 if src_sel else 0xF42400)) & M32
+        if x40 & 2:
+            r2 >>= 1
+        r5 = (cfgr2 >> 4) & 7
+        s = cfgr0 & 0xC
+        if s in (4, 8):
+            f = 0xF42400
+        elif s == 0xC:
+            f = r2
+        else:
+            f = T2[r5]
+        f &= M32
+        d0 = sh32(f, T0[(cfgr0 & 0xF0) >> 4])
+        d1 = sh32(d0, T0[(cfgr0 & 0x700) >> 8])
+        d2 = sh32(d0, T0[(cfgr0 & 0x3800) >> 0xB])
+        div14 = T1[cfgr3 & 0xF]
+        d14 = (d0 // div14) if div14 else 0
+        idx = ((cfgr3 & 0x1F0) >> 4) & 0xF
+        d10 = (r2 // T3[idx]) if T3[idx] else 0
+        got = struct.unpack('<6I', run.ram_read(OUT, 24))
+        assert ret[0] == RAM + OUT, f'ret={ret[0]:#x}'
+        assert got[0] == f, f'cfgr0={cfgr0:#x}: out[0]={got[0]:#x} ≠ {f:#x}'
+        assert got[1] == d0, f'cfgr0={cfgr0:#x}: out[1]={got[1]:#x} ≠ {d0:#x}'
+        assert got[2] == d1, f'cfgr0={cfgr0:#x}: out[2]={got[2]:#x} ≠ {d1:#x}'
+        assert got[3] == d2, f'cfgr0={cfgr0:#x}: out[3]={got[3]:#x} ≠ {d2:#x}'
+        assert got[4] == d10, f'cfgr3={cfgr3:#x}: out[4]={got[4]:#x} ≠ {d10:#x}'
+        assert got[5] == d14, f'cfgr3={cfgr3:#x}: out[5]={got[5]:#x} ≠ {d14:#x}'
+
+t(0xC708, 'E2-b63: 0xc708(out*) расчёт частоты тактирования: m=CFGR0&0x083C0000; r3=2+(m>>18) / 0x1F1-(m>>18) (m&0x8000000); r2=r3*(8МГц/15,9МГц) (CFGR0 b16?b17:RCC+0x40 b0), RCC+0x40 b1 → r2>>=1; *out: CFGR0&0xC: 4/8→0xF42400, 0xC→r2, else→u32[0x1A920+4*((CFGR2>>4)&7)]; +4/+8/+0C=f>>T0[индексы CFGR0]; +0x14=(+4)/T1[CFGR3&0xF]; +0x10=r2/T3[((CFGR3&0x1F0)>>4)&0xF] (udiv); ret=ptr')(_t_c708)
+
 if __name__ == '__main__':
     sys.exit(main())
