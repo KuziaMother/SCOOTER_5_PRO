@@ -7651,3 +7651,68 @@ tick_count++; свойства ctrl/rvr/cvr; `close()`. **`TimeModel`**:
 **Статус:** A4 готово — полная модель времени (SysTick + clock-config +
 задержки + форматтер) без железа. Остаток направления 2 (модели без железа):
 **A5 — I2C model** (сенсорная задача, условно).
+
+---
+
+## §91. A5 — I2C model: I2C2-чип (dev 0x3E) + shadow-регистровая семья (emulator-based)
+
+**Задача:** завершить направление 2 (модели без железа) — I2C-модель. Вопрос:
+использует ли сенсорная задача I2C? **Ответ: да** — I2C2-цепь живая и
+используется по всей прошивке (22 setter'а + 4 reader'а).
+
+### 91.1. Архитектура (статика §49.1/§50 + динамика §91)
+
+- **I2C2-блок @`0x40005800`** — кастомная периферия (тот же блок B1 использует
+  как power-стадию 2: импульсы bit21/22 @+0x1C). **I2C1 @`0x40005400`** (B1:
+  power-стадия 1). Внешний чип — **dev `0x3E`** (идентификация = B-задача по
+  снупу).
+- **Shadow-слой @RAM+0x15FA..0x164C** — «теневые регистры» чипа: **22 setter'а**
+  (0x20C4..0x2358, val=8, len 1/2) пишут фикс. регистры {3,5,7, 0x12..0x2A,
+  0x32, 0x36, 0x38, 0x3A, 0x70, 0x7F} (таблица `I2C2_SHADOW_OFFS`).
+- **Цепочка записи:** setter → `0x1C60(val, reg, &shadow, len)` →
+  `0x1E52(val, reg, 1, &shadow, len)` → `0x214C(0, val, reg, len)` (пул @0x2188
+  = 0x40005800) → **`0x8F7C(0x40005800, val, reg, out)`**.
+- **Reader'ы:** `0x1C1C(reg16, len)` (буфер {reg_lo, reg_hi}, dev 0x3E, val 8 →
+  `0x90A0` read-транзакция + **1000-iteration timeout**), `0x1BDC(reg)`,
+  `0x1C7A(val, reg, &buf, len)`, `0x155AC` (результат → u16@0xF95+0x1E/0x20),
+  `0x218C()` (read-cycle reg 0x83 len 2).
+
+### 91.2. `0x8F7C` — I2C-фрейм-отправщик с CRC-7 par-верификацией
+
+1. push 10 + sub 0x54; буфер 0x48 байт на sp+0xC (memset 0).
+2. **Pre-roll цепочка CRC-7** (0x3C7C, полином 0x07 MSB-first — §85):
+   `sb = crc7(crc7(crc7(0, u8(val<<1)), reg), u8(val)|1)`.
+3. **`blx u32[RAM+0xDD8+0x118]`** — send-примитив (структура-указатель;
+   zero-контекст → 0 → векторные байты @0x0, build-quirk: рвёт поток,
+   r0 = u8(val<<1) — b70-контракт,insn ≈ 490–510, lastpc 0x8FEC).
+4. **Цикл верификации** r4 = 0..r7−1 (r7 = верхний байт varargs-счётчика
+   [sp+0x78], clamp `(sl<<25)>>24 > 0x46 → ret 0`): чётные → `out[i]=frame[i]`,
+   нечётные → `frame[i] == crc7(frame[i-1], sb)` иначе ret 0.
+5. ret blx == 0 → **успех → ret 1**.
+
+### 91.3. Динамика (fv_tests_e3g.py, 11 новых)
+
+- **Setter-цепь** (0x20C4/0x231C/0x2358): insn ≈ 548/548/536, lastpc = 0x8FEC,
+  ret = 0x10 (u8(8<<1) quirk), **без periph-записей** (в изоляции blx 0).
+- **0x214C/0x1C60/0x1E52**: insn ≈ 519/542/531, lastpc = 0x8FEC, ret = 0x10.
+- **0x1C1C**: **periph u16 0xFFFF @0x40005800** (первая periph-запись I2C2-цепи
+  в изоляции; PC 0x97D2), 1000-iteration timeout до max_insn, ret ∈ {0,1}.
+- **Reader'ы** (0x218C/0x1C7A/0x155AC/0x1BDC): insn ≈ 568–579, lastpc = 0x908C,
+  ret-quirk = u8(arg<<1): (0x38,)→0x70 (reg<<1), (8,0x83)→0x10 (val<<1).
+- **sl clamp**: `[sp+0x78]` — контекстный (зависит от стека вызывающего); в
+  изоляции r7 = 0 → цикл пуст (quirk), контракт b70 сохранён.
+
+### 91.4. Модель + статус
+
+**`I2cModel(emu)`** (emulator/mcu_emu.py): scoped-вид — `shadow_get/set/seed`
+(22 reg → shadow-офсет), `i2c2_writes()` (periph-захват @0x40005800),
+`ref_frame(val, reg, data)` — reference-сборка фрейма (frame = [d0, c0, d1,
+c1, ...], c0 = crc7(d0, sb_pre), ci = crc7(di, c(i−1)); заголовок {val<<1,
+reg, val|1} сеет CRC, в фрейм не входит). Константы: `I2C2_BASE/I2C1_BASE/
+I2C2_DEV/I2C2_SHADOW_OFFS/I2C2_SETTERS/I2C2_FP_STRUCT`.
+
+**Статус:** A5 готово — I2C-модель (I2C2-чип dev 0x3E, shadow-семья, CRC-7
+пары, send-примитив). **Направление 2 (модели без железа) завершено**: RX (B2)
+→ команды (B1) → NVM (A3) → TX (B3) + время (A4) + I2C (A5). Остаток —
+C1 (LUT-формула, live-NVM) и A1 (GPIO input-state, live) — требуют железа.
+Сьют **778/778 PASS** (seeds 42/7, iters 3), ruff чист, `--list` 693/693 (100%).

@@ -1068,6 +1068,114 @@ class TimeModel:
         return bytes(uc.mem_read(RAM + buf_off, 6))
 
 
+# A5 (§91): I2C-модель — I2C2-чип (dev 0x3E) + shadow-регистровая семья
+I2C2_BASE = 0x40005800   # I2C2-блок (кастомная периферия; dev-чип 0x3E)
+I2C1_BASE = 0x40005400   # I2C1-блок (датчики/EEPROM; B1: тот же блок = power-стадия 1)
+I2C2_DEV = 0x3E          # адрес устройства на шине
+I2C2_SHADOW_BASE = 0x15FA  # RAM-блок «теневых регистров» чипа (0x15FA..0x164C)
+I2C2_FP_STRUCT = 0xDD8   # struct-указатель в RAM (field +0x118 = send-примитив blx из 0x8f7c)
+I2C2_FP_SEND = 0x118
+I2C2_READER_OUT = 0xF95  # u16-результаты reader'ов: +0x1E / +0x20
+
+# 22 setter'а (0x20C4..0x2358): reg → shadow-офсет (парсинг дизасма, §91)
+I2C2_SHADOW_OFFS = {
+    0x03: 0x15FA, 0x05: 0x15FC, 0x07: 0x15FE,
+    0x12: 0x1607, 0x14: 0x1609, 0x16: 0x160B, 0x18: 0x160D, 0x1A: 0x160F,
+    0x1C: 0x1611, 0x1E: 0x1613, 0x20: 0x1615, 0x22: 0x1617, 0x24: 0x1619,
+    0x26: 0x161B, 0x28: 0x161D, 0x2A: 0x161F, 0x32: 0x1621,
+    0x36: 0x162B, 0x38: 0x162D, 0x3A: 0x162F, 0x70: 0x163F, 0x7F: 0x164B,
+}
+# адреса setter'ов (val=8, len=1 для 0x03/0x05/0x07, len=2 для остальных)
+I2C2_SETTERS = {
+    0x03: 0x231C, 0x05: 0x2330, 0x07: 0x2344,
+    0x12: 0x21DC, 0x14: 0x21F0, 0x16: 0x2204, 0x18: 0x2218, 0x1A: 0x222C,
+    0x1C: 0x2240, 0x1E: 0x2254, 0x20: 0x2268, 0x22: 0x227C, 0x24: 0x2290,
+    0x26: 0x22A4, 0x28: 0x22B8, 0x2A: 0x22CC, 0x32: 0x22E0,
+    0x36: 0x2138, 0x38: 0x20C4, 0x3A: 0x22F4, 0x70: 0x2358, 0x7F: 0x2308,
+}
+
+
+class I2cModel:
+    """A5 (§91): I2C-модель — I2C2-чип (dev 0x3E) + shadow-регистровая семья.
+
+    **Архитектура (статика §49.1/§50 + динамика §91):**
+    - I2C2-блок @`0x40005800` (кастомная периферия; тот же блок B1 использует
+      как power-стадию 2 — импульсы bit21/22), I2C1 @`0x40005400` (датчики/EEPROM;
+      B1: power-стадия 1). Внешний чип — dev `0x3E` (мотор-контроллер/сенсорный
+      хаб; идентификация = B-задача по снупу).
+    - **Shadow-слой** @RAM+0x15FA..0x164C: 22 setter'а (0x20C4..0x2358, val=8,
+      len 1/2) пишут фикс. регистры чипа {3,5,7, 0x12..0x2A, 0x32, 0x36, 0x38,
+      0x3A, 0x70, 0x7F} — таблица I2C2_SHADOW_OFFS. Цепочка: setter →
+      `0x1C60(val, reg, &shadow, len)` → `0x1E52(·,1,·,·)` → `0x214C(0, val,
+      reg, len)` → **`0x8F7C(0x40005800, val, reg, out)`**.
+    - **0x8F7C** = I2C-фрейм-отправщик с **CRC-7 par-верификацией**: буфер 0x48
+      (memset), pre-roll цепочка `sb = crc7(crc7(crc7(0, u8(val<<1)), reg),
+      u8(val)|1)` (0x3C7C), `blx u32[RAM+0xDD8+0x118]` (send-примитив; zero-
+      контекст → 0 → векторные байты), затем цикл r4=0..r7 (r7 = верхний байт
+      varargs-счётчика [sp+0x78], clamp (sl<<25)>>24 > 0x46 → ret 0): чётные
+      → out[i]=frame[i], нечётные → `frame[i] == crc7(frame[i-1], sb)` иначе
+      ret 0. Возврат 0 из blx = успех → ret 1.
+    - **Reader'ы:** `0x1C1C(reg16, len)` — буфер {reg_lo, reg_hi}, dev 0x3E,
+      val 8 → `0x90A0` (read-транзакция) → при ret≠0 **1000-iteration timeout**
+      → ret 1 (zero-контекст: 0x90A0-цепь крутится, periph u16 0xFFFF @0x40005800);
+      `0x1BDC(reg)`/`0x1C7A(val, reg, &buf, len)`/`0x155AC` — варианты (результат
+      → u16@0xF95+0x1E/0x20); `0x218C()` — read-cycle reg 0x83 len 2.
+    - **Модель:** scoped-вид — shadow-слой (get/set/seed), periph-захват
+      I2C2-блока, `ref_frame(val, reg, data)` — reference-сборка фрейма
+      (заголовок + data-par'ы с chained CRC-7, тот же алгоритм что цикл
+      0x8F7C)."""
+
+    def __init__(self, emu):
+        self.emu = emu
+
+    def shadow_addr(self, reg):
+        return RAM + I2C2_SHADOW_OFFS[reg]
+
+    def shadow_get(self, reg):
+        return self.emu.uc.mem_read(RAM + I2C2_SHADOW_OFFS[reg], 1)[0]
+
+    def shadow_set(self, reg, value):
+        self.emu.uc.mem_write(RAM + I2C2_SHADOW_OFFS[reg], bytes([value & 0xFF]))
+
+    def i2c2_writes(self):
+        """periph-записи в I2C2-блок @0x40005800 [(pc, addr, size, value)]."""
+        out = []
+        for w in self.emu.periph_writes:
+            if I2C2_BASE <= w[1] < I2C2_BASE + 0x100:
+                out.append(w)
+        return out
+
+    @staticmethod
+    def _crc7(byte, state):
+        """Порт 0x3C7C (тот же, что fv_core.ref_crc7_port): (state^byte) +
+        8×((<<1)&0xFF ^ (msb?7:0))."""
+        r0 = (state ^ byte) & 0xFF
+        for _ in range(8):
+            if r0 & 0x80:
+                r0 = ((r0 << 1) & 0xFF) ^ 7
+            else:
+                r0 = (r0 << 1) & 0xFF
+        return r0
+
+    @classmethod
+    def ref_frame(cls, val, reg, data):
+        """Reference-сборка I2C-фрейма 0x8F7C: frame = [d0, c0, d1, c1, ...]
+        (data-par'ы), где c0 = crc7(d0, sb_pre), ci = crc7(di, c(i-1));
+        **sb_pre = pre-roll цепочка** crc7(crc7(crc7(0, u8(val<<1)), reg),
+        u8(val)|1) — заголовок {val<<1, reg, val|1} НЕ входит в фрейм, только
+        сеет CRC (тот же алгоритм, что цикл верификации 0x8F7C: чётные → copy
+        в out, нечётные → frame[i] == crc7(frame[i-1], sb))."""
+        sb = cls._crc7((val & 0x7F) << 1, 0)
+        sb = cls._crc7(reg & 0xFF, sb)
+        sb = cls._crc7((val & 0xFF) | 1, sb)
+        frame = []
+        for d in data:
+            sb = cls._crc7(d & 0xFF, sb)
+            frame.append(d & 0xFF)
+            frame.append(sb & 0x7F)
+        return bytes(frame)
+
+
 # B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
 CMD_CTRL_BASE = 0x40021000
 CMD_CTRL_FIELDS = (0x10, 0x18, 0x1c)

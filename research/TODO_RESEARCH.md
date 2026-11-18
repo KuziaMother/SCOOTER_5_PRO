@@ -177,8 +177,19 @@ _(оригинальный список завершён — см. таблиц�
             **0x11BAC(&out,sec)** — форматтер даты (§61 verified) → **TimeModel** (ref + живой код).
             Модели `SysTickModel`/`TimeModel` + SYST_* в emulator/mcu_emu.py. Тесты: fv_tests_e3f.py
             (6 новых), сьют **767/767 PASS** (seeds 42/7, iters 3), ruff чист, --list 693/693 (100%).
-      - [ ] A5 **I2C model** — I2C-driver (init-кандидаты §74.1) → если сенсорная задача ходит
-            в I2C (~0.5д, средняя/условно).
+      - [x] A5 **I2C model — ГОТОВО (§91, динамика §91.3).** I2C2-чип (dev 0x3E, блок 0x40005800;
+            тот же блок B1 = power-стадия 2), I2C1 @0x40005400 (power-стадия 1). Shadow-семья: 22
+            setter'а (0x20C4..0x2358, val=8) @RAM+0x15FA..0x164C, регистры {3,5,7,0x12..0x2A,0x32,
+            0x36,0x38,0x3A,0x70,0x7F}; цепочка setter→0x1C60→0x1E52→0x214C→**0x8F7C** (I2C-фрейм:
+            буфер 0x48, pre-roll CRC-7 цепочка, blx send-примитив u32[RAM+0xDD8+0x118], цикл verif
+            чётные=copy/нечётные=crc7-par, clamp sl>0x46→ret 0). Reader'ы: 0x1C1C (буфер {reg_lo,
+            reg_hi}, dev 0x3E → 0x90A0 + 1000-iteration timeout; periph u16 0xFFFF @0x40005800),
+            0x1BDC/0x1C7A/0x155AC (результат u16@0xF95+0x1E/0x20), 0x218C (reg 0x83 len 2).
+            `I2cModel` (shadow get/set/seed, i2c2_writes, ref_frame chained CRC-7). Тесты:
+            fv_tests_e3g.py (11 новых), сьют **778/778 PASS** (seeds 42/7, iters 3), ruff чист,
+            --list 693/693 (100%). **Направление 2 (модели без железа) завершено:** RX (B2) →
+            команды (B1) → NVM (A3) → TX (B3) + время (A4) + I2C (A5). Остаток — C1 (LUT-формула,
+            live-NVM) и A1 (GPIO input-state, live) — требуют железа.
       **B. Слой команд/CMD (декодируется статикой; BLE нужен только для ОТПРАВКИ):**
       - [x] B1 **Command-хендлеры — ГОТОВО (§79, динамика §79.3).** Dispatcher `0x2e0c(r0=ID, r1=&struct)` →
             командный слой шевелит биты в блоках @`0x40021000`: примитивы `0xc664`/`0xc684`/`0xc6a4`
