@@ -131,8 +131,9 @@ _(оригинальный список завершён — см. таблиц�
 - [ ] **🔧 Эмулятор: расширение БЕЗ железа (статика по mcu_0007.bin, без самоката и BLE).**
       Граница (нельзя без железа): cold-boot (SWD-дамп RAM при reset), электрический контур
       (live L/R/EMF + FOC-gains), динамическая калибровка plant (езда), ЗНАЧЕНИЯ status-LUT
-      (дамп NVM). Всё ниже — чистая статика. Текущее: 7 моделей (Tim/Adc/Speed/Motor/Battery/
-      Range/ControlLoop), 158 тестов, покрытие 132/693=19%.
+      (дамп NVM). Всё ниже — чистая статика. Текущее: 24+ моделей (Tim/Adc/Speed/Motor/
+      Battery/Range/ControlLoop/Gpio/SpiFlash(Miso)/UsartRx/TxAggregator/CmdControl/
+      Scheduler/Lut/FocPipeline/SysTick/Time/…), сьют 767/767 PASS, `--list` 693/693 (100%).
       **A. Периферийные модели (Phase ②, статич. часть; сейчас читают `0xFF`):**
       - [x] A1 **GPIO model — ГОТОВО (§76).** Кастомный блок «портов» @0x48000000 (4 порта ×
             0x400): режимы ВСЕХ 16 пинов в +0x2c по 2 бита/пин; драйвер 0x22000(r0=port,
@@ -159,8 +160,23 @@ _(оригинальный список завершён — см. таблиц�
             (MISO-модель 25xxx: read/program, staged-ответы) в emulator/mcu_emu.py. Тесты: @t(0x221E6)
             (b68) + fv_tests_e3d.py (6 новых: 0x221a4/0x221e6/0x235b0+модель/0x2360c/0x23688/0x1c838),
             **758/758 PASS**.
-      - [ ] A4 **RTC/clock model** — `0x11bac` (verified) + SysTick `0x3600` (done) → полная
-            модель времени (~0.5д, средняя).
+      - [x] A4 **RTC/clock model — ГОТОВО (§90).** Полная модель времени БЕЗ железа.
+            **Архитектура:** SysTick (core 0xE000E000) + clock-config + busy-wait задержки +
+            software-tick + форматтер даты (RTC-периферии GD32 0x40012800 НЕ используется).
+            **0x22934(&struct{rvr,cvr,flag,ctrl}) = clock-config:** base=u32[0x08] (÷8 если
+            flag==0); коэффициенты через 0x19968 (u32-деление, verified): **u32[0x1C]=base/1000**,
+            **u32[0x20]=base/10000**, **u32[0x24]=base/100000** (пул-литералы 0x3E8/0x2710/0x186A0 —
+            константы-делители, НЕ deref); RVR/CVR из struct, CTRL=(flag<<2)|ctrl — verified точно.
+            **0x229D4(r0,r1)/0x22A0C(r0,r1) = busy-wait-задержки:** target=r0×u32[0x24]/u32[0x10];
+            CVR-reset (0x00FFFFFF) → ожидание CVR ≤ 0x1000000−target; r1=u16-повторы. С
+            **SysTickModel** (1 insn = 1 count) детерминированы: insn ≈ 27 + target (10×1000→10029).
+            **0x3600(ticks) = композит:** bl 0x11C84 (build-quirk: bl→r0=4 → CTRL|=4 TICK_REF on),
+            reload из LUT 0xC708 (zero-контекст→0→skip-путь), udiv÷1000, RVR=r1−1 (<0x1000000),
+            tail CVR=0/CTRL=7. **0x11C84(r0):** r0==4→CTRL|=4, иначе &=~4. Software-tick: u16[0x2BA]++
+            в task 0x1DFD8 + main u32[0x314]++; u32[0x1E0] — общий счётчик (10+ функций).
+            **0x11BAC(&out,sec)** — форматтер даты (§61 verified) → **TimeModel** (ref + живой код).
+            Модели `SysTickModel`/`TimeModel` + SYST_* в emulator/mcu_emu.py. Тесты: fv_tests_e3f.py
+            (6 новых), сьют **767/767 PASS** (seeds 42/7, iters 3), ruff чист, --list 693/693 (100%).
       - [ ] A5 **I2C model** — I2C-driver (init-кандидаты §74.1) → если сенсорная задача ходит
             в I2C (~0.5д, средняя/условно).
       **B. Слой команд/CMD (декодируется статикой; BLE нужен только для ОТПРАВКИ):**

@@ -7578,3 +7578,76 @@ iters 3), ruff чист, `--list` 693/693 (100%).
 **Статус:** B3 готово — FSM агрегатора MCU→BLE размapped (beacon-фреймы,
 классификатор, билдеры, tail). Остаток: runtime-r4/адреса билдеров и полные
 переходы 24 состояний при live-данных (индекс ≠1, u64-условие 0x1F548).
+
+## 90. Эмулятор A4: RTC/clock model — SysTick-семейство (0x3600/0x22934/задержки)
+
+Полная модель времени firmware БЕЗ железа. Архитектура времени:
+**SysTick (core 0xE000E000)** + clock-config + busy-wait задержки + software-tick
+периодического task + форматтер даты. RTC-периферии GD32 (0x40012800) firmware
+**не использует** — время = SysTick + программные счётчики.
+
+### 90.1. SysTick-регистры и контекст
+
+- `0xE000E010` CTRL (ENABLE|TICKINT|TICK_REF), `0xE000E014` RVR (24b),
+  `0xE000E018` CVR (24b). Boot-значения: RVR=0x1193F (73087 → ~1 kHz @ 72 MHz),
+  CTRL=7 (TICK_REF on — clock = core).
+- **`0x3600(ticks)`** — композит SysTick-периода: `bl 0x11C84` (TICK_REF-флаг),
+  reload из LUT `0xC708` (data @0x6A00; zero-контекст → 0), `udiv r1, retval, 0x3E8`
+  (÷1000), `RVR = r1−1` **если < 0x1000000** + tail `CVR=0, CTRL=7`. Skip-путь
+  (reload ≥ 0x1000000 или zero-контекст) пропускает RVR **и** tail → в изоляции
+  CTRL остаётся от 0x11C84. **Build-quirk:** `bl` ставит r0=4 → 0x11C84 идёт
+  по `r0==4` ветке → `CTRL |= 4`.
+- **`0x11C84(r0)`** — r0==4 → `CTRL |= 4` (TICK_REF on), иначе `CTRL &= ~4`.
+- **`0x1E2CA(r0)`** — boot-init: u32(r0−1) > u32(r1) → ret 1; иначе RVR=r0−1,
+  CVR=0, CTRL=7 (E2-b60, verified). **`0x35EC`** — TICKINT off (fv_tests_a).
+- **`0x19968(a, b)`** — u32-деление (shift-subtract, 32 итерации) — reference,
+  verified (73088000/1000=73088, 72e6/1=72e6, 100/7=14).
+
+### 90.2. Clock-config `0x22934(&struct)` — коэффициенты задержек
+
+struct `{u32 rvr, u32 cvr, byte flag, byte ctrl}`:
+- base = `u32[0x08]` (÷8 если `flag==0`);
+- **`u32[0x1C] = base/1000`** (÷0x3E8, ticks/ms), **`u32[0x20] = base/10000`**
+  (÷0x2710), **`u32[0x24] = base/100000`** (÷0x186A0) — через 0x19968.
+  Пул-литералы (0x3E8/0x2710/0x186A0) — **константы-делители, НЕ deref**
+  (поправка: не data@0x2710/0x186A0).
+- RVR/CVR из struct; `CTRL = (flag<<2) | ctrl`.
+- Verified: base=72e6/96e6/рандом, flag 0/1 — все коэффициенты точные
+  (72e6 → 72000/7200/720; flag=0 → ÷8).
+
+### 90.3. Busy-wait задержки через CVR
+
+**`0x229D4(r0, r1)`** и **`0x22A0C(r0, r1)`** — busy-wait:
+- target = `r0 × u32[0x24]` (0x229D4) или `r0 × u32[0x10]` (0x22A0C) —
+  коэффициенты из §90.2;
+- цикл: CVR-reset (0x229D4: `CVR ← r4 = 0x00FFFFFF`; 0x22A0C:
+  `CVR ← CVR | 0x00FFFFFF`) → ожидание `(CVR & 0xFFFFFF) ≤ 0x1000000 − target`;
+- `r1` — u16-повторы (каждый = новый цикл ожидания).
+- С **SysTickModel** (1 insn = 1 SysTick count) задержки детерминированы:
+  **insn ≈ 27 + target** (r1=1); повторы складываются (10×1000 → 10029 insn).
+- Без модели (CVR статичен) coeff=0 → 1 прохождение (~27 insn), coeff>0 →
+  spin до max_insn.
+
+### 90.4. Software-tick и форматтер
+
+- **Software-tick:** u16[0x2BA]++ в периодическом task **0x1DFD8** (§59.8) +
+  main u32[0x314]++. u32[0x1E0] — общий счётчик (используют 10+ функций:
+  0x1A31C/0x1B67C/0x1C234/0x1C34C/0x1C838/0x1D3D0/0x1D898/0x1DFD8/0x1F1CC/0x1F600).
+- **`0x11BAC(&out, seconds)`** — форматтер даты/времени (§61, verified 100/100):
+  дивизоры [31104000, 2592000, 86400, 3600, 60] ≈ 360d-год/30d-месяц/день/час/мин;
+  out[0]=v//D0, out[i]=(v%D[i−1])//D[i], out[5]=v%60.
+
+### 90.5. Модель + тесты
+
+**`SysTickModel(emu, rvr=None)`** (emulator/mcu_emu.py): CVR декрементится на
+каждую инструкцию (CODE-hook), underflow → CVR = RVR (default 0x1193F),
+tick_count++; свойства ctrl/rvr/cvr; `close()`. **`TimeModel`**:
+`ref_datetime(v)` (reference) + `format_datetime(v)` (живой код 0x11BAC).
+Тесты `fv_tests_e3f.py`: 6 новых (@t(0x22934) clock-config точные коэффициенты,
+@t(0x229D4)/@t(0x22A0C) задержки с SysTickModel, @t(0x11C84) TICK_REF-флаг,
+@t(0x3600) композит-инварианты, @t(0x11BAC) TimeModel-интеграция). Сьют
+**767/767 PASS** (seeds 42/7, iters 3), ruff чист, `--list` 693/693 (100%).
+
+**Статус:** A4 готово — полная модель времени (SysTick + clock-config +
+задержки + форматтер) без железа. Остаток направления 2 (модели без железа):
+**A5 — I2C model** (сенсорная задача, условно).

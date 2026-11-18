@@ -59,6 +59,7 @@ import fv_tests_e3b  # noqa: F401,E402  (§80 B2-динамика RX)
 import fv_tests_e3c  # noqa: F401,E402  (§79.3 B1-динамика командного слоя)
 import fv_tests_e3d  # noqa: F401,E402  (§78.5 A3-динамика SPI-flash)
 import fv_tests_e3e  # noqa: F401,E402  (§89 B3-динамика агрегатора MCU→BLE)
+import fv_tests_e3f  # noqa: F401,E402  (§90 A4-динамика RTC/clock SysTick)
 
 if __name__ == '__main__':
     sys.exit(main())

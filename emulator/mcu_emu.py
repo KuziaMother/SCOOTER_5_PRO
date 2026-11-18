@@ -969,6 +969,105 @@ class SpiFlashMiso:
             self._stage(0x00)
 
 
+# A4 (§90): SysTick / модель времени
+SYST_CSR = 0xE000E010   # CTRL (ENABLE|TICKINT|TICK_REF; 7 = 1kHz с core clock)
+SYST_RVR = 0xE000E014   # RELOAD (24 bit)
+SYST_CVR = 0xE000E018   # CURRENT (24 bit)
+SYST_DEFAULT_RVR = 0x1193F  # ~1 kHz @ 72 MHz (boot-значение §74)
+
+
+class SysTickModel:
+    """A4 (§90): SysTick-модель + инструкционный clock. SysTick считает в
+    инструкционном clock эмулятора (**1 insn = 1 count**): CVR декрементится на
+    каждую инструкцию, underflow → CVR = RVR (default 0x1193F), tick++ — это
+    делает firmware-busy-wait задержки детерминированными: `0x229D4(r0, r1)`
+    (delay r0×u32[0x24] counts, u16-повторы r1; CVR-reset r4=0x00FFFFFF) и
+    `0x22A0C(r0)` (то же с u32[0x10]; CVR-reset via OR 0x00FFFFFF) исполняются
+    ≈ 27 + r0×coeff инструкций (r1=1; повторы складываются). Firmware-контекст:
+    `0x19968(a, b)` — u32-деление (shift-subtract, verified); `0x22934(&struct{
+    u32 rvr, u32 cvr, b flag, b ctrl})` — clock-config: коэффициенты через 0x19968:
+    u32[0x1C] = base/0x3E8 (÷1000, ticks/ms), u32[0x20] = base/0x2710 (÷10000),
+    u32[0x24] = base/0x186A0 (÷100000) (base = u32[0x08], ÷8 если struct[8]==0;
+    пул-значения — константы, НЕ deref) + RVR/CVR/CTRL из struct (CTRL =
+    (flag<<2) | ctrl); `0x1E2CA` — boot-init (RVR=r0−1, CVR=0, CTRL=7);
+    `0x11C84(r0)` — r0==4 → CTRL |= 4 (TICK_REF on), иначе CTRL &= ~4;
+    `0x35EC` — TICKINT off; `0x3600(ticks)` — период: bl 0x11C84 (build-quirk:
+    bl ставит r0=4 → TICK_REF on), reload из LUT 0xC708 (data @0x6A00; zero-
+    контекст → 0 → skip-путь), r1 = udiv(retval, 1000), RVR = r1−1 (если <
+    0x1000000) + tail CVR=0/CTRL=7 (skip-путь их пропускает → CTRL остаётся 0x4);
+    `0x11BAC(&out, sec)` — форматтер даты/времени (дивизоры 31104000/2592000/
+    86400/3600/60, §61 100/100). Software-tick: u16[0x2BA]++ в периодическом
+    task 0x1DFD8 (§59.8) + main u32[0x314]++."""
+    def __init__(self, emu, rvr=None):
+        self.emu = emu
+        self._enabled = True
+        self.tick_count = 0
+        if rvr is not None:
+            emu.uc.mem_write(SYST_RVR, struct.pack('<I', rvr & 0x00FFFFFF))
+        self._hook = emu.uc.hook_add(UC_HOOK_CODE, self._on_insn)
+
+    def _on_insn(self, uc, address, size, user):
+        if not self._enabled:
+            return
+        cvr = struct.unpack_from('<I', uc.mem_read(SYST_CVR, 4), 0)[0] & 0x00FFFFFF
+        rvr = struct.unpack_from('<I', uc.mem_read(SYST_RVR, 4), 0)[0] & 0x00FFFFFF
+        cvr -= 1
+        if cvr < 0:
+            cvr = rvr if rvr else SYST_DEFAULT_RVR
+            self.tick_count += 1
+        uc.mem_write(SYST_CVR, struct.pack('<I', cvr))
+
+    @property
+    def ctrl(self):
+        return struct.unpack_from('<I', self.emu.uc.mem_read(SYST_CSR, 4), 0)[0]
+
+    @property
+    def rvr(self):
+        return struct.unpack_from('<I', self.emu.uc.mem_read(SYST_RVR, 4), 0)[0]
+
+    @property
+    def cvr(self):
+        return struct.unpack_from('<I', self.emu.uc.mem_read(SYST_CVR, 4), 0)[0]
+
+    def close(self):
+        self._enabled = False
+        self.emu.uc.hook_del(self._hook)
+
+
+class TimeModel:
+    """A4 (§90): референс-модель времени: SysTick (ticks/ms) + 0x11BAC-форматтер
+    (total-seconds → 6 байт {v//31104000, (v%31104000)//2592000, .../86400, /3600,
+    /60, v%60} ≈ 360d-год/30d-месяц/день/час/мин/сек). `format_datetime` вызывает
+    реальный firmware-код 0x11BAC; `ref_datetime` — reference-вычисление (тот же
+    контракт, §61 100/100)."""
+    _FMT_D = (31104000, 2592000, 86400, 3600, 60)
+
+    def __init__(self, emu):
+        self.emu = emu
+
+    @staticmethod
+    def ref_datetime(v):
+        out = [(v // TimeModel._FMT_D[0]) & 0xFF]
+        for i in range(1, len(TimeModel._FMT_D)):
+            out.append(((v % TimeModel._FMT_D[i - 1]) // TimeModel._FMT_D[i]) & 0xFF)
+        out.append((v % TimeModel._FMT_D[-1]) & 0xFF)
+        return out
+
+    def format_datetime(self, total_seconds, buf_off=0x400):
+        """Вызов 0x11BAC(&out, seconds) на живом коде → 6-байтовый out."""
+        uc = self.emu.uc
+        uc.mem_write(RAM + buf_off, bytes(6))
+        uc.reg_write(UC_ARM_REG_R0, RAM + buf_off)
+        uc.reg_write(UC_ARM_REG_R1, total_seconds & 0x3FFFFFFF)
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        try:
+            uc.emu_start(0x11BAC | 1, 0, count=80)
+        except Exception:
+            pass
+        return bytes(uc.mem_read(RAM + buf_off, 6))
+
+
 # B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
 CMD_CTRL_BASE = 0x40021000
 CMD_CTRL_FIELDS = (0x10, 0x18, 0x1c)
