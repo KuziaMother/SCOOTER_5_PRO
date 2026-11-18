@@ -1711,6 +1711,127 @@ class ControlLoop:
         return [self.tick() for _ in range(ticks)]
 
 
+# Phase ② (§94): main-loop tick-harness — виртуальное время + реальный планировщик 0x1f600
+SCHED_NOW_OFF = 0x1E0       # u64 "сейчас" (low @0x1E0, high @0x1E4)
+SCHED_DESC_OFF = 0x170      # descriptor: +0x28/+0x2C = last_tick (u64 @0x198/0x19C)
+SCHED_LAST_OFF = 0x198      # = DESC+0x28 (low)
+SCHED_CAP_OFF = 0x17B       # = DESC+0xB (cap slot-counter)
+SCHED_PERIOD = 432          # межслотовый период (тик'ов)
+SCHED_BYTE_PERIOD = 8       # межбайтовый период (overflow-путь)
+COMM_TICK_FN = 0x1DFD8      # комм-тик (RX+TX+агрегатор+push, §22.1)
+
+
+class MainLoopHarness:
+    """Phase ② (§94): автономный main-loop tick-harness (без железа).
+
+    Виртуальные часы: u64 "now" @0x1E0. На каждый tick:
+      now += 1 → **0x1f600 (реальный планировщик)** → опционально 0x1dfd8 (комм-тик).
+    **Контракт планировщика (live verified):** elapsed = now − last (u64 @0x198);
+      - elapsed < 432 → return (без диспатча);
+      - elapsed >= 432 И cap >= slot_counter+1 → **main-путь**: slot_idx++, last := now;
+      - elapsed >= 432 И cap < slot_counter+1 → **overflow-путь**: межбайтовый счётчик
+        (8 тиков) ++, slot_idx без изменений.
+    Это расширяет «автономный прогон» с ~45% (ControlLoop: PID+FOC) к реальному
+    main-loop (scheduler + комм-тик) на виртуальном времени. НЕ cold-boot (§74.1
+    потолок: task-FP = runtime RAM) — планировщик/комм-тик вызываются напрямую.
+    """
+
+    def __init__(self, emu=None, cap=1, run_comm=True, comm_period=1000):
+        self.emu = emu or McuEmu(max_insn=400000)
+        self.cap = int(cap)
+        self.run_comm = bool(run_comm)
+        self.comm_period = int(comm_period)   # комм-тик каждые N тиков (мс-счётчик)
+        self.now = 0
+        self.dispatches = 0
+        self.overflows = 0
+        self.comm_ticks = 0
+
+    def _in_flash(self, aa):
+        L = self.emu.fw_len
+        return (FLASH0 <= aa < FLASH0 + L) or (FLASH1 <= aa < FLASH1 + L)
+
+    def _run(self, off, budget=200000):
+        """Прогнать off в flash, остановиться на уходе из flash. Возвращает insn."""
+        uc = self.emu.uc
+        sh = uc.hook_add(UC_HOOK_CODE,
+                         lambda u, a, s, ud: u.emu_stop() if not self._in_flash(a & ~1) else None)
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x40)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        uc.reg_write(UC_ARM_REG_R0, 0)
+        started = self.emu.insn
+        try:
+            uc.emu_start(off | 1, 0, count=budget)
+        except Exception:
+            pass
+        uc.hook_del(sh)
+        return self.emu.insn - started
+
+    def reset(self, now=0, head=1):
+        """Занулить RAM + засеять планировщик: now/last/tail/head/cap.
+        Кольцо 4 слота: head@0x2C1 (продюсер), tail/slot_idx@0x2C2 (потребитель);
+        диспатч идёт от tail до head (exclusive); tail==head → стоп."""
+        uc = self.emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        self.emu.hook_periph_ready()
+        self._write_now(now)
+        self.emu.uc.mem_write(RAM + SCHED_LAST_OFF, struct.pack('<Q', 0))
+        self.emu.uc.mem_write(RAM + SCHED_SLOT_INDEX_OFF, bytes([0]))   # tail=0
+        self.emu.uc.mem_write(RAM + 0x2C1, bytes([head & 0xFF]))          # head
+        if self.cap:
+            self.emu.uc.mem_write(RAM + SCHED_CAP_OFF, bytes([self.cap]))
+        self.now = int(now)
+        self.head = int(head)
+        self.dispatches = 0
+        self.overflows = 0
+        self.comm_ticks = 0
+
+    def _write_now(self, now):
+        self.emu.uc.mem_write(RAM + SCHED_NOW_OFF, struct.pack('<Q', now))
+
+    def _read_last(self):
+        return struct.unpack('<Q', self.emu.uc.mem_read(RAM + SCHED_LAST_OFF, 8))[0]
+
+    def _read_slot_idx(self):
+        return bytes(self.emu.uc.mem_read(RAM + SCHED_SLOT_INDEX_OFF, 1))[0]
+
+    def sched_tick(self):
+        """Один такт планировщика 0x1f600. Возвращает 'main'/'overflow'/'idle'.
+        main = last(@0x198) обновлён (slot_idx++); overflow = межбайтовый счётчик
+        (@0x1A0 = DESC+0x30) ++; idle = elapsed<432, ранний return."""
+        before_last = self._read_last()
+        before_bp = struct.unpack('<I', self.emu.uc.mem_read(RAM + 0x1A0, 4))[0]
+        self._run(SCHEDULER_FN)
+        after_last = self._read_last()
+        after_bp = struct.unpack('<I', self.emu.uc.mem_read(RAM + 0x1A0, 4))[0]
+        if after_last != before_last:
+            return 'main'
+        if after_bp != before_bp:
+            return 'overflow'
+        return 'idle'
+
+    def tick(self):
+        """Один шаг main-loop: now++ → планировщик → (опц.) комм-тик."""
+        self.now += 1
+        self._write_now(self.now)
+        res = self.sched_tick()
+        if res == 'main':
+            self.dispatches += 1
+        elif res == 'overflow':
+            self.overflows += 1
+        ms = struct.unpack('<H', self.emu.uc.mem_read(RAM + 0x2BA, 2))[0]
+        if self.run_comm and (self.now % self.comm_period == 0):
+            self._run(COMM_TICK_FN)
+            self.comm_ticks += 1
+        return dict(t=self.now, sched=res, slot_idx=self._read_slot_idx(),
+                    last=self._read_last(), ms=ms,
+                    dispatches=self.dispatches, overflows=self.overflows,
+                    comm_ticks=self.comm_ticks)
+
+    def run(self, ticks):
+        """Прогнать ticks шагов. Возвращает список состояний."""
+        return [self.tick() for _ in range(ticks)]
+
+
 def find_func_starts():
     """Начала функций = пролог push {..,lr} (0xB5xx) в кодовых секциях."""
     import struct as _s

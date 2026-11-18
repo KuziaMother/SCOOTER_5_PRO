@@ -7823,3 +7823,45 @@ USART3 → запись в RCC+0x10). Сьют **787/787 PASS** (seeds 42/7, ite
 **Статус:** A7 (статич. часть) готово — нестандартная раскладка полностью
 зафиксирована в машиночитаемой карте. **Идентификация кристалла** (GD32-ext vs
 нестандартный) — live-задача (схема/доска).
+
+---
+
+## §94. Phase ② — main-loop tick-harness: виртуальное время + реальный планировщик (без железа)
+
+**Задача:** расширить «автономный прогон» (Фаза ② из §73.15) с ~45% (ControlLoop:
+PID+FOC) к реальному main-loop на виртуальном времени — НЕ cold-boot (§74.1 потолок:
+task-FP = runtime RAM).
+
+### 94.1. Контракт планировщика 0x1f600 (live verified)
+
+Пул-адреса (точно): slot_idx/tail @`0x2C2`, head @`0x2C1`, now @`0x1E0` (u64),
+descriptor @`0x170` (last_tick u64 @+0x28=`0x198`, byte-period @+0x30=`0x1A0`,
+cap @+0xB=`0x17B`), slot-table @`0xA43` (stride 0x96), USART3 @`0x40004800`.
+
+- **elapsed = now − last (u64 @0x198).**
+- **elapsed <= 432 → idle** (ранний return, ~23 insn).
+- **elapsed > 432 И tail != head → main-путь** (~47 insn): `tail++`, `last := now`;
+  tail==head (кольцо 4 слота, head=продюсер/tail=потребитель) → стоп.
+- **elapsed > 432 И cap < slot_counter+1 → overflow-путь** (~46 insn): межбайтовый
+  счётчик (8 тиков) ++, tail без изменений.
+- **Период = 432 тика** (межслотовый); `0x1f600` обновляет slot-state, вызов
+  task-FP отделён (runtime RAM, §74.1).
+
+### 94.2. `MainLoopHarness` (emulator/mcu_emu.py)
+
+Виртуальные часы: u64 "now" @0x1E0. `tick()`: `now++` → **0x1f600 (реальный
+планировщик)** → опц. **0x1dfd8 (комм-тик** §22.1: RX+TX+агрегатор+push**)**.
+`reset(now, head)` — зануление RAM + seed now/last/tail/head/cap. `sched_tick()`
+классифицирует 'main'/'overflow'/'idle' по изменениям last(@0x198)/byte-period
+(@0x1A0). `run(ticks)` — список состояний. Константы: `SCHED_NOW_OFF/LAST_OFF/
+CAP_OFF/PERIOD=432/BYTE_PERIOD=8`, `COMM_TICK_FN=0x1DFD8`.
+
+**Verified:** 432 тика → 0 dispatch; 433 тика → dispatch t=433 (tail 0→1, last→433);
+head=2/870 тиков → 2 dispatch (t=433 slot→1, t=866 slot→2, tail==head→стоп);
+run_comm=True на 1200 тиков → комм-тик при t=1000, планировщик диспатчит. Тесты
+`fv_tests_e3j.py` (2), сьют **789/789 PASS** (seeds 42/7, iters 3), ruff чист,
+`--list` 693/693 (100%).
+
+**Статус:** Phase ② (статич. часть) — планировщик + комм-тик на виртуальном времени
+работают автономно. **Остаток (live):** точная сходимость контура (plant v_max/tau +
+FOC-gains калибровка) и FOC-ISR (вектор [22]=0x7875) по timer-update. — **§74.1, §73.15**

@@ -63,6 +63,7 @@ import fv_tests_e3f  # noqa: F401,E402  (§90 A4-динамика RTC/clock SysT
 import fv_tests_e3g  # noqa: F401,E402  (§91 A5-динамика I2C-модель)
 import fv_tests_e3h  # noqa: F401,E402  (§92 A6-динамика NVRAM-зоны/CRC)
 import fv_tests_e3i  # noqa: F401,E402  (§93 A7-карта регистров периферии)
+import fv_tests_e3j  # noqa: F401,E402  (§94 Phase② main-loop tick-harness)
 
 if __name__ == '__main__':
     sys.exit(main())
