@@ -146,13 +146,19 @@ _(оригинальный список завершён — см. таблиц�
             + чистый `decode_push_frames` (a0/a1, chk=SUM&0xFF) в emulator/mcu_emu.py.
             Валидация: seed mode/pct → валидный a0-кадр. Тест @t(0x211F8), **167/167 PASS**.
             Остаток: интеграция в ControlLoop (emit-телеметрия/tick) + модель TX-отправителя.
-      - [x] A3 **SPI-flash / NVM model — ГОТОВО (§78).** 2 flash-системы: внутренний (OTA)
-            @0x40022000 + внешний SPI-flash (NVM) SPI1 @0x40013000. Протокол: write-enable
-            0x221a4 (cmd 0x06) + page-program 0x221e6 (addr<0x1000, NVM ≤4KB); SPI-контекст =
-            struct в RAM ([+4]/[+0x14] гейт bit31/[+0x28]). NVM layout: 4Б-слоты; NVRAM-save
-            0x21A08 персистит 7+18Б конфига. `SpiFlashModel` (виртуальный NVM-буфер, 0xFF-дефолт,
-            set/get/seed) в emulator/mcu_emu.py. Тест @t(0x221E6), **168/168 PASS**. Остаток:
-            полное MISO-моделирование (реконструкция SPI-контекста под live-state) + read-path.
+      - [x] A3 **SPI-flash / NVM model — ГОТОВО (§78, динамика §78.5, закрыто полностью).** 2 flash-системы:
+            внутренний (OTA) @0x40022000 + внешний SPI-flash (NVM) SPI1 @0x40013000. Протокол: write-enable
+            0x221a4 (cmd = r0+1, 5→0x06) + page-program 0x221e6 (addr<0x4000, NVM ≤4KB). **SPI-контекст =
+            регистровый блок 0x40022000** (внутренний FLASH-контроллер, не RAM-struct; pool-литералы
+            0x235D0/0x23608): +0x00 low=старт-пульс (0xF0/0xF1), +0x04=cmd/len, +0x08=MOSI, +0x14 bit31=
+            ready-gate (0xFFFFFFFF = ready), +0x28=MISO (0x235b0 читает/сбрасывает). Движок 0x2360c
+            (desc {cmd-word, mask, len, *data}: (len+3)>>2 слов → MOSI + старт 0xF0), WE-handshake
+            0x23688 (0x112233/0x55667788 в MISO-регистр), arm 0x235d4 (ctx+4 |= low24(cmd), старт 0xF1).
+            NVM layout: 4Б-слоты; NVRAM-save 0x21A08 персистит 7+18Б; NVM-write батч 0x1C838
+            (payload 0x1A1/0x6ED + RAM-строки 0x844/0x858). `SpiFlashModel` (NVM-буфер) + `SpiFlashMiso`
+            (MISO-модель 25xxx: read/program, staged-ответы) в emulator/mcu_emu.py. Тесты: @t(0x221E6)
+            (b68) + fv_tests_e3d.py (6 новых: 0x221a4/0x221e6/0x235b0+модель/0x2360c/0x23688/0x1c838),
+            **758/758 PASS**.
       - [ ] A4 **RTC/clock model** — `0x11bac` (verified) + SysTick `0x3600` (done) → полная
             модель времени (~0.5д, средняя).
       - [ ] A5 **I2C model** — I2C-driver (init-кандидаты §74.1) → если сенсорная задача ходит

@@ -804,10 +804,12 @@ class SpiFlashModel:
     """A3: виртуальный буфер внешнего SPI-flash (NVM) + set/get. Содержимое NVM —
     runtime-данные устройства (конфиг/калибровка); без live-дампа значения неизвестны
     → дефолт 0xFF (стёртая flash), буфер settable. SPI-протокол: write-enable 0x221a4
-    (cmd 0x06) + page-program 0x221e6 (addr<0x1000, шаг слота 4Б); NVRAM-save 0x21A08
-    персистит 7+18Б конфига. Полное моделирование SPI-транзакции (MISO-возврат) —
-    остаток: SPI-контекст = struct в RAM (гейт [ctx+0x14] bit31), базу/состояние
-    нужно реконструировать под live."""
+    (cmd = r0+1, напр. 5→0x06) + page-program 0x221e6 (addr<0x4000, шаг слота 4Б);
+    NVRAM-save 0x21A08 персистит 7+18Б конфига. **SPI-контекст = регистровый блок
+    0x40022000** (внутренний FLASH-контроллер, §78.5): +0x00 low=старт-пульс (0xF0/
+    0xF1), +0x04=cmd/len, +0x08=MOSI-дата, +0x14 bit31=ready-gate (0xFFFFFFFF по
+    дефолту = ready), +0x28=MISO-байт (читает/сбрасывает 0x235b0). MISO-возврат:
+    SpiFlashMiso (состоянийная машина 25xxx)."""
     def __init__(self, emu, size=NVM_SIZE):
         self.emu = emu
         self.size = size
@@ -830,6 +832,88 @@ class SpiFlashModel:
                 self.set(addr, bytes(val))
             else:
                 self.set(addr, val.to_bytes(max(1, (val.bit_length() + 7) // 8), 'little'))
+
+
+# A3 (§78.5): SPI-контекст = регистровый блок внутреннего FLASH-контроллера @0x40022000
+# (pool-литералы 0x235D0/0x23608/0x23612 → 0x40022000; хелперы 0x235b0/0x235d4/0x2360c/0x23688).
+SPI_CTX_BASE = 0x40022000
+SPI_CTX_CTRL = 0x00      # low-байт = старт-пульс: 0xF0 (clocking данных), 0xF1 (arm/0x235d4)
+SPI_CTX_CMD = 0x04       # cmd/len: low24 |= команда (0x235d4), high-байт = cmd-байт (0x2360c),
+                         #          len-поле = bits25..31 (0x23670: (len+3)>>2 | 0x7F)
+SPI_CTX_MOSI = 0x08      # data-регистр (MOSI, u32; low-байт = байт, уходящий в flash)
+SPI_CTX_READY = 0x14     # bit31 = ready/enable-гейт (0xFFFFFFFF по дефолту = ready)
+SPI_CTX_MISO = 0x28      # MISO-байт-регистр (ответ flash; читает/сбрасывает 0x235b0)
+SPI_CTX_WE_WORDS = (0x00112233, 0x55667788)  # write-enable handshake 0x23688 (два слова в +0x28)
+
+
+class SpiFlashMiso:
+    """A3 (§78.5): модель SPI-транзакции с MISO-возвратом. SPI-контекст — регистровый
+    блок 0x40022000: MOSI-байты уходят записями в SPI_CTX_MOSI (0x40022008, low-байт),
+    ответ flash модель **staged** в SPI_CTX_MISO (0x40022028) — firmware читает его
+    как обычно (0x235b0 — чтение+сброс в 0). Протокол 25xxx (NVM ≤4KB, 16-битные
+    адреса): 0x06 = write-enable (armed), 0x05/статус → MISO 0x00, 0x03 или 0x02
+    (не armed) = read: 3 адреса-байта → NVM[addr] (page-wrap 0x100), 0x02 (armed)
+    = page program: 3 адреса + данные (AND в NVM). Модель — companion к исполнению:
+    наблюдает MOSI-записи (UC_HOOK_MEM_WRITE), стейджит MISO; данные NVM — в
+    SpiFlashModel.flash (read-back после прогона)."""
+    def __init__(self, emu, nvm=None):
+        self.emu = emu
+        self.nvm = nvm if nvm is not None else SpiFlashModel(emu)
+        self.state = 'idle'     # idle | read | prog
+        self.armed = False
+        self.addr = 0
+        self.abuf = []
+        self.miso_log = []
+        emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_write, None,
+                        SPI_CTX_BASE + SPI_CTX_MOSI, SPI_CTX_BASE + SPI_CTX_MOSI + 3)
+
+    def _on_write(self, uc, access, address, size, value, user_data):
+        self.feed(value & 0xFF)
+
+    def _stage(self, b):
+        self.emu.uc.mem_write(SPI_CTX_BASE + SPI_CTX_MISO, struct.pack('<I', b))
+        self.miso_log.append(b)
+
+    def feed(self, b):
+        """Шаг состоянии-машины (ручное приведение; UC_HOOK_MEM_WRITE не срабатывает
+        на ручных mem_write)."""
+        self._step(b)
+
+    def _step(self, b):
+        if b == 0x06:                       # WRITE ENABLE (в любом состоянии)
+            self.armed = True
+            self.state = 'idle'
+            self.abuf = None
+            return
+        if b == 0x05:                       # READ STATUS
+            self._stage(0x00)
+            return
+        if b in (0x02, 0x03):               # старт READ / PAGE PROGRAM
+            self.state = 'prog' if self.armed else 'read'
+            self.abuf = []
+            return
+        if self.state == 'idle':
+            return                          # stray data
+        if self.abuf is not None and len(self.abuf) < 3:
+            self.abuf.append(b)
+            return
+        if self.abuf is not None:  # адрес только что собрался (MSB-first)
+            self.addr = ((self.abuf[0] << 16) | (self.abuf[1] << 8) | self.abuf[2]) & 0x3FFF
+            self.abuf = None
+            if self.state == 'read':  # MISO-поток стартует сразу после адреса
+                a = self.addr
+                self._stage(self.nvm.get(a % 0x100, 1)[0])
+                self.addr = (a + 1) % 0x100
+            return
+        a = self.addr
+        if self.state == 'read':  # dummy-clock → следующий байт MISO
+            self._stage(self.nvm.get(a % 0x100, 1)[0])
+            self.addr = (a + 1) % 0x100
+        else:  # prog: b = data-байт (AND в NVM)
+            if a < self.nvm.size:
+                self.nvm.set(a, bytes([self.nvm.get(a, 1)[0] & b]))
+            self.addr = (a + 1) % 0x100
+            self._stage(0x00)
 
 
 # B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
