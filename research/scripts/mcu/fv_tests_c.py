@@ -534,3 +534,36 @@ def _(run, rng):
     buf = bytes(emu.uc.mem_read(_R + 0x1F10, 8))
     assert r0 == 0 and buf[:4] == src_c[:4], \
         f'pathB gate-pass: return={r0:#x} buf={buf.hex()} want {src_c[:4].hex()}'
+
+
+@t(0x1BF48, '§96 A1: GPIO input-регистра закрыта: кастомный блок «портов» @0x48000000 — input-data в +0x00 (IDR, read-only; бит N = состояние пина N). 0x1BF24 (3-bit «iron»-режим) читает [port1 0x48000400 + 0x00] и raw-shift-трюками извлекает пины 6-8 = (b6<<0)|(b7<<1)|(b8<<2). GpioModel.input(port,pin). Live-значения (Hall/кнопки) — железо')
+def _(run, rng):
+    from emulator.mcu_emu import GpioModel, GPIO_IDR
+    assert GPIO_IDR == 0x00
+    uc = run.uc
+    emu = run.emu
+    port1 = 0x48000400
+    # GpioModel.input() зеркалирует IDR
+    gpio = GpioModel(emu)
+    try:
+        for seed in (0x0, 0x40, 0x80, 0x100, 0x1C0, 0x1FF):
+            uc.mem_write(port1 + GPIO_IDR, struct.pack('<I', seed))
+            assert gpio.input(1) == seed
+            assert gpio.input(1, 6) == (seed >> 6) & 1
+            assert gpio.input(1, 7) == (seed >> 7) & 1
+            assert gpio.input(1, 8) == (seed >> 8) & 1
+    finally:
+        uc.hook_del(gpio._hook)
+    # эмулятор: 0x1BF24(r0) → 3-bit из [port1+0x00]
+    for seed in (0x0, 0x40, 0x80, 0x100, 0x140, 0x1C0, 0x3C0, 0x1FF):
+        uc.mem_write(port1 + GPIO_IDR, struct.pack('<I', seed))
+        uc.reg_write(UC_ARM_REG_SP, STACK_TOP - 0x40)
+        uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
+        emu.insn = 0
+        try:
+            uc.emu_start(0x1BF24 | 1, 0, count=50000)
+        except UcError:
+            pass
+        got = uc.reg_read(UC_ARM_REG_R0) & 0x7
+        exp = ((seed >> 6) & 1) | (((seed >> 7) & 1) << 1) | (((seed >> 8) & 1) << 2)
+        assert got == exp, f'seed=0x{seed:03x}: ret={got} ждём {exp}'

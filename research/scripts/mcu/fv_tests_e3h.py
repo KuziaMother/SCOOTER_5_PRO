@@ -17,10 +17,12 @@
 import struct
 
 from fv_core import *  # noqa: F401,F403
-from emulator.mcu_emu import (NV_CRC8_POLY, NVM_Z304C, NVM_Z305C,  # noqa: E402
+from emulator.mcu_emu import (NV_CRC8_POLY, NV_CRC16_POLY, NVM_CRC16_TABLE16,  # noqa: E402
+                              NVM_Z304C, NVM_Z305C,
                               NVM_Z30DD, NVM_Z30DD_CRC_OFF,
                               NVM_Z30DD_DATA_LEN, NVM_Z30DD_SIZE,
-                              NvmZoneModel)
+                              NVM_SAVELIST_1A550, NVM_SAVELIST_ENTRIES,
+                              NVM_SAVELIST_SIZE, NvmZoneModel)
 
 
 def _a6_fresh(off, arg0=0, seed=None, max_insn=200000):
@@ -131,3 +133,38 @@ def _(run, rng):
     assert not m2.zone_crc8_valid(NVM_Z30DD), 'испорченный CRC: должен не совпасть'
     # другие зоны — адреса в RAM
     assert 0x3000 <= NVM_Z304C <= 0x30FF and 0x3000 <= NVM_Z305C <= 0x30FF
+
+
+@t(0x3C4C, '§96 CRC-16 закрыт статикой: два варианта — 0x3C4C (init 0x0000, 16-bit таблица @0x08019784) и 0x8A50 (init 0xFFFF, hi/lo @0x08019584/0x19684); оба non-reflected → полином 0x1021 (CCITT). Референс crc16_ccitt: init 0xFFFF по "123456789" = 0x29B1 (документированный CCITT check). Таблицы в образе 0xFF — строятся в runtime из полинома (регенерируются, live-дамп не нужен)')
+def _(run, rng):
+    assert NV_CRC16_POLY == 0x1021
+    assert NVM_CRC16_TABLE16 == 0x08019784
+    model = NvmZoneModel(McuEmu())
+    std = b'123456789'
+    # init 0xFFFF → 0x29B1 (документированный CRC-16/CCITT check)
+    assert model.crc16_ccitt(std, init=0xFFFF) == 0x29B1, \
+        f"init 0xFFFF={model.crc16_ccitt(std, init=0xFFFF):#x} ждём 0x29b1"
+    # init 0x0000 (0x3C4C) — детерминирован, отличается от 0xFFFF
+    c0 = model.crc16_ccitt(std, init=0x0000)
+    assert c0 != 0x29B1 and isinstance(c0, int) and 0 <= c0 < 0x10000
+    # self-consistency: детерминизм + длина
+    assert model.crc16_ccitt(std, init=0) == c0
+    assert model.crc16_ccitt(b'', init=0xFFFF) == 0xFFFF  # пустой → init
+    # детерминизм на рандоме
+    for _ in range(10):
+        d = bytes(rng.getrandbits(8) for _ in range(rng.randint(1, 64)))
+        assert model.crc16_ccitt(d, init=0xFFFF) == NvmZoneModel.crc16_ccitt(d, init=0xFFFF)
+
+
+@t(0x2D5C, '§96 NVRAM save-list @0x1A550: 0x2D5C персистит 26Б во внешнюю NVM через 0x332C (transform 0x163B4 + checksum 0x87B0); данные = таблица 6 u32-адресов (4× RAM 0x200002xx + TIM1 CCR1 0x40012C40 + константы 0x94E/0xAC). 0x5C9C: magic 0xAAAA @0x40003000 + 2Б (F1 FA) из 0x19B14 + flush 0xC20C. Статическая структура save-list верифицирована по образу')
+def _(run, rng):
+    # таблица save-list в образе == константа
+    import struct as _s
+    raw = FW[NVM_SAVELIST_1A550:NVM_SAVELIST_1A550 + NVM_SAVELIST_SIZE]
+    assert len(raw) == NVM_SAVELIST_SIZE == 0x1A
+    entries = _s.unpack('<6I', raw[:24])
+    assert entries == NVM_SAVELIST_ENTRIES, f"save-list={entries} != {NVM_SAVELIST_ENTRIES}"
+    # TIM1 CCR1 в списке (моторный таймер персистится)
+    assert 0x40012C40 in NVM_SAVELIST_ENTRIES
+    # 0x5C9C data = 2Б F1 FA из 0x19B14
+    assert FW[0x19B14:0x19B16] == b'\xf1\xfa'

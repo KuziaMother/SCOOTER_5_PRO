@@ -115,7 +115,9 @@
 - [91. A5 — I2C model: I2C2-чип (dev 0x3E) + shadow-регистровая семья (emulator-based)](#91-a5--i2c-model-i2c2-чип-dev-0x3e--shadow-регистровая-семья-emulator-based)
 - [92. A6 — NVRAM-зоны (RAM-копии с CRC): layout + CRC-8/CRC-16-референс (emulator-based)](#92-a6--nvram-зоны-ram-копии-с-crc-layout--crc-8crc-16-референс-emulator-based)
 - [93. A7 — Карта регистров периферии (машинночитаемый референс нестандартной раскладки)](#93-a7--карта-регистров-периферии-машинночитаемый-референс-нестандартной-раскладки)
-- [94. Phase ② — main-loop tick-harness: виртуальное время + реальный планировщик (без железа)](#94-phase-②--main-loop-tick-harness-виртуальное-время--реальный-планировщик-без-железа)
+- [94. Phase ② — main-loop tick-harness: виртуальное время + реальный планировщик (без железа)](#94-phase---main-loop-tick-harness-виртуальное-время--реальный-планировщик-без-железа)
+- [95. Phase ③ — cold-boot: векторная таблица @0x1000 + startup-цепочка (без железа)](#95-phase---cold-boot-векторная-таблица-0x1000--startup-цепочка-без-железа)
+- [96. Без-железный остаток MCU/BLE — дозакрыт (9 пунктов)](#96-без-железный-остаток-mcuble--дозакрыт-9-пунктов)
 
 ## 1. Общая структура образа
 
@@ -7959,3 +7961,123 @@ insn=6314, final_pc=0xCD78, reached={stage1,stage2,tramp2}, periph=0xFF (3/3
 **Статус:** Phase ③ статическая часть — **векторная таблица + startup-цепочка
 разобраны, boot детерминированно до TRAMP2**. Остаток (live): SWD-дамп RAM при
 reset → полный cold-boot + task-таблицы.
+
+
+## 96. Без-железный остаток MCU/BLE — дозакрыт (9 пунктов)
+
+Закрытие последнего **без-железного** хвоста MCU/BLE-разбора. Все 9 пунктов
+статически разобраны + верифицированы эмулятором/образом/APK/snoop. Итог сьют:
+**800/800 PASS** (seeds 42/7, iters 3), ruff чист, `--list` **693/693 (100.0%)**.
+Тесты: `fv_tests_e3h.py` (NVRAM/CRC), `fv_tests_e3b.py` (RX-E), `fv_tests_c.py`
+(GPIO), `fv_tests_e3m.py` (BLE-протокол + co-proc + TX-sender). Остаток — только
+**live-значения** (геометрия/контракты закрыты).
+
+### 96.1. CRC-16 — полином выведен статикой (было «live»)
+
+§92 оставил CRC-16 «live» (таблицы @0x08019584/0x19684 = 0xFF в образе). На деле
+форма алгоритма **non-reflected** + init=0xFFFF даёт ровно задокументированный
+CCITT check **0x29B1** по `"123456789"` → полином **0x1021 (CCITT)** выведен
+статикой, таблицы регенерируются из полинома (live-дамп не нужен).
+- **`0x3C4C`**: init 0x0000, 16-bit таблица @0x08019784 (был E2-b8).
+- **`0x8A50`**: init 0xFFFF, hi/lo-таблицы @0x08019584/0x08019684.
+- `NvmZoneModel.crc16_ccitt(data, init)` — референс. Константы `NV_CRC16_POLY=0x1021`,
+  `NVM_CRC16_TABLE16=0x08019784`.
+
+### 96.2. NVRAM save-list @0x1A550 — структура разобрана
+
+- **`0x2D5C`**: читает 26Б из @0x1A550 → персистит во внешнюю NVM через
+  **`0x332C(&data,len)`** (u32-вход, transform `0x163B4` + checksum `0x87B0`).
+- **@0x1A550 = «NVM save-list»**: таблица 6 u32-адресов
+  `{0x20000258, 0x2000025C, 0x40012C40 (TIM1 CCR1), 0x2000026B, 0x2000024C, 0x94E}`
+  + 2Б трейлер (0xAC) — 4× RAM-состояния + **моторный CCR1** персистятся между
+  включениями.
+- **`0x5C9C`**: magic `0xAAAA` @0x40003000 + 2Б (F1 FA) из 0x19B14 + flush `0xC20C(1)`.
+- Константы `NVM_SAVELIST_1A550/ENTRIES/SIZE`. **Live**: фактические сохраняемые
+  значения.
+
+### 96.3. RX-коллектор `E` — полный набор коллекторов закрыт
+
+§80 покрыл B,C,D,F,H,I,J,K,c,`,a; §59.6 — A (telemetry), G. Не хватало **`E`**:
+- **`E` (0x45) = SET**: payload[0..5] → **3 u16-слота 0x2DA/0x2DC/0x2DE**
+  (`u16=(p[2k]<<8)|p[2k+1]`, 2-байтовые записи).
+- **Единый dispatch**: цепочка `cmp 0x41..0x4A/0x60/0x61 → 0x1ea82`. Подгруппы:
+  SET = B/C (6B 0x2CB/0x2D2), D (0x2E6/0x306 clamp), **E (u16 0x2DA)**, F (20B 0x2F2);
+  response/`'d'`-фрейм (ctx[1]=0x64) = H/I/J/`/a; telemetry = A; frame-start = @/G/K/c.
+- Эмпирика: 11 коллекторов + 4 frame-start сверены (ctx[1], RAM-цели).
+
+### 96.4. BLE-сессии `0x6ccc` / `0x6e50` — session-init
+
+Обе — init BLE-сессий, управляют RAM-структурами **0x200012ba** (session state:
+флаги +0x60/0x61/0x62/0x63/0x64, счётчик, size+0x1c) и **0x2000128b** (buffer
+descriptor: +0x14/+0x2c/+0x3c/+4):
+- **`0x6ccc`** (insn=44): сессия A — flag 0x62=1, type 0x63=2, cnt 0x64=1,
+  buf[0x2000128b+0x14]=−2.
+- **`0x6e50`** (insn=90): сессия B — flag 0x60=1, 0x61=1, buf[+0x14]=0.
+- Разные lock'и (0x10fe0/0x10fec). **Live**: семантика сессий в контексте BLE-чипа.
+
+### 96.5. `0x16f42` OOB-баг (§57) — fault-path верифицирован
+
+`0x16f42` = составной **bsearch/lower_bound** (u32-array + s16-array). **OOB-баг**:
+на `0x16f64` `ldr r0,[ip, r0,lsl#2]` читает `array[count]` — **сентинал за концом**
+массива (индексы 0..count−1). Эмулятор: управляемая таблица {10,20,30,40} +
+сентинал → OOB-read подтверждён (читает байт за таблицей), lower_bound корректен
+(target=25→2). Вызывающий — 0x6c82 (BLE-контекст). **Live**: что реально лежит за
+конец текущей таблицы.
+
+### 96.6. GPIO input-регистра (A1) — найдена: offset +0x00
+
+§76 `GpioModel` знал MODER(+0x2c)/MODER_HI(+0x28)/OUTSEL(+0x10) — input-регистра
+не было. **`0x1BF24`** (3-bit «железный» режим) читает **`[0x48000400+0x00]`**
+(порт1) и raw-shift-трюками извлекает **пины 6-8**:
+`(b6<<0)|(b7<<1)|(b8<<2)` (shifts `<<25>>31 / <<24>>31 / <<23>>31`).
+→ **Input-data-регистра кастомного GPIO-блока = offset +0x00** (read-only, бит N =
+состояние пина N). `GpioModel.input(port,pin)` + `GPIO_IDR=0x00`. Эмулятор: 8/8
+seed-кейсов. **Live**: реальные значения Hall/кнопок.
+
+### 96.7. A2 TX-sender — объединение §94 «scheduler» + A2
+
+**Ключевой результат:** `0x1F600` (в §94 именован «scheduler» main-loop harness) —
+это же **TX-отправитель**. Pool-адреса: head=**0x2C1** / tail=**0x2C2** (совпадает
+с §94), ring-база **@0xA43** (beacon-таблица), слот 0x96, период 432; при dispatch
+слота байты фрейма (len=8) идут по одному через **`0x1F1C0` → USART3_DR
+(0x40004804)**; гейт TX-ready = `sign-bit([0x40004828]<<17)`.
+- `UsartTxSenderModel` (emulator/mcu_emu.py): frame-буфер @0xA43 + 1 байт/tick +
+  гейт; `load_frame/tick/tx_ready`.
+- **ControlLoop-интеграция**: `_emit_tx()` собирает push-фрейм телеметрии
+  `{8,"A",sp16,thr16,XOR,0xA5}` → TX-sender → USART3_DR на каждом tick.
+- Константы `TX_SENDER_FN=0x1F600`, `TX_BYTE_SEND_FN=0x1F1C0`, `TX_FRAME_BASE=0xA43`,
+  `USART3_TXSR=0x40004828`.
+
+### 96.8. BLE co-proc тривиальные статик (Phase ④)
+
+**Setter-семья `0x06008..0x060e4`** (6×44Б, ble_2.7.0_0015.bin) — единый
+**trampoline-паттерн**: `push{r4,r5,lr}` → save `{lr,r5,r4}` в per-setter cfg-struct
+(+0/+4/+8) → `cbz callback` → **`blx r4`** (вызов зарегистрированного callback) →
+**`bx r3`** (возврат через saved-указатель [ret+8]). Разница setter'ов — только
+адрес cfg-struct и offset callback-указателя. Глубокая логика — в callback/RAM-
+трамплинах (live, как и весь зашифрованный APP-регион). Статически верифицирован:
+все 6 содержат `blx_r4+bx_r3+cbz`, cfg-struct различаются.
+
+### 96.9. BLE app-протокол из Mi Home APK + snoop (siid/piid)
+
+Ground truth из `logs/btsnoop_hci.log` (1649 фреймов) + APK `apk/64bitpackage.apk`
+(229МБ, 13 dex; siid/piid-строки в classes2/3.dex):
+- **Формат data-фрейма**: `[siid:1][piid:1][len:2 LE][data:len]`. `len` = **полный**
+  размер данных; при len>~240Б данные **фрагментируются** по нескольким ATT-фреймам
+  (стриминг; макс. data ~240Б/фрейм). **Trailing CRC-8 на siid=0/piid=0 не найден**
+  (poly 0x29/0x49/0x31/0x9B не совпадают).
+- **siid/piid-карта** (snoop): **siid=0/piid=0** = main data (телеметрия+команды,
+  handles 0x18/0x21/0x24, доминирует 226); **siid=1/piid=0** = sec data (0x21, 54);
+  **siid=245(0xF5)/piid=0,1** = шифрованный OTA/DFU-канал (handles 0x38/0x3a/0x44,
+  91+2, ciphertext); siid=32/33, siid=3 = control/status.
+- **CCC** (handles 0x16/0x19/0x22): `WRITE_REQ 0100` = enable notify.
+- `mi_ble_decode(payload)` + константы `MI_BLE_SIID_{MAIN,SEC,OTA}`, `MI_BLE_MTU_DATA`
+  (emulator/mcu_emu.py). Сверка с реальным snoop-логом в тесте.
+
+### 96.10. Итог
+
+Все 9 без-железных пунктов MCU/BLE **закрыты** (контракты/геометрия). Остаток —
+только **live-значения**: сохраняемые NVM-значения, GPIO input-состояния (Hall/
+кнопки), OOB-содержимое за таблицей, BLE-семантика сессий, реальные push-кадры
+(для сверки siid/piid-карты с live). Следующий высокий-ценности live-шаг —
+**SWD GD32** (RDP → дамп RAM при reset → cold-boot + task-таблицы, §95.3).

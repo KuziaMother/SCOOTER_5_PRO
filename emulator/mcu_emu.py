@@ -133,6 +133,7 @@ PERIPH_REG_MAP = {
     }),
     0x40001820: ("clock-switch цель (0x11cb4 хвост)", {}),
     0x48000000: ("кастомный GPIO-блок «портов» (PERIPH2; §76 GpioModel; F4-подобный)", {
+        0x00: "IDR: input-data (read-only; бит N = состояние пина N; §96: 0x1BF24 читает [port1+0x00], пины 6-8 = 3-bit iron-вход)",
         0x2c: "MODER: ВСЕ 16 пинов, 2 бита/пин (pin N → биты [2N+1:2N])",
         0x28: "MODER_HI (AF/напр.)",
         0x10: "OUTSEL",
@@ -187,6 +188,16 @@ class PeriphRegMap:
 
 USART3_DR = 0x40004804       # куда 0x1f1c0 пишет байт команды
 USART3_BASE = 0x40004800
+USART3_TXSR = 0x40004828     # TX-status/gate: [base+0x28]<<17 sign-bit = TX-ready (гейт отправки, §96)
+# §96: TX-sender — ОБЪЕДИНЕНИЕ §94 «scheduler» + A2 TX-отправитель: 0x1F600 = main-loop
+# dispatcher (head 0x2C1 / tail 0x2C2, как §94; ring-база @0xA43, слот 0x96, период 432).
+# При dispatch слота байты фрейма отправляются по одному через 0x1F1C0 → USART3_DR.
+TX_SENDER_FN = 0x1F600       # main-loop dispatcher (== «scheduler» §94; head 0x2C1/tail 0x2C2)
+TX_BYTE_SEND_FN = 0x1F1C0    # byte-примитив: str r0,[USART3_BASE+4] → USART3_DR
+TX_FRAME_BASE = 0xA43        # frame-база (ring @0xA43 = beacon-таблица; §77 TX-ring)
+TX_FRAME_LEN = 8             # длина фрейма в TX-sender (0x1F664: r5=#8)
+TX_HEAD_OFF = 0x2C1          # head (producer) — совпадает с §94
+TX_TAIL_OFF = 0x2C2          # tail/slot_idx (consumer) — совпадает с §94
 
 # §73: моторный таймер PWM = «TIMER_A» из каталога §60/§60.2 (подфункции FOC
 # 0x1be1c/0x1bd88). Обнаружен/подтверждён трассой полного входа FOC 0x1a938
@@ -207,8 +218,33 @@ GPIO_NPORTS = 4
 GPIO_MODER = 0x2c               # режимы ВСЕХ 16 пинов, по 2 бита/пин: pin N → биты [2N+1:2N]
                                 # (наблюдено: порт0=0x666 [пины 0-5], порт1=0x66660000 [пины 12-15])
 GPIO_MODER_HI = 0x28            # вторичное поле (AF/напр.) — в motor-init = 0
+GPIO_IDR = 0x00                 # input-data-регистра (read-only; 16 пинов, бит N = состояние пина N; §96: 0x1BF24 читает [port1+0x00] и raw-shift'ом берёт пины 6-8 = 3-bit «iron»-вход)
 GPIO_OUTSEL = 0x10              # output/select (большие значения — mask в high-битах)
 GPIO_BIT_REGS = (0x14, 0x18, 0x1c, 0x20, 0x24)   # битовые регистры (сброс 0 в init)
+
+# §96: BLE app-протокол Mi Home (apk/64bitpackage.apk + logs/btsnoop_hci.log).
+# Формат data-фрейма: [siid:1][piid:1][len:2 LE][data:len] — len = ПОЛНЫЙ размер данных;
+# при len > ~240Б данные фрагментируются по нескольким ATT-фреймам (стриминг). Trailing
+# CRC-8 на siid=0/piid=0 НЕ найден (poly 0x29/0x49/0x31/0x9B не совпадают).
+MI_BLE_SIID_MAIN = 0      # основной data-канал (телеметрия+команды): handles 0x18/0x21/0x24
+MI_BLE_SIID_SEC = 1       # второй data-канал: handle 0x21
+MI_BLE_SIID_OTA = 0xF5    # шифрованный OTA/DFU-канал: handles 0x38/0x3a/0x44 (ciphertext)
+MI_BLE_MTU_DATA = 240     # макс. data-байт в одном ATT-фрейме (наблюдено до 244Б payload)
+
+
+def mi_ble_decode(payload):
+    """Декод data-фрейма Mi Home BLE: [siid][piid][len:2 LE][data].
+    Возвращает dict(siid, piid, len, data, complete). complete=False → фрагментация
+    (len > len(data) — данные продолжатся в следующем ATT-фрейме)."""
+    if len(payload) < 4:
+        return {'siid': payload[0] if payload else None,
+                'piid': payload[1] if len(payload) > 1 else None,
+                'len': None, 'data': b'', 'complete': False}
+    siid, piid = payload[0], payload[1]
+    ln = struct.unpack('<H', payload[2:4])[0]
+    data = payload[4:]
+    return {'siid': siid, 'piid': piid, 'len': ln, 'data': data,
+            'complete': ln <= len(data)}
 
 # дескрипторы планировщика USART3 (из REPORT §MCU)
 DESC_BASE = 0x20000A43
@@ -849,6 +885,15 @@ class GpioModel:
         """Режим пина (2 бита) из MODER (+0x2c): pin N → биты [2N+1:2N]."""
         return (self.read(port, GPIO_MODER) >> (pin * 2)) & 0x3
 
+    def input(self, port, pin=None):
+        """Input-состояние пина(ов) из IDR (+0x00, read-only). pin=None → весь u32;
+        иначе бит `pin`. §96: 0x1BF24 читает [port1+0x00] и raw-shift'ом берёт
+        пины 6-8 порта1 (0x48000400) = 3-bit «iron»-вход."""
+        v = self.read(port, GPIO_IDR)
+        if pin is None:
+            return v
+        return (v >> pin) & 1
+
     def output(self, port):
         """Значение output/select-регистра +0x10."""
         return self.read(port, GPIO_OUTSEL)
@@ -938,6 +983,50 @@ class UsartTxModel:
         lo, size = window
         data = bytes(uc.mem_read(RAM + lo, size))
         return decode_push_frames(data)
+
+
+class UsartTxSenderModel:
+    """§96 (A2-остаток): TX-отправитель — объединение §94 «scheduler» 0x1F600 + byte-примитив
+    0x1F1C0. 0x1F600 = main-loop dispatcher (head 0x2C1/tail 0x2C2, ring @0xA43, слот 0x96,
+    период 432): при dispatch слота байты фрейма (len=8) отправляются по одному в USART3_DR
+    через 0x1F1C0, с гейтом TX-ready = sign-bit([USART3_TXSR]<<17). Модель: frame-буфер @0xA43
+    + byte-индекс + 1 байт/tick (эмуляция реального 0x1F600/0x1F1C0)."""
+
+    def __init__(self, emu):
+        self.emu = emu
+        self.usart_out = bytearray()   # всё, что ушло в USART3_DR
+        self._frame = None
+        self._idx = 0
+        self.sent = 0
+
+    def load_frame(self, frame):
+        """Поставить фрейм в очередь отправки (аналог dispatch слота 0x1F600)."""
+        self._frame = bytes(frame)
+        self._idx = 0
+
+    def tx_ready(self):
+        """Гейт TX-ready: sign-bit([USART3_TXSR]<<17). В изоляции (0) → not ready;
+        модель позволяет форсировать через force_ready."""
+        if getattr(self, 'force_ready', True):
+            return True
+        v = struct.unpack('<I', bytes(self.emu.uc.mem_read(USART3_TXSR, 4)))[0]
+        return bool(((v << 17) & 0x80000000) == 0)
+
+    def tick(self):
+        """1 байт/tick: отправить frame[_idx] → USART3_DR (0x1F1C0). Вернуть байт или None."""
+        if self._frame is None or self._idx >= len(self._frame):
+            return None
+        if not self.tx_ready():
+            return None
+        b = self._frame[self._idx]
+        self.emu.uc.mem_write(USART3_DR, bytes([b]))
+        self.usart_out.append(b)
+        self._idx += 1
+        self.sent += 1
+        if self._idx >= len(self._frame):
+            self._frame = None
+        return b
+
 
 
 # A3: внешний SPI-flash (NVM). SPI1 @0x40013000; NVM ≤ 4KB (валидация addr в 0x221e6).
@@ -1329,7 +1418,16 @@ NVM_Z30DD_SIZE = 0x20
 NVM_Z30CF = 0x30CF       # зона CRC-16 (0x147AC; табл. @0x08019584/0x08019684 = 0xFF в образе)
 NVM_Z304C = 0x304C       # зона read 512Б (0xCFB8)
 NVM_Z305C = 0x305C       # зона read 40Б (0xCF60)
-NVM_CRC16_TABLES = (0x08019584, 0x08019684)  # hi/lo (0xFF в mcu_0007.bin — live-задача)
+NVM_CRC16_TABLES = (0x08019584, 0x08019684)  # hi/lo для 0x8A50 (0xFF в образе — строятся в runtime)
+NV_CRC16_POLY = 0x1021     # полином CRC-16 (CCITT), non-reflected — статически выводим (§96)
+NVM_CRC16_TABLE16 = 0x08019784  # 16-bit таблица для 0x3C4C (init 0)
+# §96: NVRAM save-list @0x1A550 — 26Б = 6 u32-адресов (RAM+TIM1 CCR1) + 2Б трейлер;
+# 0x2D5C персистит их во внешнюю NVM через 0x332C (transform 0x163B4 + checksum 0x87B0);
+# 0x5C9C: magic 0xAAAA @0x40003000 + 2Б из 0x19B14 (F1 FA) + flush 0xC20C(1)
+NVM_SAVELIST_1A550 = 0x1A550
+NVM_SAVELIST_ENTRIES = (0x20000258, 0x2000025C, 0x40012C40,  # TIM1 CCR1
+                        0x2000026B, 0x2000024C, 0x94E)
+NVM_SAVELIST_SIZE = 0x1A   # 26Б
 
 
 class NvmZoneModel:
@@ -1348,9 +1446,13 @@ class NvmZoneModel:
     - **0xCFB8** (зона @`0x304C`, 512Б) / **0xCF60** (@`0x305C`, 40Б): read +
       timeout (без явной CRC-сверки в хвосте).
     **CRC-8 (0x87F8)** — самодостаточен (poly в коде, без таблиц): live verified
-    7/7. **CRC-16 (0x8A50)** — табличный, таблицы вне прошитого региона образа.
-    **Изолированный контракт** (NVM=0xFF): 0x13B14 → зона=0xFF×32, CRC8(0xFF×24)
-    ≠ 0xFF → ret=1 (FAIL), insn≈5999 (100-итер-задержка + re-read)."""
+    7/7. **CRC-16 — статически закрыт (§96):** два варианта — `0x3C4C` (init 0x0000,
+    16-bit таблица @0x08019784) и `0x8A50` (init 0xFFFF, hi/lo @0x08019584/0x19684);
+    оба non-reflected → полином **0x1021 (CCITT)** (init 0xFFFF по "123456789" =
+    0x29B1, документированный CCITT check). Таблицы в образе 0xFF (строятся в runtime
+    из полинома) — регенерируются `crc16_ccitt`. **Изолированный контракт**
+    (NVM=0xFF): 0x13B14 → зона=0xFF×32, CRC8(0xFF×24) ≠ 0xFF → ret=1 (FAIL),
+    insn≈5999 (100-итер-задержка + re-read)."""
 
     def __init__(self, emu):
         self.emu = emu
@@ -1363,6 +1465,20 @@ class NvmZoneModel:
             crc ^= b
             for _ in range(8):
                 crc = ((crc << 1) ^ poly) & 0xFF if (crc & 0x80) else (crc << 1) & 0xFF
+        return crc
+
+    @staticmethod
+    def crc16_ccitt(data, init=0, poly=NV_CRC16_POLY):
+        """CRC-16 (CCITT 0x1021, non-reflected) — референс для 0x3C4C (init 0) /
+        0x8A50 (init 0xFFFF). Алгоритм 0x3C4C: idx=byte^(crc>>8), crc=(crc<<8)^T16[idx].
+        Таблицы в образе 0xFF (строятся в runtime из полинома) — регенерируются здесь.
+        Проверка: init 0xFFFF по "123456789" = 0x29B1 (документированный CCITT check)."""
+        crc = init
+        for b in data:
+            crc ^= b << 8
+            for _ in range(8):
+                crc = ((crc << 1) ^ poly) if (crc & 0x8000) else (crc << 1)
+                crc &= 0xFFFF
         return crc
 
     def zone_read(self, off, size):
@@ -1628,6 +1744,7 @@ class ControlLoop:
                              throttle_ref=throttle_ref, dt=1.0)
         self.bm = BatteryModel(self.emu)
         self.rm = RangeModel(self.emu)
+        self.tx = UsartTxSenderModel(self.emu)   # §96: TX-отправитель (0x1F600/0x1F1C0)
         self.batt_rate = float(batt_rate)
         self.run_foc = bool(run_foc)
         self.now = 0
@@ -1691,6 +1808,7 @@ class ControlLoop:
         """Один шаг контура. Возвращает dict состояния."""
         self.sm.set_speed(int(self.mm.speed))          # measured speed → PID input
         thr = self._run_pid()                          # real firmware: PID → throttle
+        self._last_thr = thr
         if self.run_foc:
             ccr = self._run_foc(thr & 0xFFFF)          # real firmware: FOC → PWM
             center = sum(ccr) / 3.0
@@ -1702,9 +1820,22 @@ class ControlLoop:
         soc = self.bm.get_soc()
         v_batt = BatteryModel._raw(int(soc))           # SoC → сырое [415..535]
         X, R = self.rm.estimate(v_batt)                # запас хода (closed-form)
+        tx_byte = self._emit_tx()                      # §96: телеметрия → TX-sender → USART3_DR
         self.now += 1
         return dict(t=self.now, speed=round(self.mm.speed, 1), throttle=thr,
-                    pwm_amp=round(amp, 1), soc=round(soc, 2), range=R)
+                    pwm_amp=round(amp, 1), soc=round(soc, 2), range=R,
+                    tx_byte=tx_byte, tx_sent=self.tx.sent)
+
+    def _emit_tx(self):
+        """§96: при готовности — собрать push-фрейм телеметрии и отдать TX-sender (1 байт/tick)."""
+        if self.tx._frame is None:   # предыдущий фрейм дослан
+            sp = int(self.mm.speed)
+            thr = self._last_thr if hasattr(self, '_last_thr') else 0
+            frame = bytes([8, 0x41, (sp >> 8) & 0xFF, sp & 0xFF,
+                           (thr >> 8) & 0xFF, thr & 0xFF,
+                           (0x41 ^ sp ^ thr) & 0xFF, 0xA5])
+            self.tx.load_frame(frame)
+        return self.tx.tick()
 
     def run(self, ticks):
         """Прогнать ticks шагов. Возвращает список состояний."""

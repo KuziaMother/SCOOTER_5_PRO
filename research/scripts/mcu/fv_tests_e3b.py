@@ -156,3 +156,21 @@ def _(run, rng):
         assert ctx[0] == 5 and ctx[1] == 0x64 and ctx[2] == c2 and ctx[3] == 0, \
             f'{cmd} ctx-head: {ctx.hex(" ")}'
         assert ctx[4] == crc and ctx[5] == 0x9B, f'{cmd} crc/chk: {ctx.hex(" ")}'
+
+
+@t(0x1E9E0, '§96: RX "E" SET-коллектор (закрыт): payload[0..5] → 3 u16-слота 0x2DA/0x2DC/0x2DE (u16=(p[2k]<<8)|p[2k+1]); '
+            'полный набор коллекторов: SET = B/C (6B 0x2CB/0x2D2), D (0x2E6/0x306 clamp), E (u16 0x2DA), F (20B 0x2F2); '
+            'response/d-фрейм (ctx[1]=0x64) = H/I/J/`/a; telemetry = A; frame-start = @/G/K/c. '
+            'Единый dispatch-цепочка cmp 0x41..0x4A/0x60/0x61 → 0x1ea82')
+def _(run, rng):
+    payload = bytes([0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6])
+    ev = _rx_probe(run, 'E', payload)
+    got = dict(ev)
+    # 3 u16-записи @0x2DA/0x2DC/0x2DE: u16=(p[2k]<<8)|p[2k+1]; hook ловит low-byte, high — по памяти
+    import struct as _st
+    for k, base in enumerate((0x2DA, 0x2DC, 0x2DE)):
+        assert got.get(base) == payload[2 * k + 1], f'E u16[{base:#x}] low: {ev}'
+        u16 = _st.unpack_from('<H', run.uc.mem_read(RAM + base, 2))[0]
+        assert u16 == (payload[2 * k] << 8) | payload[2 * k + 1], f'E u16[{base:#x}]={u16:#x}: {ev}'
+    # head/state гайт
+    assert got.get(0x2C0) == 1 and got.get(RX_STATE_OFF) == 0 and got.get(0x171) == 0, f'E head/state: {ev}'
