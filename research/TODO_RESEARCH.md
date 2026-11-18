@@ -111,6 +111,8 @@ _(оригинальный список завершён — см. таблиц�
       - **(A) startup-state:** warm-start (прогнать init → прыгнуть в main-loop, обойти
         trampolines; ~0.5–1 день) **vs** cold-boot (реконструкция initial-RAM/stack всех
         trampoline — высокая/неопределённая; снимает live-дамп RAM при reset → класс C «SWD GD32»).
+        **Статич. проверка (Фаза ④):** сначала проверить, пишет ли init-цепочка trampoline-цели
+        `[SP_init+12..]` из flash (→ cold-boot без SWD) — см. Фаза ③ ниже.
       - **(B) main-loop entry + slot-table:** найти точный entry (функция, гоняющая 0x1f600 в
         цикле) + заполнить slot-descriptors task-указателями (~0.5–1 день).
       - **(C) tick/прерывания-harness — ГЛАВНОЕ: Готово (§94).** `MainLoopHarness`
@@ -138,7 +140,11 @@ _(оригинальный список завершён — см. таблиц�
             → TRAMP1 pop@0x3166 (pc=RAM[SP+12]=stage2|Thumb) → stage2 0x3168 (0xcc68/
             0xc9dc/0x5970/0xcb40) → TRAMP2 pop@0x31c6. `BootHarness` (emulator/mcu_emu.py)
             детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78). Тесты fv_tests_e3k.py
-            (2), сьют 792/792 PASS. **Остаток (live):** полный cold-boot до работающего
+            (2), сьют 792/792 PASS. **Остаток без железа (Фаза ④):** статич. проверка
+            init-цепочки (0xcd0c stage1, 0xcc68/0xc9dc/0x5970/0xcb40 stage2) — пишет ли она
+            trampoline-цели `[SP_init+12..]` и task function-pointer таблицы (слоты @0xA43)
+            **из flash-данных** (реконструируемо → полный cold-boot без SWD) или только
+            runtime-вычисляемо (тогда SWD-потолок). **Остаток (live):** полный cold-boot до работающего
             main-loop — **SWD-дамп RAM при reset** (initial stack = C-runtime runtime RAM;
             main-loop dispatch через runtime function-pointer, 0 стат. `bl 0x1f600`).
             Дамп должен захватить: начальный стек @SP_init=`0x20004e40` (trampoline-цели
@@ -152,9 +158,10 @@ _(оригинальный список завершён — см. таблиц�
 - [ ] **🔧 Эмулятор: расширение БЕЗ железа (статика по mcu_0007.bin, без самоката и BLE).**
       Граница (нельзя без железа): cold-boot (SWD-дамп RAM при reset), электрический контур
       (live L/R/EMF + FOC-gains), динамическая калибровка plant (езда), ЗНАЧЕНИЯ status-LUT
-      (дамп NVM). Всё ниже — чистая статика. Текущее: 24+ моделей (Tim/Adc/Speed/Motor/
-      Battery/Range/ControlLoop/Gpio/SpiFlash(Miso)/UsartRx/TxAggregator/CmdControl/
-      Scheduler/Lut/FocPipeline/SysTick/Time/…), сьют 767/767 PASS, `--list` 693/693 (100%).
+      (дамп NVM). Всё ниже — чистая статика. Текущее: 25+ моделей (Tim/Adc/Speed/Motor/
+      Battery/Range/ControlLoop/Gpio/SpiFlash(Miso)/UsartRx/TxAggregator/UsartTxSender/
+      CmdControl/Scheduler/Lut/FocPipeline/SysTick/Time/I2c/NvmZone/BootHarness/MainLoop),
+      сьют **800/800 PASS** (seeds 42/7, iters 3), `--list` 693/693 (100%).
       **A. Периферийные модели (Phase ②, статич. часть; сейчас читают `0xFF`):**
       - [x] A1 **GPIO model — ГОТОВО (§76).** Кастомный блок «портов» @0x48000000 (4 порта ×
             0x400): режимы ВСЕХ 16 пинов в +0x2c по 2 бита/пин; драйвер 0x22000(r0=port,
@@ -276,8 +283,22 @@ _(оригинальный список завершён — см. таблиц�
             → {addr:[value,...]} + `periph_writes_since(mark)` (окно одного вызова). Facility
             «функция X пишет в регистр Y значение Z» — улучшает все модели A. Тест @t(0x1BF48):
             мотор-инит (221 запись) → map содержит motor-TIM @0x40012C00 + GPIO @0x48000000.
+      **F. Остаток каталога и BLE-протокол (статика, §96 — всё остальное без железа закрыто):**
+      - [ ] F1 **5 функций каталога со статусом «ID»:** `0x0c6f0` (4Б setter `[r1+0x60]=r0`),
+            `0x17736` (push{r0,r2,r4..r6,lr}), `0x177d6` (strh r0,[r5+0x28] → b 0x173bc),
+            `0x178c4` (push{r1,r3..r7,lr}), `0x244d2` (push{r0,r1,r3,r6,r7,lr}). Разобрать до
+            контракта + эмулятор-тесты (закрывают последние не-«разобран» каталога).
+      - [ ] F2 **BLE app-протокол — углубление из APK (статика).** §96 закрыл формат фрейма
+            ([siid][piid][len:2 LE][data], фрагментация) + siid/piid-карту. Осталось: (a) полная
+            таблица свойств siid/piid из RN-бандла `assets/plugin_rn_sdk/sdk.bundle` (12МБ) →
+            маппинг на конкретные app-действия; (b) декод формата OTA-фреймов (siid=0xF5)
+            по `logs/btsnoop_hci.log`.
+      - [ ] F3 **RX-хендлеры 0x40/0x63 «группа A» (§31.6.9).** «Эмуляция заблокирована
+            data-driven вызовом» — повторить попыткой с crafted-кадрами и seeds (как §80
+            для остальных 15); если не выйдет — live-снуп.
       **Порядок:** A1→A3 (разблокируют задачи) → B1→B2 (управляющий слой) → E1 параллельно
-      → C1/C2 → D1 (самый рискованный, но скачок к ~60–70%).
+      → C1/C2 → D1 (самый рискованный, но скачок к ~60–70%). **§96-остаток: F1→F3 (+ Фаза ④
+      cold-boot, см. выше) — последние без-железные задачи.**
 
 ## B. Живое устройство (снуп USART3 / I2C2 / Mi Home)
 

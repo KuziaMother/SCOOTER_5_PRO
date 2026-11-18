@@ -129,6 +129,30 @@ pytest                            # тест-сьют (вкл. полный ци
 ruff check .                      # линтер (E9+F — codebase это research-скрипты, не библиотека)
 ```
 
+### Состояние реверса прошивок (`research/`)
+
+Статический реверс обоих чипов — `research/REPORT.md` (96 разделов):
+
+- **MCU (GD32, `mcu_0007.bin`):** 678 функций, 99.7% декомпилировано; каталог
+  «разобран» 693/693 **верифицирован на эмуляторе** (800 функциональных тестов);
+  25+ моделей периферии (TIM/ADC/GPIO/SPI-flash/I2C2/USART3/NVM, планировщик RX/TX,
+  контур PID+FOC, SysTick/clock).
+- **BLE (RTL8762C, `ble_2.7.0_0015.bin`):** bootloader/flash-драйвер разобраны;
+  app-логика зашифрована (79.2%); Mi Home app-протокол разобран из APK+snoop
+  (фрейм `[siid][piid][len:2][data]`, siid/piid-карта).
+
+Функциональный тест-сьют MCU (без железа):
+
+```bash
+python research/scripts/mcu/func_verify.py --list         # покрытие каталога «разобран»
+python research/scripts/mcu/func_verify.py --only 0x1F600 # одна функция
+```
+
+Без железа осталось: завершение эмуляторного cold-boot (Фаза ④), 5 функций
+каталога «ID», углубление BLE-протокола (APK). Железо: SWD-дамп RAM GD32 при reset,
+live-снуп USART3/I2C2, дампы NVM, калибровка контура. Трекер —
+`research/TODO_RESEARCH.md`, лог работ — `research/PROGRESS.md`.
+
 ### Логи
 
 Все `.log`-файлы лежат в `logs/`:
@@ -268,6 +292,30 @@ python emulator/run_emulator.py   # real core/dreame_auth + dreame_flasher again
 pytest                            # test suite (incl. full flashing cycle on the emulator)
 ruff check .                      # linter (E9+F — the codebase is research scripts, not a library)
 ```
+
+### Firmware reverse status (`research/`)
+
+Static reverse of both chips — `research/REPORT.md` (96 sections):
+
+- **MCU (GD32, `mcu_0007.bin`):** 678 functions, 99.7% decompiled; the "disassembled"
+  catalog 693/693 is **verified on the emulator** (800 functional tests); 25+ peripheral
+  models (TIM/ADC/GPIO/SPI-flash/I2C2/USART3/NVM, RX/TX scheduler, PID+FOC loop,
+  SysTick/clock).
+- **BLE (RTL8762C, `ble_2.7.0_0015.bin`):** bootloader/flash driver disassembled;
+  app logic is encrypted (79.2%); Mi Home app protocol recovered from APK+snoop
+  (`[siid][piid][len:2][data]` frames, siid/piid map).
+
+MCU functional test suite (no hardware):
+
+```bash
+python research/scripts/mcu/func_verify.py --list         # "disassembled" catalog coverage
+python research/scripts/mcu/func_verify.py --only 0x1F600 # a single function
+```
+
+Left without hardware: finishing the emulator cold-boot (Phase ④), 5 "ID" catalog
+functions, BLE protocol deep-dive (APK). Hardware: SWD dump of GD32 RAM at reset,
+live USART3/I2C2 snooping, NVM dumps, loop calibration. Tracker —
+`research/TODO_RESEARCH.md`, work log — `research/PROGRESS.md`.
 
 ### Logs
 
