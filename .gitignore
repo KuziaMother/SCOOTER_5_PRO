@@ -47,3 +47,7 @@ mobile/test/crc32_vectors.json
 mobile/test/hkdf_vectors.json
 mobile/test/ecdh_setup.json
 mobile/test/ecdh_step1.json
+
+# Одноразовые артефакты RE-рабочих циклов (пересобираются скриптами).
+research/scripts/mcu/*_untested.txt
+research/scripts/mcu/emu_coverage.csv
