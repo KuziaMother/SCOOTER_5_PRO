@@ -56,6 +56,7 @@ import fv_tests_e2y  # noqa: F401,E402  (E2-b80)
 import fv_tests_e2z  # noqa: F401,E402  (E2-b81)
 import fv_tests_e3a  # noqa: F401,E402  (E2-b82)
 import fv_tests_e3b  # noqa: F401,E402  (§80 B2-динамика RX)
+import fv_tests_e3c  # noqa: F401,E402  (§79.3 B1-динамика командного слоя)
 
 if __name__ == '__main__':
     sys.exit(main())
