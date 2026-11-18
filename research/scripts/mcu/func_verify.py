@@ -62,6 +62,7 @@ import fv_tests_e3e  # noqa: F401,E402  (§89 B3-динамика агрегат
 import fv_tests_e3f  # noqa: F401,E402  (§90 A4-динамика RTC/clock SysTick)
 import fv_tests_e3g  # noqa: F401,E402  (§91 A5-динамика I2C-модель)
 import fv_tests_e3h  # noqa: F401,E402  (§92 A6-динамика NVRAM-зоны/CRC)
+import fv_tests_e3i  # noqa: F401,E402  (§93 A7-карта регистров периферии)
 
 if __name__ == '__main__':
     sys.exit(main())

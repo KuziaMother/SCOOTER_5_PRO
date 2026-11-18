@@ -41,6 +41,150 @@ SYS = 0xE0000000             # Cortex-M NVIC/SCB
 SYS_SIZE = 0x00100000
 STACK_TOP = 0x20018000
 
+# A7 (§93): карта регистров периферии — машиночитаемый референс нестандартной раскладки
+# (консолидация фактов §48/§49/§50/§76/§78.5/§89/§91). Блок → {offset: смысл}.
+PERIPH_REG_MAP = {
+    0x40021000: ("RCC", {
+        0x00: "CTLR: HSE bit 0x10000, PLLSRC bits[19:18], HSION (0xc518), SW (0xc60c)",
+        0x04: "CFGR0: AHB-прескалер bits[1:0] (0xc894), PLL-конфиг (0x11cb4)",
+        0x10: "clock I2C1 (bit 1<<21) / 0xc684 set/clear",
+        0x14: "0xc624 set/clear",
+        0x18: "BDCR: 0xc6a4 set/clear; I2C?",
+        0x1c: "0xc664 set/clear; power-стадия bit22 (0x2e0c); 0x11cb4 |= 0x10000000",
+        0x24: "0x11cb4 |= 4",
+        0x28: "0xc644 set/clear; DMA1/AHB clock bit12 = base>>18 (0x17f4); 0x11cb4 |= 4",
+        0x2c: "0x11cb4 = 0",
+        0x30: "0x11cb4 = 0x3800",
+        0x34: "0x11cb4 = 0",
+        0x40: "HSE ready flag (bit0); 0x11cb4 = 0; [0x40007000]&0x400",
+        0x60: "set/clear (RCC-семья §49.2)",
+    }),
+    0x40022000: ("FLASH-контроллер (OTA) + SPI-контекст (A3)", {
+        0x00: "KEYR: magic 0x45670123/0xCDEF89AB (0x6378); SPI: start-pulse low (0xF0/0xF1)",
+        0x0c: "SR: 0x61d4 |= r0 (сброс флагов)",
+        0x10: "CTLR: bit1=erase, bit6(0x40)=start (0x6230); SPI: cmd/len",
+        0x14: "ADDR (erase); SPI: ready-gate bit31 (0xFFFFFFFF=ready)",
+        0x28: "SPI: MISO (0x235b0 читает/сбрасывает)",
+    }),
+    0x40012C00: ("TIM1 (advanced) — 3-фазный компл. ШИМ BLDC-мотора", {
+        0x1c: "bit31 (timer IRQ 0x1a2a4)",
+        0x54: "CCR-подобный (0x1a2a4 &= )",
+    }),
+    0x40014000: ("timer-кластер (вспом. ШИМ) — 0x40014000/4400/4800/4C00", {}),
+    0x40000400: ("TIM3", {}),
+    0x40000800: ("TIM4", {}),
+    0x40012400: ("ADC1 (токи фаз, АКБ, ручка газа, темп.)", {
+        0x18: "биты 3/5: 0x1a5c4 |= 8, 0x1a5d4 |= 0x20",
+        0xff: "ch9: wait [base+0xFF]==0x40012450 (0x1c1ac)",
+    }),
+    0x40013800: ("USART1 (BLE-чип)", {
+        0x0c: "RCC-пульс 0x1302c (бит 0x4000)",
+        0x3c: "SR (НЕ F1-class)",
+        0x40: "ICER (НЕ F1-class)",
+    }),
+    0x40004800: ("USART3 (BLE-чип; RX-протокол 0x1e9e0)", {
+        0x04: "DR: 0x1f1c0 пишет байт команды",
+        0x10: "RCC-пульс 0x1302c (бит 0x40000)",
+        0x3c: "SR (НЕ F1-class)",
+        0x40: "ICER (НЕ F1-class)",
+    }),
+    0x40004400: ("USART2 (BMS/дисплей)", {
+        0x10: "RCC-пульс 0x1302c (бит 0x20000)",
+    }),
+    0x40015000: ("UART4", {0x0c: "RCC-пульс 0x1302c (бит 0x20000)"}),
+    0x40015400: ("UART5", {0x0c: "RCC-пульс 0x1302c (бит 0x40000)"}),
+    0x40005400: ("I2C1 (датчики/EEPROM; B1 power-стадия 1)", {}),
+    0x40005800: ("I2C2 (внешний чип dev 0x3E; B1 power-стадия 2)", {}),
+    0x40013000: ("SPI1 (внешний чип; команда 0xB9; НЕ стандартная база)", {}),
+    0x40013C00: ("SPI2", {}),
+    0x40020000: ("DMA1 (ADC/USART-потоки)", {
+        0x800: "канал-блок (0x40020800)",
+        0x84c: "ch1 SR? (struct 0x1670)",
+    }),
+    0x40002800: ("WWDG (оконный watchdog = таймер событий с BCD-окном)", {
+        0x00: "CR (0xccbc-декодер)",
+        0x04: "CFR: BCD-время (0xcc1c-декодер)",
+        0x08: "RER: refresh-данные (0xcd0c)",
+        0x0c: "SR: bit5 (0xcc08 &=~0x80; 0xce70 poll)",
+        0x10: "bit2 poll (0xcb40)",
+        0x24: "magic 0xCA/0x53 → window (0xce70/0xcd80)",
+        0x50: "status >>16 (0xcc68)",
+    }),
+    0x40003000: ("кастомный блок (свободен в F1/GD32F103 — GD32-ext/нестандартный кристалл)", {
+        0x00: "магия 0xAAAA (0x99f0/0x5cc0) / 0xCCCC (0x99e0); r0 (0x9a0c)",
+        0x04: "r0 (0x9a00)",
+        0x08: "r0 (0x99d4)",
+    }),
+    0x40010800: ("GPIOA (F1-раскладка: CRL+0/CRH+0xC/IDR+0x10/ODR+0x14/BRR+0x18/BSRR+0x1C/LCKR+0x20)", {
+        0x18: "BRR: init 0x10 (0x8348), 4 (0x5b98)",
+        0x28: "init 0x10 (0x8348)",
+    }),
+    0x40010C00: ("GPIOB (F1-раскладка; state machine 0x4344)", {}),
+    0x40011000: ("GPIOC (F1-раскладка)", {}),
+    0x40011400: ("GPIOD (F1-раскладка)", {}),
+    0x40010000: ("AFIO", {
+        0x04: "MAPR: remap 0x8588 (idx=arg1>>2, p=arg1&3)",
+        0x414: "EXTI line-mapping: 0x5970; 0x5908 (0x80/0x100/0x200); 0x30a6/0x32f4 (=0x80)",
+    }),
+    0x40007000: ("кастомный handshake/ready-блок (sleep 0xc2a8)", {
+        0x00: "режим сна (&~7)|2",
+        0x08: "|= r1",
+        0x10: "bit9/2 ready (poll &2)",
+    }),
+    0x40001820: ("clock-switch цель (0x11cb4 хвост)", {}),
+    0x48000000: ("кастомный GPIO-блок «портов» (PERIPH2; §76 GpioModel; F4-подобный)", {
+        0x2c: "MODER: ВСЕ 16 пинов, 2 бита/пин (pin N → биты [2N+1:2N])",
+        0x28: "MODER_HI (AF/напр.)",
+        0x10: "OUTSEL",
+    }),
+    0xE000E010: ("SysTick CTRL (0xE000E010/0x14 LOAD/0x18 VAL)", {}),
+    0xE000E400: ("NVIC (база ЭТОГО чипа = 0xE000E400, НЕ 0xE000E100!)", {
+        0x00: "priority [0xE000E400+irq] (0xc0b4); ISER[0] |= 1<<9 (0x1c1ac)",
+    }),
+    0xE000ED00: ("SCB", {
+        0x0c: "CFSR: bits 0x700 = приоритет-группа (0xc0b4)",
+        0x10: "SCR: bit2 SLEEPDEEP (0xc2a8)",
+        0x88: "0x11cb4 |= 0xF00000",
+    }),
+}
+# RCC set/clear-семья (0xC6xx): offset → функция (gap 0xC63E..0xC684 = 0xC644/0xC664)
+RCC_SETCLEAR_FAMILY = {
+    0x00: 0xC60C, 0x14: 0xC624, 0x28: 0xC644, 0x1c: 0xC664, 0x10: 0xC684, 0x18: 0xC6A4,
+}
+HSE_MHZ = 20  # HSE-кварц: 0x7A1200 = 20 МГц (0xc708)
+
+
+class PeriphRegMap:
+    """A7 (§93): доступ к машиночитаемой карте регистров PERIPH_REG_MAP.
+    `base(name_or_base)` → базовый адрес; `block(base)` → (name, {off:desc});
+    `rcc_setclear()` → семья set/clear; сверка с periph-записями эмуляции."""
+
+    def __init__(self, emu=None):
+        self.emu = emu
+
+    @staticmethod
+    def block(base):
+        return PERIPH_REG_MAP.get(base & ~0xFF)
+
+    @staticmethod
+    def base_of(name_sub):
+        for base, (nm, _) in PERIPH_REG_MAP.items():
+            if name_sub.lower() in nm.lower():
+                return base
+        return None
+
+    def touched_bases(self):
+        """базы из periph-записей эмуляции, присутствующие в карте."""
+        if not self.emu:
+            return []
+        out = []
+        for _, addr, _, _ in self.emu.periph_writes:
+            b = addr & ~0xFF
+            if b in PERIPH_REG_MAP and b not in out:
+                out.append(b)
+        return sorted(out)
+
+
 USART3_DR = 0x40004804       # куда 0x1f1c0 пишет байт команды
 USART3_BASE = 0x40004800
 
