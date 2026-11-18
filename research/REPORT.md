@@ -7865,3 +7865,28 @@ run_comm=True на 1200 тиков → комм-тик при t=1000, плани
 **Статус:** Phase ② (статич. часть) — планировщик + комм-тик на виртуальном времени
 работают автономно. **Остаток (live):** точная сходимость контура (plant v_max/tau +
 FOC-gains калибровка) и FOC-ISR (вектор [22]=0x7875) по timer-update. — **§74.1, §73.15**
+
+### 94.3. FOC-ISR по timer-update (закрытие Phase ②)
+
+**Коррекция:** «FOC-ISR (вектор [22]=0x7875)» — **0x7875 НЕ ISR-entry в образе**:
+векторная таблица неполная (OTA-образ, reset=0x315c, векторы [16..24]=0xFFFFFFFF),
+0x7875 = середина state-machine блока (изолированный прогон уходит в 0x7992, 76 insn).
+**Реальный TIM1-IRQ = `0x1a2a4`** (чистый push-пролог).
+
+**Контракт 0x1a2a4 (live verified):** `[TIM1+0x1C]` — статус; `lsls r1, r1, #0x18`
+(= <<24) тестит **bit7** (update-событие); `bpl`:
+- **bit7 set (0x80) → handler-путь (~39 insn):** clear flag, `[base+0x20] |= 0x80`,
+  статус-флаги;
+- **bit7 clr → быстрый return (6 insn)**.
+
+**`MainLoopHarness`** дополнен `run_foc`/`foc_period`: на каждый timer-update
+(`now % foc_period == 0`) → `foc_isr()`: set bit7 [TIM1+0x1C] → 0x1a2a4 (реальный
+ISR). Константы: `TIM1_BASE=0x40012C00`, `TIM1_ISR_FN=0x1A2A4`,
+`TIM1_STATUS_OFF=0x1C`, `TIM1_UPDATE_BIT=0x80`, `FOC_FN=0x1A938`. Verified:
+foc_period=10/100 тиков → foc_runs=10, foc_handler=10; foc_period=1 → каждый тик;
+run_foc=False → 0. Тесты `fv_tests_e3j.py` (3), сьют **790/790 PASS** (seeds 42/7,
+iters 3), ruff чист, `--list` 693/693 (100%).
+
+**Статус:** **Phase ② завершена** — планировщик + FOC-ISR + комм-тик на виртуальном
+времени работают автономно (реальный firmware-код). Остаток (live): точная
+сходимость контура (plant v_max/tau + FOC-gains) и cold-boot (§74.1, SWD GD32).

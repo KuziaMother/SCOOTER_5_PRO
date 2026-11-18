@@ -115,12 +115,13 @@ _(оригинальный список завершён — см. таблиц�
         trampoline — высокая/неопределённая; снимает live-дамп RAM при reset → класс C «SWD GD32»).
       - **(B) main-loop entry + slot-table:** найти точный entry (функция, гоняющая 0x1f600 в
         цикле) + заполнить slot-descriptors task-указателями (~0.5–1 день).
-      - **(C) tick/прерывания-harness — ГЛАВНОЕ: статич. часть Готово (§94).** `MainLoopHarness`
+      - **(C) tick/прерывания-harness — ГЛАВНОЕ: Готово (§94).** `MainLoopHarness`
         (emulator/mcu_emu.py): вирт. часы (u64 "now" @0x1E0) → на каждый tick: now++ →
-        **0x1f600 (реальный планировщик)** → опц. 0x1dfd8 (комм-тик). Контракт планировщика
-        live verified: период 432 тика, кольцо 4 слота (head@0x2C1/tail@0x2C2),
-        main/overflow/idle. Тесты fv_tests_e3j.py (2), сьют 789/787→789 PASS. **Остаток (live):**
-        FOC-ISR (вектор [22]=0x7875) по timer-update + точная сходимость (plant/FOC-gains).
+        **0x1f600 (планировщик, период 432, кольцо 4 слота head@0x2C1/tail@0x2C2)** →
+        **FOC-ISR 0x1a2a4** (реальный TIM1-IRQ: bit7 [TIM1+0x1C]=update; коррекция: 0x7875
+        НЕ ISR-entry) → **0x1dfd8 (комм-тик)**. Контракт main/overflow/idle + ISR
+        live verified. Тесты fv_tests_e3j.py (3), сьют 790/790 PASS. **Остаток (live):**
+        точная сходимость (plant/FOC-gains) + cold-boot (§74.1, SWD GD32).
       - **(D) периферия под задачи:** GPIO, UART I/O, SPI-flash, RTC — моделировать по мере
         надобности (сейчас `0xFF`-заглушки); инкрементально, дни на каждую.
       - **(E) поведенческие модели** Speed/Motor/Battery/Range — **уже есть** (§73.8–73.12).

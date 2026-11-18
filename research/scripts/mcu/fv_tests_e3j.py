@@ -55,3 +55,23 @@ def _(run, rng):
     assert mains and mains[0]['t'] == 433, f"первый dispatch t={[m['t'] for m in mains]}"
     # последний тик валиден (harness не сломан)
     assert states[-1]['t'] == 1200
+
+
+@t(0x1A2A4, 'Phase② §94: FOC-ISR по timer-update — MainLoopHarness.run_foc: 0x1a2a4 (реальный TIM1-IRQ) на каждый timer-update. Контракт: bit7 [TIM1+0x1C]=update-событие (lsls #0x18=<<24 тестит bit7); bit7 set → handler-путь (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → быстрый return (6 insn). harness: foc_period=10/100 тиков → foc_runs=10, foc_handler=10. **Коррекция:** 0x7875 НЕ ISR-entry в образе (нет полной векторной таблицы, OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный TIM1-IRQ = 0x1a2a4')
+def _(run, rng):
+    # FOC-ISR через harness: foc_period=10 → 10 runs за 100 тиков
+    h = MainLoopHarness(cap=1, run_comm=False, run_foc=True, foc_period=10)
+    h.reset(now=0, head=1)
+    h.run(100)
+    assert h.foc_runs == 10, f"foc_runs={h.foc_runs} ждём 10 (100/10)"
+    assert h.foc_handler == 10, f"foc_handler={h.foc_handler} ждём 10 (bit7 set → handler)"
+    # foc_period=1 → каждый тик
+    h2 = MainLoopHarness(cap=1, run_comm=False, run_foc=True, foc_period=1)
+    h2.reset(now=0, head=1)
+    h2.run(20)
+    assert h2.foc_runs == 20 and h2.foc_handler == 20
+    # run_foc=False → 0 runs
+    h3 = MainLoopHarness(cap=1, run_comm=False, run_foc=False)
+    h3.reset(now=0, head=1)
+    h3.run(20)
+    assert h3.foc_runs == 0, f"run_foc=False: foc_runs={h3.foc_runs} ждём 0"

@@ -1719,32 +1719,49 @@ SCHED_CAP_OFF = 0x17B       # = DESC+0xB (cap slot-counter)
 SCHED_PERIOD = 432          # межслотовый период (тик'ов)
 SCHED_BYTE_PERIOD = 8       # межбайтовый период (overflow-путь)
 COMM_TICK_FN = 0x1DFD8      # комм-тик (RX+TX+агрегатор+push, §22.1)
+TIM1_BASE = 0x40012C00      # TIM1 (advanced) — 3-фазный ШИМ BLDC
+TIM1_ISR_FN = 0x1A2A4       # реальный TIM1-IRQ (bit7 [base+0x1C] = update-событие)
+TIM1_STATUS_OFF = 0x1C      # [base+0x1C] — статус (bit7 = update; lsls #0x18=<<24 тестит bit7)
+TIM1_UPDATE_BIT = 0x80      # bit7 — update-событие
+FOC_FN = 0x1A938            # FOC-расчёт (PID-выход → PWM CCR)
 
 
 class MainLoopHarness:
     """Phase ② (§94): автономный main-loop tick-harness (без железа).
 
     Виртуальные часы: u64 "now" @0x1E0. На каждый tick:
-      now += 1 → **0x1f600 (реальный планировщик)** → опционально 0x1dfd8 (комм-тик).
+      now += 1 → **0x1f600 (реальный планировщик)** → (опц.) **FOC-ISR 0x1a2a4**
+      по timer-update → (опц.) 0x1dfd8 (комм-тик).
     **Контракт планировщика (live verified):** elapsed = now − last (u64 @0x198);
       - elapsed < 432 → return (без диспатча);
       - elapsed >= 432 И cap >= slot_counter+1 → **main-путь**: slot_idx++, last := now;
       - elapsed >= 432 И cap < slot_counter+1 → **overflow-путь**: межбайтовый счётчик
         (8 тиков) ++, slot_idx без изменений.
+    **FOC-ISR (0x1a2a4, реальный TIM1-IRQ):** на timer-update set bit7 [TIM1+0x1C]
+    (update-событие; lsls #0x18=<<24 тестит bit7) → bit7 set → handler-путь
+    (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → return (6 insn).
+    **Коррекция §94:** 0x7875 — НЕ ISR-entry в образе (нет полной векторной таблицы,
+    OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный
+    TIM1-IRQ = 0x1a2a4.
     Это расширяет «автономный прогон» с ~45% (ControlLoop: PID+FOC) к реальному
-    main-loop (scheduler + комм-тик) на виртуальном времени. НЕ cold-boot (§74.1
-    потолок: task-FP = runtime RAM) — планировщик/комм-тик вызываются напрямую.
+    main-loop (scheduler + FOC-ISR + комм-тик) на виртуальном времени. НЕ cold-boot
+    (§74.1 потолок: task-FP = runtime RAM) — планировщик/ISR/комм-тик вызываются напрямую.
     """
 
-    def __init__(self, emu=None, cap=1, run_comm=True, comm_period=1000):
+    def __init__(self, emu=None, cap=1, run_comm=True, comm_period=1000,
+                 run_foc=True, foc_period=1):
         self.emu = emu or McuEmu(max_insn=400000)
         self.cap = int(cap)
         self.run_comm = bool(run_comm)
         self.comm_period = int(comm_period)   # комм-тик каждые N тиков (мс-счётчик)
+        self.run_foc = bool(run_foc)          # FOC-ISR на timer-update
+        self.foc_period = int(foc_period)     # период timer-update (тик'ов)
         self.now = 0
         self.dispatches = 0
         self.overflows = 0
         self.comm_ticks = 0
+        self.foc_runs = 0
+        self.foc_handler = 0
 
     def _in_flash(self, aa):
         L = self.emu.fw_len
@@ -1784,6 +1801,24 @@ class MainLoopHarness:
         self.dispatches = 0
         self.overflows = 0
         self.comm_ticks = 0
+        self.foc_runs = 0
+        self.foc_handler = 0
+
+    def foc_isr(self):
+        """FOC-ISR по timer-update: set bit7 [TIM1+0x1C] (update-событие) →
+        0x1a2a4 (реальный TIM1-IRQ). bit7 set → handler-путь (~39 insn: clear flag,
+        set bit7 [base+0x20], флаги); bit7 clr → быстрый return (6 insn).
+        Возвращает True если handler-путь отработал."""
+        self.emu.uc.mem_write(TIM1_BASE + TIM1_STATUS_OFF,
+                              struct.pack('<I', TIM1_UPDATE_BIT))
+        before = self.emu.insn
+        self._run(TIM1_ISR_FN, budget=10000)
+        used = self.emu.insn - before
+        self.foc_runs += 1
+        if used > 15:   # handler-путь (~39) vs быстрый return (6)
+            self.foc_handler += 1
+            return True
+        return False
 
     def _write_now(self, now):
         self.emu.uc.mem_write(RAM + SCHED_NOW_OFF, struct.pack('<Q', now))
@@ -1819,13 +1854,16 @@ class MainLoopHarness:
         elif res == 'overflow':
             self.overflows += 1
         ms = struct.unpack('<H', self.emu.uc.mem_read(RAM + 0x2BA, 2))[0]
+        if self.run_foc and (self.now % self.foc_period == 0):
+            self.foc_isr()
         if self.run_comm and (self.now % self.comm_period == 0):
             self._run(COMM_TICK_FN)
             self.comm_ticks += 1
         return dict(t=self.now, sched=res, slot_idx=self._read_slot_idx(),
                     last=self._read_last(), ms=ms,
                     dispatches=self.dispatches, overflows=self.overflows,
-                    comm_ticks=self.comm_ticks)
+                    comm_ticks=self.comm_ticks, foc_runs=self.foc_runs,
+                    foc_handler=self.foc_handler)
 
     def run(self, ticks):
         """Прогнать ticks шагов. Возвращает список состояний."""
