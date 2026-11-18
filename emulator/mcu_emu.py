@@ -82,6 +82,7 @@ class McuEmu:
         self.insn = 0
         self.usart_out = bytearray()
         self.ram_writes = []          # (pc, addr, size, val) в области дескрипторов
+        self.ram_writes_all = []      # (pc, addr, size, val) ВСЕ записи в RAM (§80 RX-контекст)
         # --- периферия: диагностика + точные значения (§73) ---
         self.periph_overrides = {}    # {addr: u32} точные значения регистров (после fill)
         self.periph_writes = []       # [(pc, addr, size, value)] все записи в периферию
@@ -139,6 +140,9 @@ class McuEmu:
         if 0x20000A00 <= address < 0x20000C10:      # область дескрипторов/стейта
             pc = uc.reg_read(UC_ARM_REG_PC)
             self.ram_writes.append((pc, address, size, value))
+        if RAM <= address < RAM + RAM_SIZE:         # full-RAM захват (§80)
+            pc = uc.reg_read(UC_ARM_REG_PC)
+            self.ram_writes_all.append((pc, address, size, value))
         # запись в периферию (TIM/ADC/GPIO) — логируем для анализа моторного контура
         if (PERIPH <= address < PERIPH + PERIPH_SIZE or
                 PERIPH2 <= address < PERIPH2 + PERIPH2_SIZE):
@@ -859,26 +863,27 @@ class CmdControlModel:
 # B2: USART3 RX-протокол (BLE→MCU) — ASCII-command-ID. Парсер 0x1e9e0 (1914 Б).
 # 15 команд (ASCII-символы), 2 категории:
 #   cat=2 (@ G K c)      — response/status-команды;
-#   cat=0xa (остальные)  — SET-params (копируют [d+2] в [r0+3]).
+#   cat=0xa (остальные)  — SET-params.
 # RX-кадр: [+1]=cmd(ASCII), [+2]=len/param, [+3..]=payload. Ответные кадры строятся
-# с sub 'd'(0x64)/'K'(0x4b) + sum-chk. Точная семантика полей — по handler-адресам.
+# с sub 'd'(0x64)/'e'(0x65) + sum-chk. RAM-карты хендлеров верифицированы
+# динамикой эмулятора (2026-11-18, §80).
 USART_RX_PARSER = 0x1E9E0
 USART_RX_COMMANDS = {
-    '@': (0x1EB92, 2,   'complement-param: val=0xFF-[d+?], store [r0+6]'),
-    'G': (0x1EBAA, 2,   'response build: [f+1]=5, [f+2]=0x14, sub="K", chk5'),
-    'K': (0x1EBDE, 2,   'response build: [f+2]=0x1b, sub="K", chk5'),
-    'c': (0x1EC14, 2,   'response build: [f+2]=0x53, sub="K", chk5'),
-    'A': (0x1EC74, 0xA, 'multi-param SET (bit-extract lsrs#4/#7/#1f/#1a) + resp "d"/0x20'),
-    'B': (0x1ED90, 0xA, 'SET: [d+3..d+8] -> RAM bytes'),
-    'C': (0x1EDBA, 0xA, 'SET: [d+3..d+8] -> RAM bytes'),
-    'F': (0x1EE86, 0xA, 'variable-length data copy (len=[d+2], <=0x14) -> buffer'),
-    'D': (0x1EEB4, 0xA, 'SET with clamps ([d+3]<=0xfe,[d+4]<=0x64) + u16 pairs'),
-    'E': (0x1EF08, 0xA, 'bulk u16 SET (6 пар из [d+3..d+0xf])'),
-    'H': (0x1EF58, 0xA, 'SET 4B + resp "d"/0x2c len=4'),
-    'I': (0x1EFC8, 0xA, 'variable-length copy + resp 0x2e'),
-    'J': (0x1F036, 0xA, 'variable-length copy + resp 0x2f'),
-    '`': (0x1F0CA, 0xA, 'variable-length copy + resp "d"/0x50'),
-    'a': (0x1F112, 0xA, 'variable-length copy + resp "d"/0x51'),
+    '@': (0x1EB92, 2,   'head++ только (без копирования payload)'),
+    'G': (0x1EBAA, 2,   'frame-start len=20: ctx={6,\'e\',20,\'O\',\'K\',0x13,0x9A}, флаг 0x310=0, toggle++'),
+    'K': (0x1EBDE, 2,   'frame-start len=0x1b: ctx={6,\'e\',0x1b,\'O\',\'K\',0x1a,0x9A}, флаг 0x369=0, toggle++'),
+    'c': (0x1EC14, 2,   'frame-start len=0x53: ctx={6,\'e\',0x53,\'O\',\'K\',0x52,0x9a}, флаг 0x36f=0, toggle++'),
+    'A': (0x1EC74, 0xA, 'telemetry-snapshot: ring[3..9]→0x2E8..0x2F1 (rev16/нибблы/бит-сплит) + resp {0xc,\'d\',0x20,7,data,crc,0x9b}'),
+    'B': (0x1ED90, 0xA, 'SET: ring[3..8]→RAM+0x2CB..0x2D0 (6B), tail 0x2D1 (carry-over)'),
+    'C': (0x1EDBA, 0xA, 'SET: ring[3..8]→RAM+0x2D2..0x2D7 (6B), tail 0x2D8 (carry-over)'),
+    'F': (0x1EE86, 0xA, 'varlen-copy: clear 0x2F2..0x305 (20B) + ring[3..3+len)→0x2F2.., len≤0x14'),
+    'D': (0x1EEB4, 0xA, 'SET+clamp: ring3→0x2E6, ring4→0x306 (min 0x64), ring6→0x308, ring8→0x30A, ring9→0x30C, 0x30E=0'),
+    'E': (0x1EF08, 0xA, 'bulk u16 SET: 6 пар → u16-слоты 0x2DA+2k (k<6), 0x2E7=0'),
+    'H': (0x1EF58, 0xA, 'SET 4B: ring[3..6]→0x354..0x357 + resp {9,\'d\',0x2c,4,d1..d4,crc,0x9b}'),
+    'I': (0x1EFC8, 0xA, 'resp {5,\'d\',0x2e,0,crc,0x9b}, флаг 0x36a=0'),
+    'J': (0x1F036, 0xA, 'resp {6,\'d\',0x2f,1,0,crc,0x9b}, флаг 0x36c=0'),
+    '`': (0x1F0CA, 0xA, 'resp {5,\'d\',0x50,0,crc,0x9b}'),
+    'a': (0x1F112, 0xA, 'resp {5,\'d\',0x51,0,crc,0x9b}'),
 }
 
 
@@ -888,6 +893,47 @@ def usart_rx_cmd(cmd_byte):
     if isinstance(cmd_byte, int):
         cmd_byte = chr(cmd_byte)
     return USART_RX_COMMANDS.get(cmd_byte)
+
+
+# B2-динамика (§80): RX-контекст 0x1e9e0 — RAM-адреса, верифицированные
+# исполнением на эмуляторе (свежий RAM + state=1/head=0/toggle=0, crafted-кадры):
+RX_STATE_OFF = 0x172      # byte: 0 → только 0x171=0; 1 → обработать 1 сообщение
+RX_GATE_OFF = 0x171       # byte: гейт «RX-занят» — каждый проход 0x1e9e0 пишет сюда 0
+RX_HEAD_OFF = 0x2C0       # byte: индекс ring-слота (0..2, wrap при ≥3)
+RX_TOGGLE_OFF = 0x2C9     # byte: индекс context-слота (0..7, wrap при ≥8, frame-start)
+RX_RING_OFF = 0x881       # кольцо: 3 слота × 150 B (0x96), кадр [1]=cmd [2]=len [3..]=payload
+RX_RING_SLOT = 0x96       # stride ring-слота = 150 B
+RX_CTX_BASE = 0x10B5      # база context-слотов (slot0 = TX-ring @0x10b5..)
+RX_CTX_STRIDE = 0x96      # stride context-слота = 150 B (тот же, что ring)
+RX_RET = 0x20000170       # константа возврата (хвост pop pc @0x1f0c8)
+RX_FRAME_START_LEN = {'G': 20, 'K': 0x1B, 'c': 0x53}   # len в ctx[2] frame-start
+RX_FLAG_OFF = {'G': 0x310, 'K': 0x369, 'c': 0x36F,     # frame-start/clear-флаги
+               'I': 0x36A, 'J': 0x36C}                 # (все = 0)
+
+
+class UsartRxContext:
+    """B2-динамика (§80): scoped-вид на RX-контекст 0x1e9e0.
+    cmd() → таблица; slot_base(slot) → адрес context-слота; ring_off(head, k)
+    → адрес k-го байта ring-кадра; craft(cmd, payload) → bytes кадра в ring-формат.
+    Ответный кадр: crc = Σ ctx[1..] & 0xFF, checksum = 0xFF - ctx[1]
+    ('d'→0x9B, 'e'→0x9A)."""
+
+    @classmethod
+    def slot_base(cls, slot):
+        return RAM + RX_CTX_BASE + (slot & 0xFF) * RX_CTX_STRIDE
+
+    @classmethod
+    def ring_off(cls, head, k=1):
+        return RAM + RX_RING_OFF + (head & 3) * RX_RING_SLOT + k
+
+    @classmethod
+    def craft(cls, cmd, payload=b''):
+        """кадр ring-формата: [0]=0, [1]=cmd, [2]=len(payload), [3..]=payload"""
+        if isinstance(cmd, str):
+            cmd = cmd.encode()[0]
+        if cmd not in {ord(c) for c in USART_RX_COMMANDS}:
+            raise ValueError(f'неизвестная RX-команда {cmd:#x}')
+        return bytes([0, cmd, len(payload)]) + bytes(payload)
 
 
 # C1: LUT-блоки range-эстиматора 0x1d898 (u32-слова, шаг 4; значения из NVM/live).

@@ -7100,9 +7100,57 @@ USART3 RX-протокол (BLE→MCU) использует **ASCII-символ
 команд приложения; B1 = управляющий битовый слой.
 
 **Статус:** B2 готово — полный набор CMD BLE→MCU разобран (ASCII-протокол, 15 команд) +
-референс-таблица. Остаток: точная семантика полей каждого handler (RAM-адреса параметров),
-динамическая валидация (прогон 0x1e9e0 с crafted-кадрами — нужна реконструкция RX-контекста:
-гейт byte@0x170 + context-slot stride 0x96).
+референс-таблица + динамическая валидация ВСЕХ хендлеров (§80.5).
+
+### 80.5. Динамика: RX-контекст и полевая карта ВСЕХ 15 хендлеров (2026-11-18)
+
+**Методика:** свежий McuEmu + state-машина RX (`byte[0x172]=1`, `head[0x2C0]=0`,
+`toggle[0x2C9]=0`), crafted-кадр в ring, RAM-записи через `UC_HOOK_MEM_WRITE`
+(новая facility `McuEmu.ram_writes_all` — full-RAM захват; старая `ram_writes`
+— только 0xA00..0xC10). Контекст-слоты ctx чистятся до вызова (иначе crc-расчёт
+наследует carry-over — регистры r0/r5/r7/r9 этого Unicorn-билда частично no-op).
+
+**RX-контекст (верифицирован, совпадает с §59.6):**
+- `state @RAM+0x172`: 0 → только `0x171=0`; 1 → обработать 1 сообщение;
+- `0x171` — гейт «RX-занят»: каждый проход 0x1e9e0 пишет сюда 0;
+- `head @RAM+0x2C0` — индекс ring-слота (0..2, wrap при ≥3); ring = **3 слота × 150 B (0x96)** @`RAM+0x881`,
+  кадр `[1]=cmd`, `[2]=len`, `[3..]=payload`;
+- `toggle @RAM+0x2C9` — индекс context-слота (0..7, wrap при ≥8, frame-start);
+- context-слоты: база `RAM+0x10B5 + i·0x96` (slot0 = TX-ring, §77);
+- возврат: константа **0x20000170** (хвост `pop {pc}` @0x1f0c8).
+
+**Полевая карта хендлеров (эмпирика, crafted-кадры):**
+
+| Cmd | Эффект (RAM-цели) |
+|-----|-------------------|
+| `@` | head++ только |
+| `A` | telemetry-snapshot: ring[3..9]→0x2E8..0x2F1 (rev16/нибблы/бит-сплит) + resp {0xc,'d',0x20,7,...} (§59.6) |
+| `B` | ring[3..8] → **0x2CB..0x2D0** (6B) + tail 0x2D1 |
+| `C` | ring[3..8] → **0x2D2..0x2D7** (6B) + tail 0x2D8 |
+| `D` | SET+clamp: ring3→**0x2E6**, ring4→**0x306 (min 0x64: 0xFF→0x64)**, ring6/8/9→**0x308/0x30A/0x30C**, 0x30E (ring5/7/10 не пишутся) |
+| `E` | 6 u16-слотов **0x2DA+2k** (k<6) + 0x2E7 |
+| `F` | двухпроходный: clear **0x2F2..0x305** (20B) → ring[3..3+len)→0x2F2.. (len≤0x14) |
+| `G` | frame-start len=20: ctx {6,'e',20,'O','K',0x13,0x9A}, флаг 0x310=0, toggle++ |
+| `H` | ring[3..6]→**0x354..0x357** + resp {9,'d',0x2c,4,d1..d4,crc,0x9B} |
+| `I` | resp {5,'d',0x2e,0,crc=0x92,0x9B}, флаг **0x36A=0** |
+| `J` | resp {6,'d',0x2f,1,[carry],crc,0x9B}, флаг **0x36C=0** (ctx4 — register carry-over) |
+| `K` | frame-start len=0x1b: ctx {6,'e',0x1b,'O','K',0x1a,0x9A}, флаг 0x369=0, toggle++ |
+| `` ` `` | resp {5,'d',0x50,0,crc=0xB4,0x9B} |
+| `a` | resp {5,'d',0x51,0,crc=0xB5,0x9B} |
+| `c` | frame-start len=0x53: ctx {6,'e',0x53,'O','K',0x52,0x9A}, флаг 0x36F=0, toggle++ |
+
+**Ответные кадры:** crc = Σ ctx[1..crc) & 0xFF (running-sum @0x174..0x178),
+checksum = 0xFF − ctx[1] ('d'→0x9B, 'e'→0x9A). Frame-start-семейство (G/K/c):
+crc = 0x65+len+0x4f+0x4b, checksum 0x9A, per-command флаг + toggle++.
+
+**Модель:** `UsartRxContext` (slot_base/ring_off/craft) + константы
+`RX_STATE_OFF/RX_GATE_OFF/RX_HEAD_OFF/RX_TOGGLE_OFF/RX_RING_OFF/RX_RING_SLOT/
+RX_CTX_BASE/RX_CTX_STRIDE/RX_RET/RX_FRAME_START_LEN/RX_FLAG_OFF` в emulator/mcu_emu.py;
+описания `USART_RX_COMMANDS` обновлены верифицированными RAM-картами.
+
+**Тесты:** `fv_tests_e3b.py` — 7 новых @t(0x1E9E0) (B/C, D+clamp, F, H, I/J, K/c, ` /a)
+на shared-Run-прогонe. Сьют **748/748 PASS** (seeds 42/7, iters 3), ruff чист,
+`--list` 693/693 (100.0%).
 
 ## 81. Эмулятор E1: покрытие тестами — bsearch floor-index
 
