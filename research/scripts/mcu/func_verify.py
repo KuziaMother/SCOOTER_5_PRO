@@ -45,6 +45,7 @@ import fv_tests_e2n  # noqa: F401,E402  (E2-b69)
 import fv_tests_e2o  # noqa: F401,E402  (E2-b70)
 import fv_tests_e2p  # noqa: F401,E402  (E2-b71)
 import fv_tests_e2q  # noqa: F401,E402  (E2-b72)
+import fv_tests_e2r  # noqa: F401,E402  (E2-b73)
 
 if __name__ == '__main__':
     sys.exit(main())
