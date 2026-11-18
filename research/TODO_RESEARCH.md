@@ -118,10 +118,11 @@ _(оригинальный список завершён — см. таблиц�
       - **(C) tick/прерывания-harness — ГЛАВНОЕ: Готово (§94).** `MainLoopHarness`
         (emulator/mcu_emu.py): вирт. часы (u64 "now" @0x1E0) → на каждый tick: now++ →
         **0x1f600 (планировщик, период 432, кольцо 4 слота head@0x2C1/tail@0x2C2)** →
-        **FOC-ISR 0x1a2a4** (реальный TIM1-IRQ: bit7 [TIM1+0x1C]=update; коррекция: 0x7875
-        НЕ ISR-entry) → **0x1dfd8 (комм-тик)**. Контракт main/overflow/idle + ISR
-        live verified. Тесты fv_tests_e3j.py (3), сьют 790/790 PASS. **Остаток (live):**
-        точная сходимость (plant/FOC-gains) + cold-boot (§74.1, SWD GD32).
+        **FOC-ISR 0x1a2a4** (реальный TIM1-IRQ: bit7 [TIM1+0x1C]=update; **§95: 0x7875 —
+        реальный FOC-ISR вектора [22]**, см. ниже) → **0x1dfd8 (комм-тик)**. Контракт
+        main/overflow/idle + ISR live verified. Тесты fv_tests_e3j.py (3), сьют 790/790
+        PASS. **Остаток (live):** точная сходимость (plant/FOC-gains) + полный cold-boot
+        (§95, SWD GD32 дамп RAM при reset).
       - **(D) периферия под задачи:** GPIO, UART I/O, SPI-flash, RTC — моделировать по мере
         надобности (сейчас `0xFF`-заглушки); инкрементально, дни на каждую.
       - **(E) поведенческие модели** Speed/Motor/Battery/Range — **уже есть** (§73.8–73.12).
@@ -132,12 +133,18 @@ _(оригинальный список завершён — см. таблиц�
             target (калибровка plant/PID → live). Тест @t(0x1D078) ControlLoop, 165/165 PASS.
       - [ ] ② **периферия под задачи** (GPIO/UART/SPI-flash/RTC, сейчас `0xFF`) + точная сходимость
             контура (live-калибровка plant v_max/tau + FOC-gains). →~60–70%.
-      - [ ] ③ **полный cold-boot** (реконструкция initial-RAM/stack всех `pop {pc}` trampoline
-            ИЛИ live-дамп RAM при reset — класс C «SWD GD32»). →~85–90%.
-            **§74.1 уточнение:** main-loop + task-таблицы = runtime RAM (PID/FOC/scheduler/clock-init
-            диспатчатся через function-pointer, 0 стат. `bl`; SysTick=тик). Дамп должен захватить:
-            начальный стек @SP_init=`0x20004e40` (trampoline-цели [SP+12] и др.) + task function-
-            pointer таблицы (RAM).
+      - [◐] ③ **полный cold-boot: статич. часть Готово (§95).** **Векторная таблица
+            НАЙДЕНА @0x1000** (коррекция «отсутствует/OTA»): [0]=SP_INIT 0x20004E40,
+            [1]=reset|1, [14]=PendSV, [15]=SysTick, **[22]=FOC-ISR 0x7875** (подтверждение
+            «вектор [22]»). Startup-цепочка live verified: reset 0x315c → 0xcd0c (stage1)
+            → TRAMP1 pop@0x3166 (pc=RAM[SP+12]=stage2|Thumb) → stage2 0x3168 (0xcc68/
+            0xc9dc/0x5970/0xcb40) → TRAMP2 pop@0x31c6. `BootHarness` (emulator/mcu_emu.py)
+            детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78). Тесты fv_tests_e3k.py
+            (2), сьют 792/792 PASS. **Остаток (live):** полный cold-boot до работающего
+            main-loop — **SWD-дамп RAM при reset** (initial stack = C-runtime runtime RAM;
+            main-loop dispatch через runtime function-pointer, 0 стат. `bl 0x1f600`).
+            Дамп должен захватить: начальный стек @SP_init=`0x20004e40` (trampoline-цели
+            [SP+12] и др.) + task function-pointer таблицы (RAM).
       - [ ] ④ **BLE co-proc** (отдельно, `emulator/ble_emu.py`, сейчас на статическом потолке §65).
       **Зависимости на live:** cold-boot (A) → класс C «SWD GD32» (дамп RAM при reset);
       точная сходимость контура → класс B (live-калибровка plant/FOC-gains). — **§73.15**

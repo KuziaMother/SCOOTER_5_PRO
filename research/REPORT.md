@@ -7896,3 +7896,66 @@ iters 3), ruff чист, `--list` 693/693 (100%).
 **Статус:** **Phase ② завершена** — планировщик + FOC-ISR + комм-тик на виртуальном
 времени работают автономно (реальный firmware-код). Остаток (live): точная
 сходимость контура (plant v_max/tau + FOC-gains) и cold-boot (§74.1, SWD GD32).
+
+---
+
+## 95. Phase ③ — cold-boot: векторная таблица @0x1000 + startup-цепочка (без железа)
+
+**Задача:** довести «автономный прогон» от warm-start (Phase ①/②) к реальному
+cold-boot — старт с reset-вектора.
+
+### 95.1. Векторная таблица существует @0x1000 (коррекция «отсутствует»)
+
+Ранний вердикт (§16.3, README «векторная таблица отсутствует, только APP-регион
+OTA») — **неточный**. Настоящая векторная таблица лежит в @`0x1000` (0x0 = OTA-
+заголовок, не векторы):
+
+| [i] | значение | смысл |
+|---|---|---|
+| [0] | `0x20004E40` | **initial SP** (RAM) |
+| [1] | `0x0800315D` | **reset** = 0x315C \| Thumb |
+| [2..6] | 0xE0B1/0xB131/0xDCBB/0x5B3F/0x15377 | NMI/HardFault/MemMgmt/Bus/UsageFault |
+| [14] | `0x08003173` | PendSV |
+| [15] | `0x08013CAD` | SysTick |
+| [22] | `0x08007875` | **FOC/моторный timer-ISR** (подтверждает примечание «вектор [22]=0x7875») |
+| [26] | `0x080078F7` | (timer-ISR) |
+| [31/33/39] | 0x6E29/0x6E31/0x7909 | (IRQ-хендлеры) |
+| прочее | `0x08003177` | default handler (0x3176) |
+
+**Коррекция Phase ② (§94.3):** 0x7875 — **реальный** FOC-ISR (вектор [22]), а не
+«середина state-machine блока». При нулевом register-контексте изоляция уходит в
+0x7992 (wrong-ветка), но в реальном timer-контексте работает. 0x1a2a4 (интегрирован
+в MainLoopHarness) — другой (TIM1) IRQ-хендлер; оба реальные.
+
+### 95.2. Startup-цепочка (live verified)
+
+- **reset 0x315C:** `str 0,[sp]` → `bl 0xcd0C` (**stage 1**: init, r0=SP; читает
+  [SP]/u16[SP+4]/[SP+8] как данные → busy-wait 0x2ff).
+- **TRAMP1 @0x3166** `pop {r1,r2,r3,pc}`: pc = `RAM[SP_INIT+12]` (initial stack,
+  C-runtime) → stage 2. Thumb-bit обязателен (чётный → ARM-режим → decode-ошибка).
+- **stage 2 @0x3168:** init-цепочка `0xcc68`(0x4000) / `0xc9dc`(0x4000) /
+  `0x5970`(0x100000) / проверка флагов / `0xcb40`.
+- **TRAMP2 @0x31C6** `pop {r4,pc}`: возврат в init/next.
+
+**`BootHarness` (emulator/mcu_emu.py):** SP=SP_INIT, seed initial stack
+[SP+12]=stage2|Thumb, старт с RESET_VECTOR. **Детерминированно до TRAMP2:**
+insn=6314, final_pc=0xCD78, reached={stage1,stage2,tramp2}, periph=0xFF (3/3
+прогона идентичны). Константы: `VEC_TABLE=0x1000`, `SP_INIT=0x20004E40`,
+`RESET_VECTOR=0x315C`, `BOOT_STAGE1_INIT/STAGE2/TRAMP2`, `FOC_ISR_V22=0x7875`.
+Тесты `fv_tests_e3k.py` (2), сьют **792/792 PASS** (seeds 42/7, iters 3), ruff чист,
+`--list` 693/693 (100%).
+
+### 95.3. Потолок (live)
+
+Полный cold-boot до работающего main-loop **статически недостижим** без live-дампа:
+- **initial stack [SP_INIT..] = данные C-runtime/загрузчика** (runtime RAM) —
+  startup-код переиспользует/перезаписывает слоты (TRAMP2 уводит в 0xCD78,
+  середина инструкции — артефакт нулевого RAM), поэтому точная реконструкция всех
+  `pop {..,pc}`-трамплинов требует либо **live-дампа RAM при reset (SWD GD32)**,
+  либо полной реконструкции C-runtime-стека (высокая/неопределённая стоимость).
+- **main-loop dispatch — через runtime function-pointer** (§74.1): прямых
+  `bl 0x1f600` в образе нет (0 вызывающих) — task-указатели в RAM.
+
+**Статус:** Phase ③ статическая часть — **векторная таблица + startup-цепочка
+разобраны, boot детерминированно до TRAMP2**. Остаток (live): SWD-дамп RAM при
+reset → полный cold-boot + task-таблицы.

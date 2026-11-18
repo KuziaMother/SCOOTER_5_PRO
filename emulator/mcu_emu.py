@@ -1725,6 +1725,17 @@ TIM1_STATUS_OFF = 0x1C      # [base+0x1C] — статус (bit7 = update; lsls 
 TIM1_UPDATE_BIT = 0x80      # bit7 — update-событие
 FOC_FN = 0x1A938            # FOC-расчёт (PID-выход → PWM CCR)
 
+# Phase ③ (§95): cold-boot — векторная таблица + startup-цепочка
+VEC_TABLE = 0x1000          # векторная таблица (НЕ @0x0 — там OTA-заголовок)
+SP_INIT = 0x20004E40        # [VEC_TABLE+0] — initial stack pointer
+RESET_VECTOR = 0x315C       # [VEC_TABLE+1] & ~1 — reset handler
+BOOT_STAGE1_INIT = 0xCD0C   # stage 1: init (r0=SP) + busy-wait 0x2ff
+BOOT_STAGE2 = 0x3168        # stage 2: init-цепочка (0xcc68/0xc9dc/0x5970/0xcb40)
+BOOT_TRAMP2 = 0x31C6        # TRAMP2: pop {r4,pc} (возврат в init/next)
+PENDSV_V14 = 0x3173         # вектор [14] = PendSV
+SYSTICK_V15 = 0x13CAD       # вектор [15] = SysTick
+FOC_ISR_V22 = 0x7875        # вектор [22] = FOC/моторный timer-ISR
+
 
 class MainLoopHarness:
     """Phase ② (§94): автономный main-loop tick-harness (без железа).
@@ -1740,9 +1751,10 @@ class MainLoopHarness:
     **FOC-ISR (0x1a2a4, реальный TIM1-IRQ):** на timer-update set bit7 [TIM1+0x1C]
     (update-событие; lsls #0x18=<<24 тестит bit7) → bit7 set → handler-путь
     (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → return (6 insn).
-    **Коррекция §94:** 0x7875 — НЕ ISR-entry в образе (нет полной векторной таблицы,
-    OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный
-    TIM1-IRQ = 0x1a2a4.
+    **Коррекция §95:** 0x7875 = реальный FOC/моторный timer-ISR (вектор [22] векторной
+    таблицы @0x1000, §95) — НЕ «середина блока» (ранее ошибочно); при нулевом контексте
+    изоляция уходит в 0x7992, но в реальном timer-контексте работает. 0x1a2a4 — другой
+    (TIM1) IRQ-хендлер; оба реальные, в harness интегрирован 0x1a2a4 (чистый/детерминированный).
     Это расширяет «автономный прогон» с ~45% (ControlLoop: PID+FOC) к реальному
     main-loop (scheduler + FOC-ISR + комм-тик) на виртуальном времени. НЕ cold-boot
     (§74.1 потолок: task-FP = runtime RAM) — планировщик/ISR/комм-тик вызываются напрямую.
@@ -1868,6 +1880,65 @@ class MainLoopHarness:
     def run(self, ticks):
         """Прогнать ticks шагов. Возвращает список состояний."""
         return [self.tick() for _ in range(ticks)]
+
+
+class BootHarness:
+    """Phase ③ (§95): cold-boot harness — старт с reset-вектора (без железа).
+
+    **Векторная таблица существует @0x1000** (коррекция §16.3/«отсутствует»):
+      [0]=SP_INIT=0x20004E40, [1]=RESET_VECTOR|1=0x315d, [14]=PendSV, [15]=SysTick,
+      [22]=FOC_ISR_V22=0x7875 (подтверждает FOC-ISR из примечания «вектор [22]»).
+    **Startup-цепочка (live verified):** reset 0x315c → str 0,[sp] → bl 0xcd0c
+      (stage 1: init + busy-wait 0x2ff) → TRAMP1 `pop {r1,r2,r3,pc}` @0x3166
+      (pc=RAM[SP_INIT+12]=stage2|Thumb) → **stage 2** 0x3168 (init-цепочка
+      0xcc68/0xc9dc/0x5970/0xcb40) → TRAMP2 `pop {r4,pc}` @0x31c6.
+    **Потолок (live):** initial stack [SP_INIT..] = данные C-runtime/загрузчика
+      (runtime RAM) — startup переиспользует/перезаписывает слоты, поэтому полный
+      cold-boot до работающего main-loop требует либо live-дампа RAM при reset
+      (SWD GD32), либо полной реконструкции C-runtime-стека. Main-loop dispatch —
+      через runtime function-pointer (потолок §74.1, прямых `bl 0x1f600` нет).
+    `run()` детерминированно доводит boot до TRAMP2 (~6314 insn, periph=0xFF).
+    """
+
+    def __init__(self, emu=None, max_insn=500000):
+        self.emu = emu or McuEmu(max_insn=max_insn)
+        self.max_insn = int(max_insn)
+        self.insn = 0
+        self.final_pc = 0
+        self.reached = set()
+
+    def reset(self, seed_stage2=BOOT_STAGE2):
+        """Занулить RAM, SP=SP_INIT, seed initial stack [SP+12]=stage2|Thumb."""
+        uc = self.emu.uc
+        uc.mem_write(RAM, bytes(0x20000))
+        self.emu.hook_periph_ready()
+        uc.mem_write(SP_INIT, struct.pack('<4I', 0, 0, 0, (seed_stage2 | 1)))
+        uc.reg_write(UC_ARM_REG_SP, SP_INIT)
+        uc.reg_write(UC_ARM_REG_LR, 0xFFFFFFFF)
+        self.insn = 0
+        self.final_pc = 0
+        self.reached = set()
+
+    def run(self):
+        """Прогнать boot от RESET_VECTOR. Возвращает (insn, final_pc, reached)."""
+        uc = self.emu.uc
+        last = [0]
+        marks = {BOOT_STAGE1_INIT: 'stage1', BOOT_STAGE2: 'stage2', BOOT_TRAMP2: 'tramp2'}
+
+        def hc(u, a, s, ud):
+            b = a & ~1
+            last[0] = b
+            for m, name in marks.items():
+                if m <= b < m + 0x40:
+                    self.reached.add(name)
+        uc.hook_add(UC_HOOK_CODE, hc)
+        try:
+            uc.emu_start(RESET_VECTOR | 1, 0, count=self.max_insn)
+        except Exception:
+            pass
+        self.insn = self.emu.insn
+        self.final_pc = last[0]
+        return self.insn, self.final_pc, set(self.reached)
 
 
 def find_func_starts():

@@ -64,6 +64,7 @@ import fv_tests_e3g  # noqa: F401,E402  (§91 A5-динамика I2C-модел
 import fv_tests_e3h  # noqa: F401,E402  (§92 A6-динамика NVRAM-зоны/CRC)
 import fv_tests_e3i  # noqa: F401,E402  (§93 A7-карта регистров периферии)
 import fv_tests_e3j  # noqa: F401,E402  (§94 Phase② main-loop tick-harness)
+import fv_tests_e3k  # noqa: F401,E402  (§95 Phase③ cold-boot: векторная таблица + startup)
 
 if __name__ == '__main__':
     sys.exit(main())
