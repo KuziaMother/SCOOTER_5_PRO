@@ -1176,6 +1176,61 @@ class I2cModel:
         return bytes(frame)
 
 
+# A6 (§92): NVRAM-зоны (RAM-копии с CRC) — layout + CRC-8/CRC-16-референс
+NV_CRC8_POLY = 0x2F      # полином CRC-8 (0x87F8, init 0, MSB-first)
+NVM_Z30DD = 0x30DD       # зона 32Б: 24Б данных + CRC-8 @0x18 (0x13B14)
+NVM_Z30DD_DATA_LEN = 0x18   # 24Б данных (CRC-8 по ним)
+NVM_Z30DD_CRC_OFF = 0x18    # храненный CRC-8 байт
+NVM_Z30DD_SIZE = 0x20
+NVM_Z30CF = 0x30CF       # зона CRC-16 (0x147AC; табл. @0x08019584/0x08019684 = 0xFF в образе)
+NVM_Z304C = 0x304C       # зона read 512Б (0xCFB8)
+NVM_Z305C = 0x305C       # зона read 40Б (0xCF60)
+NVM_CRC16_TABLES = (0x08019584, 0x08019684)  # hi/lo (0xFF в mcu_0007.bin — live-задача)
+
+
+class NvmZoneModel:
+    """A6 (§92): NVRAM-зоны (RAM-копии с CRC) — layout + CRC-референс.
+
+    **Архитектура (статика §50 + динамика §92):** четыре RAM-копии NVRAM-зон
+    верифицируются CRC после чтения из flash:
+    - **0x13B14** (зона @`0x30DD`, 32Б): `0x8380` читает 0x20Б из NVM → RAM-копию;
+      если OK — 100-iteration задержка + **re-read** (стабильность); **CRC-8**
+      (`0x87F8`, poly 0x2F) по первым **24Б** сверяется с храненным байтом
+      `[zone+0x18]` → ret 0 (OK) / 1 (FAIL). **Layout: [0x00..0x17]=данные,
+      [0x18]=CRC-8, [0x19..0x1F]=резерв.**
+    - **0x147AC** (зона @`0x30CF`): CRC-16 табличный (`0x8A50`, init 0xFFFF,
+      hi/lo-таблицы @0x08019584/0x08019684 — **0xFF в образе**, live-задача);
+      в изоляции крутится до max_insn.
+    - **0xCFB8** (зона @`0x304C`, 512Б) / **0xCF60** (@`0x305C`, 40Б): read +
+      timeout (без явной CRC-сверки в хвосте).
+    **CRC-8 (0x87F8)** — самодостаточен (poly в коде, без таблиц): live verified
+    7/7. **CRC-16 (0x8A50)** — табличный, таблицы вне прошитого региона образа.
+    **Изолированный контракт** (NVM=0xFF): 0x13B14 → зона=0xFF×32, CRC8(0xFF×24)
+    ≠ 0xFF → ret=1 (FAIL), insn≈5999 (100-итер-задержка + re-read)."""
+
+    def __init__(self, emu):
+        self.emu = emu
+
+    @staticmethod
+    def crc8(data, poly=NV_CRC8_POLY, init=0):
+        """CRC-8 (0x87F8): MSB-first, init 0, poly 0x2F, без final-xor/reflect."""
+        crc = init
+        for b in data:
+            crc ^= b
+            for _ in range(8):
+                crc = ((crc << 1) ^ poly) & 0xFF if (crc & 0x80) else (crc << 1) & 0xFF
+        return crc
+
+    def zone_read(self, off, size):
+        """RAM-копия зоны (off = RAM-смещение)."""
+        return bytes(self.emu.uc.mem_read(RAM + off, size))
+
+    def zone_crc8_valid(self, off, data_len=NVM_Z30DD_DATA_LEN, crc_off=NVM_Z30DD_CRC_OFF):
+        """Сверка CRC-8 зоны: CRC8(данные) == храненный байт @crc_off."""
+        zone = self.zone_read(off, crc_off + 1)
+        return self.crc8(zone[:data_len]) == zone[crc_off]
+
+
 # B1: кастомный блок управления командами @0x40021000 (u32-поля +0x10/+0x18/+0x1c).
 CMD_CTRL_BASE = 0x40021000
 CMD_CTRL_FIELDS = (0x10, 0x18, 0x1c)
