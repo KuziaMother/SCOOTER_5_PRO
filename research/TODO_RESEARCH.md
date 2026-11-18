@@ -183,8 +183,18 @@ _(оригинальный список завершён — см. таблиц�
             Тесты @t(0x1E9E0): static-consistency (§80.3) + 7 динамических (§80.5: полевая карта
             ВСЕХ 15 хендлеров, RX-контекст state@0x172/gate@0x171/head@0x2C0/toggle@0x2C9,
             ring 3×150B@0x881, ctx-слоты 0x10B5+i·0x96), **748/748 PASS**. Закрыто полностью.
-      - [ ] B3 **`0x1F1CC` сборщик «63 CMD» + `0x1F71C` 24-состоянная машина** → FSM-переходы
-            агрегатора MCU→BLE (~1д, средняя).
+      - [x] B3 **`0x1F1CC` сборщик «63 CMD» + `0x1F71C` 24-состоянная машина — ГОТОВО (§89).**
+            **0x1F1CC = beacon «c» builder**: таблица @0xA43 (4 слота, counter byte[0x2C1], wrap
+            ≥4→0): {4,'c','D',0xA7,0x9C} («63 CMD» = cmd 'c'=0x63); tail 0x1F548 (u64 «данные
+            готовы»): {6,'c','c',<byte>,Σcrc,0x9C}. **0x1F71C = 24-состоянная машина** (jump-table
+            @0x1F77A; guard byte[0x2C8]≠byte[0x2C7], иначе early-exit; tail++): классификатор по
+            слотам @0xC05 (stride 0x96, изоляция: idx=1 → 0xC9B): byte[0] 'Q'-'T'→класс 1, 'd'→0x0A,
+            'Z'→0x14; byte[3] 0xA0 → билдер {0x0A,'Z','a',0x0A,0xA0,0×4,XOR-crc,0xA5} (магия 0xA5),
+            0xA1..A6/0xAE → u16[0x1E8]-ветки; класс → byte[0x180]; фреймы в r4 = 0x10B5 (TX-ring);
+            state 2 = scaling u16[0x33A]/0x1E8/0x1F6 (0x19968); tail 0x211AE = beacon «a»
+            {4,<byte>,'a',0xC4,0x9C}. Вызывающий — task 0x1DFD8 (там же RX-парсер). `TxAggregatorModel`
+            + константы TX_BCN_*/TX_AGGR_* в emulator/mcu_emu.py; тесты fv_tests_e3e.py (3 новых),
+            **761/761 PASS**. Закрыто (остаток: live-переходы при idx≠1/u64-условие).
       **C. Структуры state-machine / LUT (каркас без live-значений):**
       - [x] C1 **Status-flag LUT consumers — ГОТОВО (§82).** 0x1d898 сканирует 2 u32-словесных
             LUT-блока (шаг 4, каждое слово по разу): блок0 RAM+0x614..0x6c4 (45 слов),

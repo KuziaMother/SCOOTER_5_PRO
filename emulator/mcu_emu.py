@@ -800,6 +800,59 @@ class UsartTxModel:
 SPI_FLASH_BASE = 0x40013000   # SPI1 (MOSI/MISO к внешнему flash с NVM)
 NVM_SIZE = 0x1000             # ≤4KB
 
+# B3: агрегатор MCU→BLE (beacon 0x1F1CC + 24-состоянная машина 0x1F71C, §89)
+TX_BCN_TABLE_OFF = 0xA43      # beacon-таблица: 4 слота (counter byte[0x2C1], wrap ≥4→0)
+TX_BCN_SLOT = 0x96            # stride beacon-слота (0x1F1CC: 0x96*idx)
+TX_BCN_C = bytes([4, 0x63, 0x44, 0xA7, 0x9C])        # beacon 'c' (0x1F1CC): {4,'c','D',0xA7,0x9C}
+TX_BCN_C_DATA = bytes([6, 0x63, 0x63, 0, 0, 0x9C])   # beacon 'c' c данными (0x1F548): {6,'c','c',<byte>,Σcrc,0x9C}
+TX_AGGR_SLOT_BASE = 0xC05     # слоты агрегатора (stride 0x96): classifier читает [slot+0..+3]
+TX_AGGR_HEAD_OFF = 0x2C7      # «обработано» (head)
+TX_AGGR_TAIL_OFF = 0x2C8      # «ожидает» (tail); guard: tail ≠ head иначе early-exit (0x2000C)
+TX_AGGR_CLASS_OFF = 0x180     # класс агрегации (byte, 0x170+0x10)
+TX_AGGR_FRAME_MAGIC = 0xA5    # магический конец фрейма {len,cmd,payload,XOR-crc,0xA5}
+TX_RING_OFF = 0x10B5          # TX-ring (фреймы агрегатора строятся здесь, §77)
+
+
+class TxAggregatorModel:
+    """B3 (§89): scoped-вид на агрегатор MCU→BLE. Beacon-таблица @0xA43 (4 слота,
+    counter byte[0x2C1]): beacon 'c' {4,'c','D',0xA7,0x9C} (0x1F1CC) и c данными
+    {6,'c','c',<byte>,Σcrc,0x9C} (0x1F548, u64 «данные готовы»); beacon 'a'
+    {4,<byte>,'a',0xC4,0x9C} (tail 0x211AE, counter wrap ≥8→0). Агрегатор 0x1F71C:
+    24-состоянная машина (jump-table @0x1F77A) = classifier по байтам слота @0xC05
+    (stride 0x96): byte[0] 'Q'-'T'→класс 1, 'd'→0x0A, 'Z'→0x14; byte[3] 0xA0..0xA6/0xAE
+    → билдеры фреймов; класс → byte[0x180]; фреймы {len,cmd,payload,XOR-crc,0xA5} в
+    TX-ring 0x10B5 (r4 = 0x10B5 в изоляции). Guard: byte[0x2C8] (tail) ≠ byte[0x2C7]
+    (head), иначе early-exit; tail++ на каждую обработку."""
+    def __init__(self, emu):
+        self.emu = emu
+
+    @property
+    def beacon_counter(self):
+        """Счётчик beacon-слотов byte[0x2C1] (wrap ≥4→0)."""
+        return self.emu.uc.mem_read(RAM + 0x2C1, 1)[0]
+
+    def beacon_slot(self, i=0):
+        """Содержимое beacon-слота i таблицы @0xA43 (16Б)."""
+        return bytes(self.emu.uc.mem_read(RAM + TX_BCN_TABLE_OFF + i * TX_BCN_SLOT, 16))
+
+    def set_beacon_counter(self, v):
+        self.emu.uc.mem_write(RAM + 0x2C1, bytes([v & 0xFF]))
+
+    def aggr_slot(self, i=0):
+        """Содержимое слота агрегатора @0xC05+0x96*i (16Б)."""
+        return bytes(self.emu.uc.mem_read(RAM + TX_AGGR_SLOT_BASE + i * TX_BCN_SLOT, 16))
+
+    def set_aggr_state(self, head, tail):
+        """Поднять guard: head=byte[0x2C7], tail=byte[0x2C8] (tail≠head → машинa идёт)."""
+        self.emu.uc.mem_write(RAM + TX_AGGR_HEAD_OFF, bytes([head & 0xFF]))
+        self.emu.uc.mem_write(RAM + TX_AGGR_TAIL_OFF, bytes([tail & 0xFF]))
+
+    def aggr_class(self):
+        return self.emu.uc.mem_read(RAM + TX_AGGR_CLASS_OFF, 1)[0]
+
+    def tx_ring(self, n=0x96):
+        return bytes(self.emu.uc.mem_read(RAM + TX_RING_OFF, n))
+
 class SpiFlashModel:
     """A3: виртуальный буфер внешнего SPI-flash (NVM) + set/get. Содержимое NVM —
     runtime-данные устройства (конфиг/калибровка); без live-дампа значения неизвестны
