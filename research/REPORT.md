@@ -120,6 +120,7 @@
 - [96. Без-железный остаток MCU/BLE — дозакрыт (9 пунктов)](#96-без-железный-остаток-mcuble--дозакрыт-9-пунктов)
 - [97. Phase ④ — cold-boot: C-старт, main и task-цепь (статика + реконструкция)](#97-phase---cold-boot-c-старт-main-и-task-цепь-статика--реконструкция)
 - [98. F1: 5+2 каталог-записи со статусом ID — закрыты (без железа)](#98-f1-52-каталог-записи-со-статусом-id--закрыты-без-железа)
+- [99. F2: BLE app-протокол — углубление из плагина + snoop (без железа)](#99-f2-ble-app-протокол--углубление-из-плагина--snoop-без-железа)
 
 ## 1. Общая структура образа
 
@@ -8229,3 +8230,66 @@ disable) и 0x10CA2 (`movs r0,#1; bl 0xC6F0` — enable) в init-последо�
 **700/700 (100%)**. Остаток каталога: 1 «частично» (0x1C34C, §68 —
 self-contained, не мешает). Следующее без-железное — **F2** (BLE APK:
 siid/piid-таблица из sdk.bundle + OTA siid=0xF5) и **F3** (RX 0x40/0x63).
+
+## 99. F2: BLE app-протокол — углубление из плагина + snoop (без железа)
+
+**Задача (TODO F2):** (a) полная таблица siid/piid свойств из RN-бандла;
+(b) формат OTA-фреймов siid=0xF5 по `logs/btsnoop_hci.log`.
+
+### 99.1. Полная таблица siid/piid (плагин Mi Home, modules/10724.js)
+
+`assets/plugin_rn_sdk/sdk.bundle` (12МБ) — только generic-MIoT-SDK (фреймворк);
+таблица свойств продукта — в **модуле плагина 10724.js** (уже скачан:
+`plugins/xiaomi.scooter.5pro/modules/`): `global.SIID_DIC` + `global.SIID_N` +
+`global.PROP_VALUE_TYPE`:
+
+| siid | свойств | состав |
+|---|---|---|
+| SIID_1 | 9 | RIDING_MODE, BATTERY_LEVEL, REMAINING_BATTERY, VOLTAGE, CURRENT, POWER, REMAINING_MILEAGE, FAULT, CURRENT_MILEAGE |
+| SIID_2 | 18 | AVERAGE_SPEED, IS_LOCKED, CRUISE_IS_ON, TAIL_LIGHT_IS_ON, ENERGY_RECOVERY, TOTAL_MILEAGE, IS_RIDING, RIDING_TIME, HIGHEST_SPEED, ASR_IS_ON, REMAINING_MILEAGE_ALGORITHM, AUTO_LIGHT, TCS, INTELLIGENT_DOWNHILL, HILL_PARKING, ATMOSPHERE_LIGHT, BLUETOOTH_SEARCH_ON, FAKE_SHUTDOWN_STATUS |
+| SIID_3 | 12 | BATTERY_STATUS, BATTERY_TEMPERATURE, SCOOTER_TEMPERATURE, LOCK_WARNING, MILEAGE_UNIT, **OOB_CODE(6)**, TIRE_MAINTENANCE, ACTIVATION_DATE, RIDING_RECORDS, IS_CHARGING, NUMBER_OF_CYCLES, **SOH(12)** |
+| SIID_4 | 9 | PRODUCTION_DATE, BATTERY_SN, BMS_FIRMWARE_VERSION, SCOOTER_SN, FIRMWARE_VERSION, RESTORE_SCOOTER_SETTINGS, MORE_BATTERY_INFO(2), BLUETOOTH_CAR_SEARCH(10) |
+| SIID_5 | 27 | плоское «model»-зеркало SIID_1..4 (piid 1..34, пропуски 25-28) |
+| SIID_6 | 5 | LOG_1..LOG_5 (журнал поездок) |
+
+Связь с snoop (§96): BLE-фреймы main-канала идут с **siid=0** — это тот же набор
+(плагин индексирует SIID_1/2, a BLE-уровень нумерует с 0); sec-канал = siid=1.
+`NAMES` (probes/spec_read.py) расширен недостающими свойствами (ASR_IS_ON, AUTO_LIGHT,
+TCS, ATMOSPHERE_LIGHT, LOCK_WARNING, MILEAGE_UNIT, TIRE_MAINTENANCE, ACTIVATION_DATE,
+RIDING_RECORDS, NUMBER_OF_CYCLES, SOH, MORE_BATTERY_INFO(2) и др.). Константы
+`MI_SIID_PIID`/`MI_PROP_VALUE_TYPE` — в emulator/mcu_emu.py.
+
+### 99.2. OTA/DFU-формат siid=0xF5 (logs/btsnoop_hci.log, 97 фреймов)
+
+Канал (handles): **0x38** — app→device (WRITE_CMD), **0x3A** — device→app
+(NOTIFY-ack), **0x44** — app→device (редко). Снуп начался в середине OTA-сессии
+(первый f5-фрейм — rec399, start-handshake в логе нет).
+
+**Формат фрейма** (ground truth по 97 реальным кадрам):
+
+```
+[0xF5][piid:1][N:1][marker:2 LE][sub:4][cls:1][payload:N+1]   total = 11+N
+```
+
+- `N` — длина payload-данных; `N=0` → **переменный** payload (до ~234Б = MTU-4;
+  в логе — кадры 234Б с piid=1, rec1416);
+- `marker`: **0xFFFF** — малые фреймы (16/32/48Б); **0x5300/0x5600/0x5501** —
+  чанк-фреймы 208Б (значения похожи на offset/sequence в OTA-потоке);
+  0x005C/0x00DE/0x00DC/0x005E/0x0095 — маркеры 16-32Б фреймов (повторы тех же
+  payload'ов с разными маркерами → маркер = counter/ретрай-метка, не позиция);
+- `sub` (4Б) — подпараметры (0x0001 0x0001 у малых, 0x0011 0x0001 у чанков 208Б);
+- `cls`: 0x80/0xA0/0x90 — data-write (16/48/16Б), 0x00/0x01/0x02/0x03 —
+  control/ack-фреймы;
+- `payload` — **шифртекст** (Mi OTA session key; DFU-билдер фреймов — в native
+  SDK miotsdk, не в RN-бандле — семантика sub/marker до конца не расшифрована).
+
+Протокол: app пишет чанк → device отвечает NOTIFY на 0x3A (малый ack, часто
+`N=0` с cls=0x03); ретраи видны как повторные writes с тем же payload и
+разным маркером. Кодирование: `mi_ota_decode` + константы `MI_OTA_HANDLE_*`
+(emulator/mcu_emu.py); тест сверяет декодер с 97 реальными фреймами.
+
+### 99.3. Итог
+
+F2 закрыта статикой: полная siid/piid-таблица (73 свойства, 6 siid) + OTA-формат.
+Сьют **812/812 PASS** (seeds 42/7, iters 3), ruff чист, `--list` 700/700 (100%).
+Остаток без железа — **F3** (RX-хендлеры 0x40/0x63 «группа A»).

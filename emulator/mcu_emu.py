@@ -244,7 +244,11 @@ MI_BLE_MTU_DATA = 240     # макс. data-байт в одном ATT-фрейм
 
 
 def mi_ble_decode(payload):
-    """Декод data-фрейма Mi Home BLE: [siid][piid][len:2 LE][data].
+    """Decode the Mi Home BLE data-frame: [siid][piid][len:2 LE][data]. Returns
+    dict(siid, piid, len, data, complete). complete=False -> fragmentation (len >
+    len(data) — the data continues in the next ATT-frame).
+
+    Декод data-фрейма Mi Home BLE: [siid][piid][len:2 LE][data].
     Возвращает dict(siid, piid, len, data, complete). complete=False → фрагментация
     (len > len(data) — данные продолжатся в следующем ATT-фрейме)."""
     if len(payload) < 4:
@@ -256,6 +260,74 @@ def mi_ble_decode(payload):
     data = payload[4:]
     return {'siid': siid, 'piid': piid, 'len': ln, 'data': data,
             'complete': ln <= len(data)}
+
+# §99 (F2): полная таблица siid/piid из плагина Mi Home (modules/10724.js —
+# global.SIID_DIC + global.SIID_N). SIID_5 — плоское «model»-зеркало (1..34),
+# SIID_6 — журнал поездок. SIID_0 (siid=0 в snoop) = тот же набор что SIID_1+2
+# (main data-канал; плагин индексирует SIID_1/2, a BLE-фреймы идут с siid=0 —
+# см. MI_BLE_SIID_MAIN/SEC).
+MI_SIID_PIID = {
+    1: {1: "RIDING_MODE", 2: "BATTERY_LEVEL", 3: "REMAINING_BATTERY", 4: "VOLTAGE",
+        5: "CURRENT", 6: "POWER", 7: "REMAINING_MILEAGE", 8: "FAULT",
+        9: "CURRENT_MILEAGE"},
+    2: {1: "AVERAGE_SPEED", 2: "IS_LOCKED", 3: "CRUISE_IS_ON", 4: "TAIL_LIGHT_IS_ON",
+        5: "ENERGY_RECOVERY", 6: "TOTAL_MILEAGE", 7: "IS_RIDING", 8: "RIDING_TIME",
+        9: "HIGHEST_SPEED", 10: "ASR_IS_ON", 11: "REMAINING_MILEAGE_ALGORITHM",
+        12: "AUTO_LIGHT", 13: "TCS", 14: "INTELLIGENT_DOWNHILL", 15: "HILL_PARKING",
+        16: "ATMOSPHERE_LIGHT", 17: "BLUETOOTH_SEARCH_ON", 18: "FAKE_SHUTDOWN_STATUS"},
+    3: {1: "BATTERY_STATUS", 2: "BATTERY_TEMPERATURE", 3: "SCOOTER_TEMPERATURE",
+        4: "LOCK_WARNING", 5: "MILEAGE_UNIT", 6: "OOB_CODE", 7: "TIRE_MAINTENANCE",
+        8: "ACTIVATION_DATE", 9: "RIDING_RECORDS", 10: "IS_CHARGING",
+        11: "NUMBER_OF_CYCLES", 12: "SOH"},
+    4: {1: "PRODUCTION_DATE", 2: "BATTERY_SN", 3: "BMS_FIRMWARE_VERSION",
+        4: "SCOOTER_SN", 5: "FIRMWARE_VERSION", 6: "RESTORE_SCOOTER_SETTINGS",
+        7: "MORE_BATTERY_INFO", 8: "MORE_BATTERY_INFO_2", 10: "BLUETOOTH_CAR_SEARCH"},
+    5: {1: "RIDING_MODE", 2: "BATTERY_LEVEL", 3: "REMAINING_BATTERY", 4: "VOLTAGE",
+        5: "CURRENT", 6: "POWER", 7: "REMAINING_MILEAGE", 8: "FAULT",
+        9: "CURRENT_MILEAGE", 10: "AVERAGE_SPEED", 11: "IS_LOCKED",
+        12: "CRUISE_IS_ON", 13: "TAIL_LIGHT_IS_ON", 14: "ENERGY_RECOVERY",
+        15: "TOTAL_MILEAGE", 16: "IS_RIDING", 17: "RIDING_TIME",
+        18: "HIGHEST_SPEED", 19: "BATTERY_STATUS", 20: "BATTERY_TEMPERATURE",
+        21: "SCOOTER_TEMPERATURE", 22: "LOCK_WARNING", 23: "REPORT_SWITCH",
+        24: "IS_CHARGING", 29: "TCS_SWITCH", 30: "INTELLIGENT_DOWNHILL_SWITCH",
+        31: "HILL_PARKING_SWITCH", 32: "ATMOSPHERE_LIGHT_MODEL",
+        33: "BLUETOOTH_SEARCH_ON_MODEL", 34: "FAKE_SHUTDOWN_MODEL"},
+    6: {1: "LOG_1", 2: "LOG_2", 3: "LOG_3", 4: "LOG_4", 5: "LOG_5"},
+}
+MI_PROP_VALUE_TYPE = {0: "BOOL", 1: "UINT8", 2: "INT8", 3: "UINT16", 4: "INT16",
+                      5: "UINT32", 6: "INT32", 7: "UINT64", 8: "INT64", 9: "FLOAT",
+                      10: "STRING"}  # global.PROP_VALUE_TYPE (10724.js)
+
+# §99 (F2): OTA/DFU-канал (siid=0xF5) из logs/btsnoop_hci.log (97 фреймов).
+# Handles: 0x38 — app→device (WRITE_CMD), 0x3A — device→app (NOTIFY-ack),
+# 0x44 — app→device (редко). Формат фрейма: [0xF5][piid][N][marker:2 LE][sub:4]
+# [cls:1][payload:N+1] (total = 11+N; N=0 → переменный payload до ~234Б).
+# marker: 0xFFFF — малые фреймы; 0x5300/0x5600/0x5501 — чанк-фреймы 208Б
+# (значения похожи на offset/sequence в OTA-потоке); 0x005C/0x00DE/0x00DC/0x005E
+# — маркеры 16-32Б фреймов. cls: 0x80/0xA0/0x90 — data-write, 0x00/0x01/0x03 —
+# control/ack. Payload — шифртекст (ключ OTA-сессии из native SDK, не в RN-бандле).
+MI_OTA_HANDLE_APP2DEV = 0x38
+MI_OTA_HANDLE_DEV2APP = 0x3A
+MI_OTA_HANDLE_ALT = 0x44
+
+
+def mi_ota_decode(payload):
+    """Decode the siid=0xF5 OTA frame: [0xF5][piid][N][marker:2 LE][sub:4][cls:1]
+    [payload:N+1]. Returns dict(siid, piid, n, marker, sub, cls, payload).
+
+    Декод OTA-фрейма siid=0xF5: [0xF5][piid][N][marker:2 LE][sub:4][cls:1]
+    [payload:N+1]. Возвращает dict(siid, piid, n, marker, sub, cls, payload)."""
+    if len(payload) < 11 or payload[0] != MI_BLE_SIID_OTA:
+        return None
+    piid = payload[1]
+    n = payload[2]
+    marker = struct.unpack('<H', payload[3:5])[0]
+    sub = payload[5:9]
+    cls = payload[9]
+    payload_ = payload[10:]
+    return {'siid': payload[0], 'piid': piid, 'n': n, 'marker': marker,
+            'sub': sub, 'cls': cls, 'payload': payload_,
+            'complete': len(payload_) == n + 1}
 
 # дескрипторы планировщика USART3 (из REPORT §MCU)
 DESC_BASE = 0x20000A43

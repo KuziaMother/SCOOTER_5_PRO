@@ -69,11 +69,20 @@ NAMES = {
     (2, 1): "AVERAGE_SPEED", (2, 2): "IS_LOCKED", (2, 3): "CRUISE_IS_ON",
     (2, 4): "TAIL_LIGHT_IS_ON", (2, 5): "ENERGY_RECOVERY", (2, 6): "TOTAL_MILEAGE",
     (2, 7): "IS_RIDING", (2, 8): "RIDING_TIME", (2, 9): "HIGHEST_SPEED",
+    (2, 10): "ASR_IS_ON", (2, 11): "REMAINING_MILEAGE_ALGORITHM",
+    (2, 12): "AUTO_LIGHT", (2, 13): "TCS", (2, 14): "INTELLIGENT_DOWNHILL",
+    (2, 15): "HILL_PARKING", (2, 16): "ATMOSPHERE_LIGHT",
+    (2, 17): "BLUETOOTH_SEARCH_ON", (2, 18): "FAKE_SHUTDOWN_STATUS",
     (3, 1): "BATTERY_STATUS", (3, 2): "BATTERY_TEMPERATURE",
-    (3, 3): "SCOOTER_TEMPERATURE", (3, 10): "IS_CHARGING",
+    (3, 3): "SCOOTER_TEMPERATURE", (3, 4): "LOCK_WARNING", (3, 5): "MILEAGE_UNIT",
+    (3, 6): "OOB_CODE", (3, 7): "TIRE_MAINTENANCE", (3, 8): "ACTIVATION_DATE",
+    (3, 9): "RIDING_RECORDS", (3, 10): "IS_CHARGING",
     (3, 11): "NUMBER_OF_CYCLES", (3, 12): "SOH",
     (4, 1): "PRODUCTION_DATE", (4, 2): "BATTERY_SN", (4, 3): "BMS_FIRMWARE_VERSION",
     (4, 4): "SCOOTER_SN", (4, 5): "FIRMWARE_VERSION",
+    (4, 6): "RESTORE_SCOOTER_SETTINGS", (4, 7): "MORE_BATTERY_INFO",
+    (4, 8): "MORE_BATTERY_INFO_2", (4, 10): "BLUETOOTH_CAR_SEARCH",
+    # SIID_5 = плоский «model»-зеркал (10..34), SIID_6 = LOG_1..LOG_5 (журнал поездок)
 }
 
 # 6 объектов — ровно как в снупе (ct 40Б -> 36Б открытого = 6 + 5*6)
