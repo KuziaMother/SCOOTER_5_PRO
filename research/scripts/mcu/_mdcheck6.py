@@ -41,10 +41,16 @@ for a in cands.values():
 
 reads = []
 def on_read(u, kind, addr, size, val, ud):
+    """The on_read function of the script.
+    Функция on_read скрипта.
+    """
     reads.append((addr, size))
 n_code = {'n': 0}
 last = {}
 def on_code(u, kind, addr, ud):
+    """The on_code function of the script.
+    Функция on_code скрипта.
+    """
     n_code['n'] += 1
     last['pc'] = addr
     if n_code['n'] >= 2:                     # первая инст. уже отработала — стоп

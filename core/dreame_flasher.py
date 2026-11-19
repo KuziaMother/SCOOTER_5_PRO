@@ -107,6 +107,8 @@ async def _cmd_value(t, opcode, params=b"", timeout=2.5):
 
 
 async def get_fragment_size(t, op):
+    """getFragmentSize (op 2 BLE / 5 MCU) -> u16 (or None).
+    getFragmentSize (op 2 BLE / 5 MCU) → u16 (или None)."""
     st, v = await _cmd_value(t, op["frag"])
     if st != 0 or len(v) < 2:
         return None
@@ -125,6 +127,8 @@ async def get_last_index(t, op):
 
 
 async def _next_pkt(t, deadline):
+    """Next (sid, bytes) from the RX queue by the deadline (None on timeout).
+    Следующий (sid, bytes) из RX-очереди до deadline (None при таймауте)."""
     try:
         return await asyncio.wait_for(t.rx.get(), timeout=max(0.01, deadline - asyncio.get_event_loop().time()))
     except asyncio.TimeoutError:
@@ -161,6 +165,8 @@ async def send_fragment(t, index, data, timeout=5.0, frame_size=None):
             started = True
 
     async def send_seq(n):
+        """Send the DATA frame seq=n (W/O-RESP).
+        Отправить DATA-кадр seq=n (W/O-RESP)."""
         await t.write(CH_DFU_DATA, struct.pack("<H", n) + frames[n - 1], response=False)
 
     # Окно отправки. MNG отдаёт maxPackageNum (у нас 6) — значит устройство готово
@@ -201,6 +207,8 @@ async def flash(t, path, target, commit=False, frame_size=None, limit=None, on_p
     что уже печатаются в консоль — для UI-прогресса (webui/firmware_worker.py),
     без изменения существующего консольного поведения CLI."""
     def _emit(**kw):
+        """on_progress callback (UI progress), if set.
+        Callback on_progress (UI-прогресс), если задан."""
         if on_progress:
             on_progress(kw)
 
@@ -350,12 +358,16 @@ async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
     inbox = []
 
     def on_info(sender, data):
+        """Collect the 0x001c info-channel notify into the inbox.
+        Сбор notify инфо-канала 0x001c в inbox."""
         if sid(sender) == CH_INFO:
             inbox.append(bytes(data))
 
     await t.client.start_notify(t.chars[CH_INFO], on_info)
 
     async def read_version():
+        """Write [0x01] (mcu_version) to 0x001c and read the ascii version (None on failure).
+        Записать [0x01] (mcu_version) в 0x001c и прочитать ascii-версию (None при сбое)."""
         inbox.clear()
         try:
             await t.client.write_gatt_char(t.chars[CH_INFO], b"\x01", response=False)
@@ -398,6 +410,8 @@ async def poll_mcu_version(t, expected_before=None, timeout=180.0, interval=3.0)
 
 
 async def main():
+    """CLI: <ble|mcu> <fw.bin> [--commit --yes] | poll-mcu — flash / poll the MCU version.
+    CLI: <ble|mcu> <fw.bin> [--commit --yes] | poll-mcu — заливка/опрос версии MCU."""
     argv = sys.argv[1:]
     args = [a for a in argv if not a.startswith("--")]
     flags = {a for a in argv if a.startswith("--")}

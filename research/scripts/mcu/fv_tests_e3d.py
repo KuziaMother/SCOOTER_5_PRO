@@ -52,6 +52,9 @@ def _a3_fresh(off, args=(), seeds=(), max_insn=200000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -63,6 +66,9 @@ def _a3_fresh(off, args=(), seeds=(), max_insn=200000):
 
 
 def _pw(emu, addr):
+    """The helper function (_pw).
+    Вспомогательная функция (_pw).
+    """
     return [v for pc, a, s, v in emu.periph_writes if a == addr]
 
 
@@ -70,6 +76,9 @@ def _pw(emu, addr):
            '0x23688 (skipped при ready) → 0x235d4 arm (ctx+4 |= low24(cmd), ctx+0 low ← 0xF1) '
            '→ WE; ret 0 = успех (status-байт 1)')
 def _(run, rng):
+    """Emulator test @ 0x221a4: §78.5: 0x221a4(r0) — write-enable wrapper: cmd = r0+1 (5→0x06): WE-handshake 0x23688 (skipped при ready) → 0x235d4 arm (ctx+4 |= low24(cmd), ctx+0 low ← 0xF1) → WE; ret 0 = успех (status-байт 1).
+    Тест эмулятора @ 0x221a4: §78.5: 0x221a4(r0) — write-enable wrapper: cmd = r0+1 (5→0x06): WE-handshake 0x23688 (skipped при ready) → 0x235d4 arm (ctx+4 |= low24(cmd), ctx+0 low ← 0xF1) → WE; ret 0 = успех (status-байт 1).
+    """
     for r0, cmd in ((0, 1), (5, 0x06)):
         emu, uc, lp = _a3_fresh(0x221A4, [r0])
         assert uc.reg_read(UC_ARM_REG_R0) == 0, f'0x221a4({r0}): ret≠0'
@@ -85,6 +94,9 @@ def _(run, rng):
            '{status=1, addr, ~addr, len=1, &data, data@+0x14}, WE, 0x2360c-транзакция '
            '(data → ctx+8, старт 0xF0), MISO-потребление; ret 0 = успех')
 def _(run, rng):
+    """Emulator test @ 0x221e6: §78.5: 0x221e6(addr, data) — page-program полный flow: фрейм {status=1, addr, ~addr, len=1, &data, data@+0x14}, WE, 0x2360c-транзакция (data → ctx+8, старт 0xF0), MISO-потребление; ret 0 = успех.
+    Тест эмулятора @ 0x221e6: §78.5: 0x221e6(addr, data) — page-program полный flow: фрейм {status=1, addr, ~addr, len=1, &data, data@+0x14}, WE, 0x2360c-транзакция (data → ctx+8, старт 0xF0), MISO-потребление; ret 0 = успех.
+    """
     emu, uc, lp = _a3_fresh(0x221E6, [0x100, 0xA5])
     assert uc.reg_read(UC_ARM_REG_R0) == 0, f'0x221e6: ret={uc.reg_read(UC_ARM_REG_R0):#x}'
     # фрейм: base = STACK_TOP - 0x28 (push 0xC + sub 0x1C)
@@ -109,6 +121,9 @@ def _(run, rng):
            '(ret 0 = данные были); + SpiFlashMiso-модель: 25xxx read (0x03+3 адреса → '
            'NVM-байты staged в ctx+0x28), program (0x06+0x02+3 адреса+данные → AND в NVM)')
 def _(run, rng):
+    """Emulator test @ 0x235b0: §78.5: 0x235b0() — MISO-потребление: [ctx+0x28] читается и сбрасывается в 0 (ret 0 = данные были); + SpiFlashMiso-модель: 25xxx read (0x03+3 адреса → NVM-байты staged в ctx+0x28), program (0x06+0x02+3 адреса+данные → AND в NVM).
+    Тест эмулятора @ 0x235b0: §78.5: 0x235b0() — MISO-потребление: [ctx+0x28] читается и сбрасывается в 0 (ret 0 = данные были); + SpiFlashMiso-модель: 25xxx read (0x03+3 адреса → NVM-байты staged в ctx+0x28), program (0x06+0x02+3 адреса+данные → AND в NVM).
+    """
     emu, uc, lp = _a3_fresh(0x235B0, [], seeds=[(SPI_CTX_BASE + SPI_CTX_READY, 0xFFFFFFFF),
                                                 (SPI_CTX_BASE + SPI_CTX_MISO, 0x42)])
     assert uc.reg_read(UC_ARM_REG_R0) == 0, 'MISO-потребление: ret'
@@ -135,6 +150,9 @@ def _(run, rng):
            'len→ctx+4 (len-поле), high-байт cmd → ctx+4, (len+3)>>2 слов *data → ctx+8 '
            'со старт-пульсом 0xF0 на слово; ret 1 = успех')
 def _(run, rng):
+    """Emulator test @ 0x2360c: §78.5: 0x2360c(&desc) — SPI-двигатель: desc {cmd-word, mask, u16 len, *data}: len→ctx+4 (len-поле), high-байт cmd → ctx+4, (len+3)>>2 слов *data → ctx+8 со старт-пульсом 0xF0 на слово; ret 1 = успех.
+    Тест эмулятора @ 0x2360c: §78.5: 0x2360c(&desc) — SPI-двигатель: desc {cmd-word, mask, u16 len, *data}: len→ctx+4 (len-поле), high-байт cmd → ctx+4, (len+3)>>2 слов *data → ctx+8 со старт-пульсом 0xF0 на слово; ret 1 = успех.
+    """
     desc = RAM + 0x200
     emu, uc, lp = _a3_fresh(0x2360C, [desc], seeds=[
         (SPI_CTX_BASE + SPI_CTX_READY, 0xFFFFFFFF),
@@ -152,6 +170,9 @@ def _(run, rng):
            '{0x00112233, 0x55667788} в [ctx+0x28] (ret 0); при ready (0xFFFFFFFF) '
            'пропускается (ret 1, без записей)')
 def _(run, rng):
+    """Emulator test @ 0x23688: §78.5: 0x23688() — write-enable handshake: гейт снят (ready=0) → два слова {0x00112233, 0x55667788} в [ctx+0x28] (ret 0); при ready (0xFFFFFFFF) пропускается (ret 1, без записей).
+    Тест эмулятора @ 0x23688: §78.5: 0x23688() — write-enable handshake: гейт снят (ready=0) → два слова {0x00112233, 0x55667788} в [ctx+0x28] (ret 0); при ready (0xFFFFFFFF) пропускается (ret 1, без записей).
+    """
     emu, uc, lp = _a3_fresh(0x23688, [], seeds=[(SPI_CTX_BASE + SPI_CTX_READY, 0)])
     assert uc.reg_read(UC_ARM_REG_R0) == 0, f'WE off: ret={uc.reg_read(UC_ARM_REG_R0):#x}'
     assert _pw(emu, SPI_CTX_BASE + SPI_CTX_MISO) == list(SPI_CTX_WE_WORDS), \
@@ -165,6 +186,9 @@ def _(run, rng):
            '(payload-слова 0x01A1, 0x06ED → ctx+8; старт-пульсы 0xF0; 3 MISO-сброса) '
            '+ RAM-строки 0x844/0x858 (b68-золото); ret 1')
 def _(run, rng):
+    """Emulator test @ 0x1c838: §78.5: 0x1c838() — NVM-write батч (интеграция): 2 полные SPI-транзакции (payload-слова 0x01A1, 0x06ED → ctx+8; старт-пульсы 0xF0; 3 MISO-сброса) + RAM-строки 0x844/0x858 (b68-золото); ret 1.
+    Тест эмулятора @ 0x1c838: §78.5: 0x1c838() — NVM-write батч (интеграция): 2 полные SPI-транзакции (payload-слова 0x01A1, 0x06ED → ctx+8; старт-пульсы 0xF0; 3 MISO-сброса) + RAM-строки 0x844/0x858 (b68-золото); ret 1.
+    """
     emu, uc, lp = _a3_fresh(0x1C838, [], max_insn=80000)
     assert uc.reg_read(UC_ARM_REG_R0) == 1, f'0x1c838: ret={uc.reg_read(UC_ARM_REG_R0):#x}'
     assert 5000 < emu.insn < 7000, f'insn={emu.insn}'

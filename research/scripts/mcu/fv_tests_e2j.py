@@ -26,6 +26,9 @@ def _call_regs(off, regvals, seeds=(), max_insn=50000):
     uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
 
     def _stop(uc_, addr, size, user):
+        """The helper function (_stop).
+        Вспомогательная функция (_stop).
+        """
         if not (FLASH0 <= addr < FLASH0 + 0x23680 or FLASH1 <= addr < FLASH1 + 0x23680):
             uc_.emu_stop()
     h = uc.hook_add(UC_HOOK_CODE, _stop)
@@ -43,6 +46,9 @@ def _call_regs(off, regvals, seeds=(), max_insn=50000):
             '= 0x05FA0004, спин); magic-mismatch → ret = последний ldrh (0xE2-ветка: u16[0x1262], '
             'иначе u16[0x1260]); нет действия.')
 def _(run, rng):
+    """Emulator test @ 0xddc4: E2-b65: 0x0ddc4() — OTA-команды из u16[0x1260/0x1262] (база 0x124E+0x12/0x14): 0xE0+0x5AA5 → 0x7e98(erase-адрес из пула, ∈[0x08003000,0x0801FFFF) → fp P+0x22004=0xCDEF89AB) + 0xdd80; 0xE2+0x5AA5 → 0xdd80 (u32[0xE000ED0C] SysTick CTRL = 0x05FA0004, спин); magic-mismatch → ret = последний ldrh (0xE2-ветка: u16[0x1262], иначе u16[0x1260]); нет действия..
+    Тест эмулятора @ 0xddc4: E2-b65: 0x0ddc4() — OTA-команды из u16[0x1260/0x1262] (база 0x124E+0x12/0x14): 0xE0+0x5AA5 → 0x7e98(erase-адрес из пула, ∈[0x08003000,0x0801FFFF) → fp P+0x22004=0xCDEF89AB) + 0xdd80; 0xE2+0x5AA5 → 0xdd80 (u32[0xE000ED0C] SysTick CTRL = 0x05FA0004, спин); magic-mismatch → ret = последний ldrh (0xE2-ветка: u16[0x1262], иначе u16[0x1260]); нет действия..
+    """
     from emulator.mcu_emu import PERIPH as _P
     SYST = 0xE000ED0C  # SysTick CTRL (литерал L3 в 0xdd80)
     CANARY = 0x5A5A5A5A
@@ -86,6 +92,9 @@ def _(run, rng):
             '[sp+0x10]=0x4000; 0x332c×2, wait-цикл 0x3E8, 0x2e0c(sp+4), 0x9874(0x20000)→0 → '
             'без инкремента; ret 0.')
 def _(run, rng):
+    """Emulator test @ 0x2d70: E2-b65: 0x02d70() — stack-структура init (fresh-emu, SP=STACK_TOP−0x40): [sp+4]=0x000186A0 (литерал), [sp+8]=0, [sp+0xA]=0xBFFF, [sp+0xC]=0x30, [sp+0xE]=0x400, [sp+0x10]=0x4000; 0x332c×2, wait-цикл 0x3E8, 0x2e0c(sp+4), 0x9874(0x20000)→0 → без инкремента; ret 0..
+    Тест эмулятора @ 0x2d70: E2-b65: 0x02d70() — stack-структура init (fresh-emu, SP=STACK_TOP−0x40): [sp+4]=0x000186A0 (литерал), [sp+8]=0, [sp+0xA]=0xBFFF, [sp+0xC]=0x30, [sp+0xE]=0x400, [sp+0x10]=0x4000; 0x332c×2, wait-цикл 0x3E8, 0x2e0c(sp+4), 0x9874(0x20000)→0 → без инкремента; ret 0..
+    """
     for _ in range(3):
         ret, emu = _fresh_call(0x02D70, (), max_insn=20000)
         sp_final = (STACK_TOP - 0x40 - 4 - 0x14) & M32
@@ -102,6 +111,9 @@ def _(run, rng):
 @t(0x04C98, 'E2-b65: 0x04c98(r4=slot, r6=delta) — event-queue @0x164C: u32[slot+4]=u32[0xB4C]+r6, '
             'byte[slot]=1, byte[slot+1]=(r6==0), bl 0x2d34 (снять критсек).')
 def _(run, rng):
+    """Emulator test @ 0x4c98: E2-b65: 0x04c98(r4=slot, r6=delta) — event-queue @0x164C: u32[slot+4]=u32[0xB4C]+r6, byte[slot]=1, byte[slot+1]=(r6==0), bl 0x2d34 (снять критсек)..
+    Тест эмулятора @ 0x4c98: E2-b65: 0x04c98(r4=slot, r6=delta) — event-queue @0x164C: u32[slot+4]=u32[0xB4C]+r6, byte[slot]=1, byte[slot+1]=(r6==0), bl 0x2d34 (снять критсек)..
+    """
     for _ in range(10):
         delta = rng.choice([0, 1, 5, 100, 0x7FFF])
         b4c = rng.getrandbits(32)
@@ -121,6 +133,9 @@ def _(run, rng):
             'цепь 0x11010/0xe160/0x16222/0x164f8/0x162ce деградирует на свежих входах: u16[0x1346] '
             'не меняется (любой FC8/0x138C), u16[0x1390]:=0, byte[0x138F]:=0.')
 def _(run, rng):
+    """Emulator test @ 0x799c: E2-b65: 0x0799c() — duty-регулятор (fresh-emu): 0x8f58() пишет u16[0x135E]=s8(FC8); цепь 0x11010/0xe160/0x16222/0x164f8/0x162ce деградирует на свежих входах: u16[0x1346] не меняется (любой FC8/0x138C), u16[0x1390]:=0, byte[0x138F]:=0..
+    Тест эмулятора @ 0x799c: E2-b65: 0x0799c() — duty-регулятор (fresh-emu): 0x8f58() пишет u16[0x135E]=s8(FC8); цепь 0x11010/0xe160/0x16222/0x164f8/0x162ce деградирует на свежих входах: u16[0x1346] не меняется (любой FC8/0x138C), u16[0x1390]:=0, byte[0x138F]:=0..
+    """
     for _ in range(12):
         fc8 = rng.choice([0, 1, 2, 3, 0x7F])
         v = rng.getrandbits(16)
@@ -143,6 +158,9 @@ def _(run, rng):
             '0x22000(L,sp,0x40/0x80) → [L+0x10]=0xA000, [L+0x14..0x24]=0, [L+0x28]=0x22000000; '
             '0x23188(sp+8), 0x21bc8(0x1D,5), 0x21b6c(0x1D) → ret 0xFFFFFFFF (tail-блок 0x1f6b4 обходится).')
 def _(run, rng):
+    """Emulator test @ 0x1f6b4: E2-b65: 0x1f6b4() — TX-дескриптор (fresh-emu, L=0x48000800 из пула): [sp]={02 00 00 00 00 00 02 00}, [sp+8]=0x40004800, [sp+0xC]=0x4B00, [sp+0x10]=0, [sp+0x14]=0; 0x22000(L,sp,0x40/0x80) → [L+0x10]=0xA000, [L+0x14..0x24]=0, [L+0x28]=0x22000000; 0x23188(sp+8), 0x21bc8(0x1D,5), 0x21b6c(0x1D) → ret 0xFFFFFFFF (tail-блок 0x1f6b4 обходится)..
+    Тест эмулятора @ 0x1f6b4: E2-b65: 0x1f6b4() — TX-дескриптор (fresh-emu, L=0x48000800 из пула): [sp]={02 00 00 00 00 00 02 00}, [sp+8]=0x40004800, [sp+0xC]=0x4B00, [sp+0x10]=0, [sp+0x14]=0; 0x22000(L,sp,0x40/0x80) → [L+0x10]=0xA000, [L+0x14..0x24]=0, [L+0x28]=0x22000000; 0x23188(sp+8), 0x21bc8(0x1D,5), 0x21b6c(0x1D) → ret 0xFFFFFFFF (tail-блок 0x1f6b4 обходится)..
+    """
     for _ in range(3):
         ret, emu = _fresh_call(0x1F6B4, (), max_insn=100000)
         uc = emu.uc
@@ -166,6 +184,9 @@ def _(run, rng):
             'data→dst+2; bl 0xdf10(dst): magic-gate byte[dst+2]≠0xAA → ret=byte[dst+2] '
             '(первый байт освобождённых данных).')
 def _(run, rng):
+    """Emulator test @ 0x4a30: E2-b65: 0x04a30() — local-table lookup: bl 0x4a04 (заполнение таблицы 0x12C..), r0=sp+4; bl 0x12f44 (free #2, база 0x1D38): state&7==0 → ret 0; иначе free (сценарий _free3_ref: скан (cnt0+1)%3.. до заданного бита), u16[dst]=len, data→dst+2; bl 0xdf10(dst): magic-gate byte[dst+2]≠0xAA → ret=byte[dst+2] (первый байт освобождённых данных)..
+    Тест эмулятора @ 0x4a30: E2-b65: 0x04a30() — local-table lookup: bl 0x4a04 (заполнение таблицы 0x12C..), r0=sp+4; bl 0x12f44 (free #2, база 0x1D38): state&7==0 → ret 0; иначе free (сценарий _free3_ref: скан (cnt0+1)%3.. до заданного бита), u16[dst]=len, data→dst+2; bl 0xdf10(dst): magic-gate byte[dst+2]≠0xAA → ret=byte[dst+2] (первый байт освобождённых данных)..
+    """
     S = 0x1D38
     for _ in range(8):
         empty = rng.random() < 0.3
@@ -209,6 +230,9 @@ def _(run, rng):
             '(0x11a4×2, 0xb8dc(st)) → ret 3, byte[0xF0B]:=0, u16[st+0x9E]=0, u16[st+0xA0]=0; '
             'byte[st+0x13]==1 → путь 0x2d1c → ret 0 (fresh-emu).')
 def _(run, rng):
+    """Emulator test @ 0xbb14: E2-b65: 0x0bb14() — "queue-empty" (указатель struct из u32[STACK_TOP−0x3C] через ldrd, fresh-emu): u32[st]==0 → ret 1 (пусто); u32[st]!=0 && byte[st+0x13]==0 → полный путь (0x11a4×2, 0xb8dc(st)) → ret 3, byte[0xF0B]:=0, u16[st+0x9E]=0, u16[st+0xA0]=0; byte[st+0x13]==1 → путь 0x2d1c → ret 0 (fresh-emu)..
+    Тест эмулятора @ 0xbb14: E2-b65: 0x0bb14() — "queue-empty" (указатель struct из u32[STACK_TOP−0x3C] через ldrd, fresh-emu): u32[st]==0 → ret 1 (пусто); u32[st]!=0 && byte[st+0x13]==0 → полный путь (0x11a4×2, 0xb8dc(st)) → ret 3, byte[0xF0B]:=0, u16[st+0x9E]=0, u16[st+0xA0]=0; byte[st+0x13]==1 → путь 0x2d1c → ret 0 (fresh-emu)..
+    """
     ST = 0x1400
     # _fresh_call: SP = STACK_TOP−0x40, push 11 + sub 0x2C → sp_f = STACK_TOP−0x98;
     # ldrd sb,r4,[sp+0x58]: r4 = u32[sp_f+0x5C] = u32[STACK_TOP−0x3C]
@@ -239,6 +263,9 @@ def _(run, rng):
 @t(0x0D700, 'E2-b65: 0x0d700(r0) — one-shot flag u32@0x8C: "lsls r0,r0" → u32[0x8C] = r0 << '
             '(r0&0x3F) mod 2^32 (для r0 с нулевыми низкими 6 битами — тождественно).')
 def _(run, rng):
+    """Emulator test @ 0xd700: E2-b65: 0x0d700(r0) — one-shot flag u32@0x8C: "lsls r0,r0" → u32[0x8C] = r0 << (r0&0x3F) mod 2^32 (для r0 с нулевыми низкими 6 битами — тождественно)..
+    Тест эмулятора @ 0xd700: E2-b65: 0x0d700(r0) — one-shot flag u32@0x8C: "lsls r0,r0" → u32[0x8C] = r0 << (r0&0x3F) mod 2^32 (для r0 с нулевыми низкими 6 битами — тождественно)..
+    """
     for _ in range(10):
         r0 = rng.choice([0x200, 0x1000, 0x2000, 0x8000, 0, 0x7000, 0x05FA0000])
         seed = rng.getrandbits(32)
@@ -253,6 +280,9 @@ def _(run, rng):
             '(после 0x85c8), byte[sp+3]=1, byte[sp+4]=0, u32[sp+8]=3; r0=[caller SP+8], '
             'bl 0x85c8(r0, sp) → ret 0x1000000 (оба варианта base: 0 и GPIO).')
 def _(run, rng):
+    """Emulator test @ 0xbc86: E2-b65: 0x0bc86() — GPIO-дескриптор (fresh-emu): 0x87b0(sp), local: u16[sp]=0 (после 0x85c8), byte[sp+3]=1, byte[sp+4]=0, u32[sp+8]=3; r0=[caller SP+8], bl 0x85c8(r0, sp) → ret 0x1000000 (оба варианта base: 0 и GPIO)..
+    Тест эмулятора @ 0xbc86: E2-b65: 0x0bc86() — GPIO-дескриптор (fresh-emu): 0x87b0(sp), local: u16[sp]=0 (после 0x85c8), byte[sp+3]=1, byte[sp+4]=0, u32[sp+8]=3; r0=[caller SP+8], bl 0x85c8(r0, sp) → ret 0x1000000 (оба варианта base: 0 и GPIO)..
+    """
     for _ in range(4):
         base = rng.choice([0, PERIPH2 + 0x800])
         a, b = rng.getrandbits(16), rng.getrandbits(16)

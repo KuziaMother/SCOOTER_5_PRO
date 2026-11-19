@@ -1,5 +1,21 @@
 # -*- coding: utf-8 -*-
 """
+The emulator verification of the ANALYZED_MCU catalog entries (gen_maps.py).
+
+For each the disassembled function — its own test: we execute the REAL code on the
+Unicorn with the random inputs and check the result against the independent Python
+reference (the documented behavior from the REPORT.md/catalog).
+
+Usage:  python -X utf8 research/scripts/mcu/func_verify.py [--only 0x126c] [--seed N]
+        python -X utf8 research/scripts/mcu/func_verify.py --list   # covered
+
+Adding the test — the function in the TESTS (the @t(off, desc) decorator):
+    @t(0x126C, 'u64 LSR')
+    def _(run, rng):
+        lo, hi, n = ...
+        r0, r1 = run.call(0x126C, (lo, hi, n))
+        assert (r0, r1) == expected, f'...'
+
 Эмуляторная верификация записей каталога ANALYZED_MCU (gen_maps.py).
 
 Для каждой разобранной функции — свой тест: исполняем РЕАЛЬНЫЙ код на Unicorn
@@ -43,9 +59,12 @@ M64 = 0xFFFFFFFFFFFFFFFF
 
 
 class Run:
-    """один экземпляр эмулятора на все тесты (чистые функции не портят состояние)"""
+    """One emulator instance for all the tests (the pure functions do not corrupt
+    the state).
+    Один экземпляр эмулятора на все тесты (чистые функции не портят состояние)."""
 
     def __init__(self, max_insn=500000):
+        """The McuEmu with the instruction budget (the 500K)."""
         # 500K — запас под wait-циклы с таймаутом (0xC8A4: до ~240K инстр.)
         self.emu = McuEmu(max_insn=max_insn)
         self.uc = self.emu.uc
@@ -58,7 +77,8 @@ class Run:
         self.last_error = None
 
     def call(self, off, args=(), max_insn=50000):
-        """вызвать функцию (Thumb), вернуть (r0, r1) на момент возврата"""
+        """Call the function (the Thumb), return the (r0, r1) at the return.
+        Вызвать функцию (Thumb), вернуть (r0, r1) на момент возврата."""
         uc = self.uc
         # ВАЖНО: сброс кумулятивного счётчика инструкций McuEmu —
         # иначе после ~max_insn суммарных инструкций хук _h_code
@@ -71,6 +91,8 @@ class Run:
         uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)   # возврат в незамапленное
 
         def stop(uc_, addr, size, user):
+            """The stop when the execution leaves the flash.
+            Стоп когда исполнение выходит за пределы flash."""
             if not (FLASH0 <= addr < FLASH0 + FW_LEN or
                     FLASH1 <= addr < FLASH1 + FW_LEN):
                 uc_.emu_stop()
@@ -84,23 +106,33 @@ class Run:
         return (uc.reg_read(UC_ARM_REG_R0) & M32, uc.reg_read(UC_ARM_REG_R1) & M32)
 
     def flags(self):
-        """CPSR-флаги после последнего вызова: (N, Z, C, V)
+        """The CPSR flags after the last call: the (N, Z, C, V). The ARM CPSR bit
+        layout: the N=31, the Z=30, the C=29, the V=28.
+        CPSR-флаги после последнего вызова: (N, Z, C, V).
         Архитектурное расположение битов ARM CPSR: N=31, Z=30, C=29, V=28"""
         cpsr = self.uc.reg_read(UC_ARM_REG_CPSR)
         return ((cpsr >> 31) & 1, (cpsr >> 30) & 1,
                 (cpsr >> 29) & 1, (cpsr >> 28) & 1)
 
     def ram_write(self, off, data):
+        """Write the bytes into the RAM (the offset from the RAM base).
+        Записать байты в RAM (смещение от базового RAM)."""
         self.uc.mem_write(RAM + off, data)
 
     def ram_read(self, off, size):
+        """Read the bytes from the RAM (the offset from the RAM base).
+        Прочитать байты из RAM (смещение от базового RAM)."""
         return bytes(self.uc.mem_read(RAM + off, size))
 
     # --- периферия (McuEmu мапит PERIPH/SYS как обычную память) ---
     def periph_write(self, addr, val):
+        """Write the u32 into the peripheral (the absolute address).
+        Записать u32 в периферию (абсолютный адрес)."""
         self.uc.mem_write(addr, struct.pack('<I', val & M32))
 
     def periph_read(self, addr):
+        """Read the u32 from the peripheral (the absolute address).
+        Прочитать u32 из периферии (абсолютный адрес)."""
         return struct.unpack('<I', bytes(self.uc.mem_read(addr, 4)))[0]
 
 
@@ -109,16 +141,23 @@ class Run:
 # ---------------------------------------------------------------------------
 
 def ref_u64lsr(lo, hi, n):
+    """The reference: the u64 {hi:lo} logical shift right.
+    Референс: u64 {hi:lo} логический сдвиг вправо."""
     P = ((hi << 32) | lo) >> n
     return P & M32, P >> 32
 
 
 def ref_u64lsl(lo, hi, n):
+    """The reference: the u64 {hi:lo} logical shift left.
+    Референс: u64 {hi:lo} логический сдвиг влево."""
     P = (((hi << 32) | lo) << n) & M64
     return P & M32, P >> 32
 
 
 def ref_u64asr(lo, hi, n):
+    """The reference: the u64 {hi:lo} arithmetic shift right (the floor for the
+    negative).
+    Референс: u64 {hi:lo} арифметический сдвиг вправо (floor для отриц.)."""
     v = (hi << 32) | lo
     if v >= 1 << 63:
         v -= 1 << 64
@@ -182,6 +221,8 @@ def ref_scale_1a052(lo, hi, r2, r3):
 
 
 def ref_mul64(a, b):
+    """The reference: the u64 product (the lo/hi words).
+    Референс: u64-произведение (нижнее/верхнее слово)."""
     P = a * b
     return P & M32, P >> 32
 
@@ -224,6 +265,8 @@ def ref_sdiv32(a, b):
 def ref_sdiv64(d_lo, d_hi, s_lo, s_hi):
     """0x19a1c: signed u64 div → (quotient {r1:r0}, remainder {r3:r2})"""
     def s64(lo, hi):
+        """The u64 word pair into the signed integer.
+        Пара слов u64 в знаковое целое."""
         v = (hi << 32) | lo
         return v - (1 << 64) if v >= 1 << 63 else v
     d, s = s64(d_lo, d_hi), s64(s_lo, s_hi)
@@ -307,6 +350,8 @@ def ref_bcd2bin(b):
 
 
 def ref_bin2bcd(v):
+    """The reference: the value into the BCD (the subtraction loop).
+    Референс: значение в BCD (цикл вычитаний)."""
     v &= M32
     n = 0
     while v >= 10:
@@ -323,7 +368,11 @@ TESTS = []
 
 
 def t(off, desc):
+    """The test registry decorator (the off, the desc).
+    Декоратор реестра тестов (off, desc)."""
     def deco(fn):
+        """Register the test function in the TESTS.
+        Зарегистрировать тестовую функцию в TESTS."""
         TESTS.append((off, desc, fn))
         return fn
     return deco
@@ -346,6 +395,8 @@ def _fresh_call(off, args=(), extra_ram=None, max_insn=50000, extra_mem=None):
             uc.mem_write(addr, data)
 
     def _st(uc_, a, s, u):
+        """The stop when the execution leaves the code region.
+        Стоп когда исполнение выходит за пределы кодовой области."""
         aa = a & ~1
         if not (_F0 <= aa < _F0 + 0x23680 or _F1 <= aa < _F1 + 0x23680):
             uc_.emu_stop()
@@ -385,6 +436,9 @@ def _intercept(off, target, max_insn=20000, arg=None, args=None, extra_ram=None)
     cap = {}
 
     def _code(uc_, a, s, u):
+        """The code hook: the capture of the R0-R3 at the bl target entry + the stop
+        outside the flash.
+        Code-хук: снятие R0-R3 на входе bl-цели + стоп вне flash."""
         if a == target or a == (target & ~1):
             for nm, r in (('r0', UC_ARM_REG_R0), ('r1', UC_ARM_REG_R1),
                           ('r2', UC_ARM_REG_R2), ('r3', UC_ARM_REG_R3)):
@@ -417,6 +471,8 @@ def _intercept(off, target, max_insn=20000, arg=None, args=None, extra_ram=None)
 
 
 def main():
+    """The CLI entry point (the --only/--seed/--iters/--list).
+    CLI-вход (--only/--seed/--iters/--list)."""
     ap = argparse.ArgumentParser()
     ap.add_argument('--only', help='только функции с этим префиксом адреса (0x126c)')
     ap.add_argument('--seed', type=int, default=42)

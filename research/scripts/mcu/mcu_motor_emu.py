@@ -19,6 +19,9 @@ CANDS = {"adc_isr": 0x1a31c, "systick": 0x13CAC, "main_tick": 0x1dfd8}
 
 
 def run(name, func, budget=8_000_000):
+    """The run function of the script.
+    Функция run скрипта.
+    """
     emu = McuEmu(max_insn=budget)
     uc = emu.uc
     uc.mem_write(0x40000000, bytes(0x100000))   # периферия = 0
@@ -30,15 +33,27 @@ def run(name, func, budget=8_000_000):
     events = []
 
     def h_tim1_write(uc, access, address, size, value, user):
+        """The h_tim1_write function of the script.
+        Функция h_tim1_write скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "TIM1W", address - 0x40012C00, value))
 
     def h_port_write(uc, access, address, size, value, user):
+        """The h_port_write function of the script.
+        Функция h_port_write скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "PORT_W", address - 0x48000000, value))
 
     def h_tim1_read(uc, access, address, size, value, user):
+        """The h_tim1_read function of the script.
+        Функция h_tim1_read скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "TIM1R", address - 0x40012C00))
 
     def h_tbl_read(uc, access, address, size, value, user):
+        """The h_tbl_read function of the script.
+        Функция h_tbl_read скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "TBL_R", address - 0x08000000))
 
     uc.hook_add(UC_HOOK_MEM_READ, h_tim1_read, None, 0x40012C30, 0x40012C50)

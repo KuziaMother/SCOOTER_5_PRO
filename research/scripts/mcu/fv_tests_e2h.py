@@ -8,6 +8,9 @@ from fv_core import _fresh_call, _intercept  # noqa: F401
 def _t_21b6c(run, rng):
     # 0x21b6c(r0): s32(r0) >= 0 → u32[0xE000E100] = 1 << (r0 & 31), ret = 1<<(r0&31)
     #              s32(r0) <  0 → запись нет, ret = r0
+    """Emulator test @ 0x21b6c.
+    Тест эмулятора @ 0x21b6c.
+    """
     for _ in range(12):
         if rng.getrandbits(1):
             r0 = rng.choice([0, 1, 5, 16, 31, 32, 33, 40, 0x1F, 0x7FFFFFFF,
@@ -35,6 +38,9 @@ def _t_15ce0(run, rng):
     #   gate==0 → counter=0, быстрый возврат
     #   gate!=0 → counter++; counter<=2 → быстрый возврат
     #              counter==3 → bl 0xd878 + 0xdd80 (I2C-цепочка — спин в эмуляторе)
+    """Emulator test @ 0x15ce0.
+    Тест эмулятора @ 0x15ce0.
+    """
     for _ in range(10):
         gate = rng.choice([0, 0, 1, 2, rng.getrandbits(8)])
         if gate == 0:
@@ -59,6 +65,9 @@ def _t_7e70(run, rng):
     # 0x7e70(base, n): цикл i=0..n-1: ret = 0x7e98(base + i*0x800)
     #   0x7e98 в эмуляторе всегда возвращает 0 → при n>0 первый сектор → ret 0
     #   n==0 → цикл не выполняется → ret 1
+    """Emulator test @ 0x7e70.
+    Тест эмулятора @ 0x7e70.
+    """
     for _ in range(10):
         n = rng.choice([0, 0, 1, 2, 3, 5])
         if rng.getrandbits(1):
@@ -79,6 +88,9 @@ def _t_22234(run, rng):
     #   SysTick RVR=0xFFFFFF/CVR/CTRL=5) → затем toggle-цикл P+0x21000 bit0x10 с
     #   задержками 0x22a0c — в эмуляторе 0x22994 зависает в задержке (CVR-poll),
     #   toggle-цикл не достигается; наблюдаемо = сайд-эффекты 0x22994 + спин.
+    """Emulator test @ 0x22234.
+    Тест эмулятора @ 0x22234.
+    """
     for _ in range(3):
         run.periph_write(0x40021000, rng.getrandbits(32))
         run.periph_write(0xE000E014, 0)
@@ -104,7 +116,13 @@ def _t_e704(run, rng):
     #   v>=0 → |v| = v; v<0 → |v| = -v (v==-2^31 → 0x7FFFFFFF)
     #   |v| > 0xC8 → byte[RAM+0x1310] = 0, ret 0
     #   иначе ret = raw u32[0x138A]
+    """Emulator test @ 0xe704.
+    Тест эмулятора @ 0xe704.
+    """
     def ref(v):
+        """The ref function of the script.
+        Функция ref скрипта.
+        """
         sv = v - 0x100000000 if v >= 0x80000000 else v
         if sv >= 0:
             av = sv
@@ -141,6 +159,9 @@ def _t_22e0c(run, rng):
     #   иначе: [base+0x48] = u32[args+4], return
     #   xc=byte[args+0xC] ∈ {0,1} иначе спин; xb=byte[args+0xB] ∈ {0,1} иначе спин
     #   [base+0x04] = (old & ~0xC00) | (xb<<10) | (xc<<11); [base+0x48] = u32[args+4]; ret = base
+    """Emulator test @ 0x22e0c.
+    Тест эмулятора @ 0x22e0c.
+    """
     VALID = (0x40014000, 0x40014400, 0x40014800, 0x40014C00)
     for _ in range(10):
         base = rng.choice([0x40012C00] + list(VALID) +
@@ -201,6 +222,9 @@ t(0x22E0C, 'E2-b61: 0x22e0c(base,args) TIM-reg update: CCMR1=(old&~0x7300)|(k<<1
 
 def _t_17554(run, rng):
     # 0x17554(r0): r0 ∈ {0,1} → byte[RAM+0x11C] = r0; ret = r0
+    """Emulator test @ 0x17554.
+    Тест эмулятора @ 0x17554.
+    """
     for _ in range(10):
         if rng.getrandbits(1):
             a = rng.choice([0, 1])
@@ -224,7 +248,13 @@ def _t_2186c(run, rng):
     #   b9=0; c3=(b8+1)&FF; c3<0x3C → стоп
     #   b8=0; c4=(b7+1)&FF; cap = 0x18 если b5==1 else 0x0C; c4<cap → стоп
     #   b7=0; дальше по b5/b6/b2 (см. модель)
+    """Emulator test @ 0x2186c.
+    Тест эмулятора @ 0x2186c.
+    """
     def ref(cnt, b9, b8, b7, b6, b5, b4, b3, b2):
+        """The ref function of the script.
+        Функция ref скрипта.
+        """
         st = {'b9': b9, 'b8': b8, 'b7': b7, 'b6': b6, 'b4': b4, 'b3': b3, 'b2': b2}
         if cnt < 1000:
             return None
@@ -332,7 +362,13 @@ def _t_5a68(run, rng):
     #   width==1: bl 0x11a4(dst, src, size) — memcpy; ret 1
     #   width==2/4/8: разворот байтов в группах (BE-swap); ret 1
     #   иначе: ret 0
+    """Emulator test @ 0x5a68.
+    Тест эмулятора @ 0x5a68.
+    """
     def ref(src, width, size):
+        """The ref function of the script.
+        Функция ref скрипта.
+        """
         if width != 0 and size % width != 0:
             return 0, None
         if width == 0:
@@ -370,6 +406,9 @@ t(0x5A68, 'E2-b62: 0x5a68(dst,src,width,size) endianness: size%width!=0 → ret0
 
 def _t_16504(run, rng):
     # 0x16504(): ret = u16[RAM+0x13AB] (pool 0x20001384 + 0x27)
+    """Emulator test @ 0x16504.
+    Тест эмулятора @ 0x16504.
+    """
     for _ in range(10):
         v = rng.getrandbits(16)
         run.ram_write(0x13AB, struct.pack('<H', v))
@@ -391,6 +430,9 @@ def _t_22edc(run, rng):
     #     0x04 = (v4 & ~0x1000 | ((byte[args+11] & 1) << 12))
     #             & ~0x2000 | ((byte[args+12] & 1) << 13)
     #   хвост (все базы): [base+0x4C] = u32[args+4]; ret = base
+    """Emulator test @ 0x22edc.
+    Тест эмулятора @ 0x22edc.
+    """
     TIM = (0x40012C00, 0x40014000, 0x40014400, 0x40014800)
     for _ in range(10):
         spin = rng.getrandbits(1) == 0
@@ -458,7 +500,13 @@ def _t_22c70(run, rng):
     #   [base+0x54] = enc; byte[struct+0x1A] = 1; ret = struct_ptr
     #   enc: v = (v0 & 0xFFFF8000) | a0<<11 | a1<<10 | k<<8 | r6;
     #        v = (v&0xEFFF)|a8<<12; (v&0xDFFF)|ex<<13; (v&0xBFFF)|a10<<14
+    """Emulator test @ 0x22c70.
+    Тест эмулятора @ 0x22c70.
+    """
     def enc(v0, a0, a1, k, r6, a8, ex, a10):
+        """The enc function of the script.
+        Функция enc скрипта.
+        """
         v = (v0 & 0xFFFF8000) | (a0 << 11) | (a1 << 10) | (k << 8) | (r6 & 0xFF)
         v = (v & 0xFFFFEFFF) | (a8 << 12)
         v = (v & 0xFFFFDFFF) | (ex << 13)
@@ -503,11 +551,17 @@ def _t_23040(run, rng):
     #   иначе: +0x19=1, +0x1A=2; dispatch: 0→0x22d2c (+0x44), 1→0x22e0c (+0x48),
     #                2→0x22edc (+0x4C), 4→0x22fac (+0x50) — все копируют u32[args+4]
     #   финал: +0x1A=1, +0x19=0, ret 0
+    """Emulator test @ 0x23040.
+    Тест эмулятора @ 0x23040.
+    """
     FULL = (0x40012C00, 0x40000400, 0x40000800, 0x40000C00, 0x40000000)
     HALF = (0x40014000, 0x40014400, 0x40014800, 0x40014C00)
     TAIL = {0: 0x44, 1: 0x48, 2: 0x4C, 4: 0x50}
 
     def ok_mode(base, mode):
+        """The ok_mode function of the script.
+        Функция ok_mode скрипта.
+        """
         if base in FULL:
             return mode in (0, 1, 2, 4)
         if base in HALF:
@@ -565,6 +619,9 @@ def _t_15d14(run, rng):
     #     byte[B+0x12] = b10
     #     byte[B+0x15] = b13
     #     ret (0x1C, 0xA); A не меняется
+    """Emulator test @ 0x15d14.
+    Тест эмулятора @ 0x15d14.
+    """
     A, B = 0x1F10, 0x1FAC
     for _ in range(15):
         status = rng.choice([0, 1, 1, 2, rng.getrandbits(8)])
@@ -606,6 +663,9 @@ def _t_1395c(run, rng):
     #   byte[SRC] == 0 → P2++; P2 ≤ 5 → чистый возврат; P2 > 5 → P2=0, P1=0 + bl 0x13c78
     #   Детерминизм: ACK-эмуляция на 0x844E (r0=0); длина спина I2C зависит от
     #   накопленного состояния → проверяем визит 0x13ca0 (I2C-отправка), а не insn
+    """Emulator test @ 0x1395c.
+    Тест эмулятора @ 0x1395c.
+    """
     P1, P2, SRC = 0xCAC, 0xCB2, 0xA73
     for _ in range(8):
         p1 = rng.choice([0, 0, 1, rng.getrandbits(8)])
@@ -614,6 +674,9 @@ def _t_1395c(run, rng):
         run.periph_write(0x40013008, 3)
         state = {'i2c': False}
         def _ack(uc_, a, s, ud):
+            """The helper function (_ack).
+            Вспомогательная функция (_ack).
+            """
             aa = a & ~1
             if aa == 0x844E:
                 uc_.reg_write(UC_ARM_REG_R0, 0)
@@ -658,11 +721,20 @@ def _t_e408(run, rng):
     #     f=(cnt_new%3==0); *a5=cnt_new; buf8=f
     #   хвост: out=s16(rate*buf8+t); t≥0x64 → out=max(out,0x64) (signed);
     #     res=clamp(out,[0,0x2710]); *a4=res (u16); ret=res
+    """Emulator test @ 0xe408.
+    Тест эмулятора @ 0xe408.
+    """
     def s16(v):
+        """The s16 function of the script.
+        Функция s16 скрипта.
+        """
         v &= 0xFFFF
         return v - 0x10000 if v >= 0x8000 else v
 
     def sat_s16(x):
+        """The sat_s16 function of the script.
+        Функция sat_s16 скрипта.
+        """
         if x > 0x7FFF:
             return 0x7FFF
         if x < -0x8000:
@@ -670,6 +742,9 @@ def _t_e408(run, rng):
         return x
 
     def ref(t, mn, rate, sb, below, cnt0):
+        """The ref function of the script.
+        Функция ref скрипта.
+        """
         if sb > 0 and t < mn:
             # флаг-ветка: buf8 по sb и r4=s16(mn-t): sb<0x14→1; 0x14≤sb: r4<9→1,
             # r4<0x32→2, else 5; out=sat(sat(rate*buf8)+t); out=max(out,mn);
@@ -1207,6 +1282,9 @@ def _t_c708(run, rng):
     OUT = 0x500
 
     def sh32(v, n):
+        """The sh32 function of the script.
+        Функция sh32 скрипта.
+        """
         n &= 0xFF
         if n == 0:
             return v

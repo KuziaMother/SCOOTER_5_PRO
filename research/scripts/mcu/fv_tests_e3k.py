@@ -22,11 +22,17 @@ from emulator.mcu_emu import (  # noqa: E402
 
 
 def _vectable(i):
+    """The helper function (_vectable).
+    Вспомогательная функция (_vectable).
+    """
     return struct.unpack_from('<I', FW, VEC_TABLE + i * 4)[0] & ~0x08000000
 
 
 @t(0x315C, 'Phase③ §95: BootHarness — cold-boot с reset-вектора: детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78, reached=stage1+stage2+tramp2, periph=0xFF). Векторная таблица @0x1000 (коррекция «отсутствует»). Потолок: initial stack = C-runtime runtime RAM → полный cold-boot до main-loop = SWD-дамп RAM при reset')
 def _(run, rng):
+    """Emulator test @ 0x315c: Phase③ §95: BootHarness — cold-boot с reset-вектора: детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78, reached=stage1+stage2+tramp2, periph=0xFF). Векторная таблица @0x1000 (коррекция «отсутствует»). Потолок: initial stack = C-runtime runtime RAM → полный cold-boot до main-loop = SWD-дамп RAM при reset.
+    Тест эмулятора @ 0x315c: Phase③ §95: BootHarness — cold-boot с reset-вектора: детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78, reached=stage1+stage2+tramp2, periph=0xFF). Векторная таблица @0x1000 (коррекция «отсутствует»). Потолок: initial stack = C-runtime runtime RAM → полный cold-boot до main-loop = SWD-дамп RAM при reset.
+    """
     h = BootHarness()
     h.reset()
     insn, pc, reached = h.run()
@@ -42,6 +48,9 @@ def _(run, rng):
 
 @t(FOC_ISR_V22, 'Phase③ §95: векторная таблица @0x1000 — [0]=SP_INIT 0x20004E40, [1]=reset|1 0x315d, [14]=PendSV 0x3173, [15]=SysTick 0x13cad, [22]=FOC-ISR 0x7875 (подтверждение примечания «вектор [22]=0x7875»). Коррекция: таблица существует (не «отсутствует/OTA»)')
 def _(run, rng):
+    """The helper function (_).
+    Вспомогательная функция (_).
+    """
     assert VEC_TABLE == 0x1000
     assert _vectable(0) == SP_INIT == 0x20004E40, f"[0]={_vectable(0):#x}"
     assert _vectable(1) == (RESET_VECTOR | 1) == 0x315D, f"[1]={_vectable(1):#x}"

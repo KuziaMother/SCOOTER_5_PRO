@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe: does the MCU gate (the status 5 on the fragment 1) open after the BLE image upload in the same session? Mi Home always flashes the BLE and the MCU in one release: first the BLE image (the opcodes 2/3/4), then the MCU (2/5/6).
 Проба: открывается ли MCU-гейт (status 5 на фрагменте 1) после заливки BLE-образа
 в той же сессии? Mi Home всегда шьёт BLE и MCU одним релизом: сначала BLE-образ
 (опкоды 2/3/4), затем MCU (2/5/6). Наши пробы MCU шли «в одиночку» — возможно,
@@ -14,6 +15,7 @@
      status=5 -> зависит не от передачи, а от чего-то ещё (коммита/версии).
 
 Запуск:  python probes/mcu_gate_after_ble_upload.py
+Проба: открывается ли MCU-гейт (status 5 на фрагменте 1) после заливки BLE-образа в той же сессии? Mi Home всегда шьёт BLE и MCU одним релизом: сначала BLE-образ (опкоды 2/3/4), затем MCU (2/5/6).
 """
 import asyncio
 import os
@@ -33,6 +35,8 @@ MCU_IMG = os.path.join(ROOT, "firmware_ota",
 
 
 async def main():
+    """The run: the BLE upload (without the commit) + the MCU fragment 1 (the gate check).
+    Прогон: BLE-заливка (без commit) + MCU-фрагмент 1 (проверка гейта)."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

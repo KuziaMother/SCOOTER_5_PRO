@@ -18,10 +18,14 @@ from bwflasher.keygen import sign_rand  # noqa: E402
 
 
 def log(msg):
+    """The log line with the timestamp.
+    Строка лога с меткой времени."""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def read_for(s, secs):
+    """Read from the port for the given seconds; return the accumulated bytes.
+    Читать с порта заданное число секунд; вернуть накопленные байты."""
     buf = bytearray()
     end = time.time() + secs
     while time.time() < end:
@@ -32,6 +36,8 @@ def read_for(s, secs):
 
 
 def strip_push(d):
+    """Cut out the valid 61 push frames from the data; return the rest.
+    Вырезать валидные 61 push-кадры из данных; вернуть остаток."""
     out = bytearray()
     i = 0
     n = len(d)
@@ -48,6 +54,9 @@ def strip_push(d):
 
 
 def main():
+    """The run: the full handshake (as in mcu_uart_flash.py phases 1-6) + the nvm_write
+    sniff.
+    Прогон: полное рукопожатие (как в mcu_uart_flash.py фазы 1-6) + sniff nvm_write."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--fw", required=True)

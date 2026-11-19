@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe: is the MCU gate closed while the BLE OTA bank is "dirty"?
 Проба: MCU-гейт закрыт, пока BLE OTA-банк «грязный»?
 
 Факты:
@@ -18,6 +19,7 @@
      status=5 -> гипотеза неверна.
 
 Запуск:  python probes/mcu_gate_bank_reset.py
+Проба: MCU-гейт закрыт, пока BLE OTA-банк «грязный»?
 """
 import asyncio
 import os
@@ -36,6 +38,10 @@ MCU_IMG = os.path.join(ROOT, "firmware_ota",
 
 
 async def main():
+    """The run: the MCU fragment 1 with the dirty BLE bank + the switchFirmware(4) bank
+    reset + the retry.
+    Прогон: MCU-фрагмент 1 при грязном BLE-банке + сброс банка switchFirmware(4) +
+    повтор."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

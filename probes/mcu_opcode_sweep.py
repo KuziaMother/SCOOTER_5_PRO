@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 """
-Перебор опкодов MCU-канала 0x001c (без логина) в поисках телеметрии
-(батарея, скорость, пробег, температура, ошибки).
+The sweep of the opcodes of the MCU channel 0x001c (without the login) in the search
+for the telemetry (the battery, the speed, the mileage, the temperature, the errors).
 
-БЕЗОПАСНОСТЬ: отправляются ТОЛЬКО однобайтовые кадры [op] — в протоколе MCU
-геттер = [op], сеттер = [op][len][data]. Без len-байта устройство не может
-принять полезную нагрузку, поэтому перебор смещён в сторону чтения.
+SAFETY: only the one-byte frames [op] are sent — in the MCU protocol the getter = [op],
+the setter = [op][len][data]. Without the len byte the device cannot accept the payload,
+so the sweep is shifted to the reading side.
+
+The known (already decoded) opcodes: 0, 1=mcu_version, 3=hardware, 8=serial.
+
+Usage:  python mcu_opcode_sweep.py [--max 63] [--mac 2C:19:5C:DE:DE:88]
+
+Перебор опкодов MCU-канала 0x001c (без логина) в поисках телеметрии (батарея,
+скорость, пробег, температура, ошибки).
+
+БЕЗОПАСНОСТЬ: отправляются ТОЛЬКО однобайтовые кадры [op] — в протоколе MCU геттер
+= [op], сеттер = [op][len][data]. Без len-байта устройство не может принять полезную
+нагрузку, поэтому перебор смещён в сторону чтения.
 
 Известные (уже разобранные) опкоды: 0, 1=mcu_version, 3=hardware, 8=serial.
 
@@ -25,7 +36,8 @@ KNOWN = {0: "?", 1: "mcu_version", 3: "hardware", 8: "serial/newSN"}
 
 
 def describe(payload: bytes) -> str:
-    """Догадки о смысле полезной нагрузки."""
+    """The guesses about the meaning of the payload.
+    Догадки о смысле полезной нагрузки."""
     hints = []
     if payload and all(32 <= c < 127 for c in payload):
         hints.append(f"ascii='{payload.decode('ascii')}'")
@@ -53,6 +65,10 @@ def describe(payload: bytes) -> str:
 
 
 async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
+    """The opcode sweep 0..max_op: the queries, the replies, the classification (the
+    known/the silent/the unsupported/the needs-param).
+    Перебор опкодов 0..max_op: запросы, ответы, классификация (известные/тишина/
+    unsupported/needs-param)."""
     t = Transport(mac)
     await t.connect()
     if CH_MCU not in t.chars:
@@ -62,6 +78,8 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
     inbox = []
 
     def on_mcu(sender, data):
+        """The notify collector for the 0x001c channel.
+        Сборщик notify для канала 0x001c."""
         if sid(sender) == CH_MCU:
             inbox.append(bytes(data))
 
@@ -69,6 +87,8 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
     await t.client.start_notify(t.chars[CH_MCU], on_mcu)
 
     async def query(op: int, wait: float = 1.0):
+        """Send the one-byte opcode frame + collect the replies during the wait.
+        Отправить однобайтовый op-кадр + собрать ответы во время ожидания."""
         inbox.clear()
         await t.client.write_gatt_char(t.chars[CH_MCU], bytes([op]), response=False)
         await asyncio.sleep(wait)
@@ -132,6 +152,8 @@ async def sweep(mac: str, max_op: int, repeat: int, step_wait: float = 1.0):
 
 
 def main():
+    """The CLI entry point (--mac/--max/--repeat).
+    CLI-вход (--mac/--max/--repeat)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--mac", default=MAC_DEFAULT)
     ap.add_argument("--max", type=int, default=63, help="верхняя граница опкода")

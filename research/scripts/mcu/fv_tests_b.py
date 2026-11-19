@@ -32,6 +32,9 @@ def _bus3(run, a=0, b=0, c=0, sel=0, cur=0, delta=0, lim=0, old_out=0):
 @t(0x23374, '§59: 3-проводная шина — полная таблица решений (эмуляторно): C==0 → A=u16[+8] (0/1/2/4), C!=0 → B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur обновляется только на «mid»-ветках; A==0/B==7 → r0 из аргументов; пропущенные ветки → старый out. §59.2: на этом чипе bls/CC = lim≤mid (с равенством!), bhi/HS = lim>mid строго (отклонение от ARM: CC включает Z)')
 def _(run, rng):
     # mid=10 везде (cur=10, delta=10); lim: 5(<mid), 10(=mid), 100(>mid)
+    """Emulator test @ 0x23374: §59: 3-проводная шина — полная таблица решений (эмуляторно): C==0 → A=u16[+8] (0/1/2/4), C!=0 → B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur обновляется только на «mid»-ветках; A==0/B==7 → r0 из аргументов; пропущенные ветки → старый out. §59.2: на этом чипе bls/CC = lim≤mid (с равенством!), bhi/HS = lim>mid строго (отклонение от ARM: CC включает Z).
+    Тест эмулятора @ 0x23374: §59: 3-проводная шина — полная таблица решений (эмуляторно): C==0 → A=u16[+8] (0/1/2/4), C!=0 → B=u16[+A] (3/5/6/7); mid=(cur+delta)>>1; cur обновляется только на «mid»-ветках; A==0/B==7 → r0 из аргументов; пропущенные ветки → старый out. §59.2: на этом чипе bls/CC = lim≤mid (с равенством!), bhi/HS = lim>mid строго (отклонение от ARM: CC включает Z).
+    """
     cases = [
         # (a, b, c, sel, cur, delta, lim, old_out, arg_r0, exp_out, exp_cur)
         (0, 0, 0, 0, 0, 0, 0, 7, 0x1234, 0x1234, None),   # A==0 → r0 caller'а
@@ -110,11 +113,17 @@ def _(run, rng):
 
 @t(0x1E2F8, '§59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (по битам 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC-делители: +0x08 nibble-логика по MODER=0x44AA200, mid-ветка → 1) → +0x08=0x900; финал RCC+0x00 = 0x100000 (bit20 enable)')
 def _(run, rng):
+    """Emulator test @ 0x1e2f8: §59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (по битам 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC-делители: +0x08 nibble-логика по MODER=0x44AA200, mid-ветка → 1) → +0x08=0x900; финал RCC+0x00 = 0x100000 (bit20 enable).
+    Тест эмулятора @ 0x1e2f8: §59: RCC/GPIOC init: RCC+0x3C |= 0xF0000 (по битам 16-19), +0x40 |= 0xE0000, +0x44 |= 0x4A00, +0x3C |= 0x8001; helper 0x19A9A(sp,0x28): RCC+0x00/04=0, +0x08|=0x900; tail 0x22824 (RCC-делители: +0x08 nibble-логика по MODER=0x44AA200, mid-ветка → 1) → +0x08=0x900; финал RCC+0x00 = 0x100000 (bit20 enable).
+    """
     uc = run.uc
     # RCC-регион обнуляем: OR-записи не идемпотентны (один Run на все тесты)
     uc.mem_write(0x40021000, b'\x00' * 0x100)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if 0x40021000 <= addr < 0x40021100:
             writes.append((addr - 0x40021000, val))
     hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40021000, 0x40021100)
@@ -147,6 +156,9 @@ def _(run, rng):
 
 @t(0x1302C, '§59: RCC-пульсатор USART: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность |=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит')
 def _(run, rng):
+    """Emulator test @ 0x1302c: §59: RCC-пульсатор USART: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность |=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит.
+    Тест эмулятора @ 0x1302c: §59: RCC-пульсатор USART: base → (рег, бит): 0x40013800(USART1)→+0x0C/0x4000, 0x40004400(USART2)→+0x10/0x20000, 0x40004800(USART3)→+0x10/0x40000, 0x40015000→+0x0C/0x20000, 0x40015400→+0x0C/0x40000; последовательность |=bit затем &=~bit (пульс); неизвестная base → без записей; r0 = бит.
+    """
     uc = run.uc
     cases = [
         (0x40013800, 0x0C, 0x4000),
@@ -159,6 +171,9 @@ def _(run, rng):
         uc.mem_write(0x40021000, b'\x00' * 0x100)
         writes = []
         def hw(u_, acc, addr, size, val, usr):
+            """The hw function of the script.
+            Функция hw скрипта.
+            """
             if 0x40021000 <= addr < 0x40021100:
                 writes.append((addr - 0x40021000, val))
         hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40021000, 0x40021100)
@@ -173,6 +188,9 @@ def _(run, rng):
     uc.mem_write(0x40021000, b'\x00' * 0x100)
     writes = []
     def hw2(u_, acc, addr, size, val, usr):
+        """The hw2 function of the script.
+        Функция hw2 скрипта.
+        """
         if 0x40021000 <= addr < 0x40021100:
             writes.append(1)
     hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw2, None, 0x40021000, 0x40021100)
@@ -185,12 +203,18 @@ def _(run, rng):
 
 @t(0x1E298, '§59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) → validated-write 0x2359C(0x40020000, 0, 0x5D000041) в [0x40020108] c readback-retry → u32[0x40020028]=1 (enable) → ADC1 CR2|=4; возврат pop {r4,pc} (§59.3: на чипе POP всегда восстанавливает pc)')
 def _(run, rng):
+    """Emulator test @ 0x1e298: §59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) → validated-write 0x2359C(0x40020000, 0, 0x5D000041) в [0x40020108] c readback-retry → u32[0x40020028]=1 (enable) → ADC1 CR2|=4; возврат pop {r4,pc} (§59.3: на чипе POP всегда восстанавливает pc).
+    Тест эмулятора @ 0x1e298: §59: DMA+ADC init: bl 0x1A5D4 (ADC1 CR2|=0x20) → validated-write 0x2359C(0x40020000, 0, 0x5D000041) в [0x40020108] c readback-retry → u32[0x40020028]=1 (enable) → ADC1 CR2|=4; возврат pop {r4,pc} (§59.3: на чипе POP всегда восстанавливает pc).
+    """
     uc = run.uc
     # обнуляем ADC1 и блок 0x40020000 (RMW-записи)
     uc.mem_write(0x40012400, b'\x00' * 0x100)
     uc.mem_write(0x40020000, b'\x00' * 0x200)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if (0x40012400 <= addr < 0x40012500) or (0x40020000 <= addr < 0x40020200):
             writes.append((addr, val))
     hook = uc.hook_add(UC_HOOK_MEM_WRITE, hw,
@@ -218,12 +242,18 @@ def _(run, rng):
 
 @t(0x1D640, '§59: мотор-TIM init (TIM @0x40012C00 + channel-блоки @0x48000000/0x48000400): детерминированная последовательность 107 записей; финал TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B→0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — ПОСЛЕДНИЙ; блоки 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41')
 def _(run, rng):
+    """Emulator test @ 0x1d640: §59: мотор-TIM init (TIM @0x40012C00 + channel-блоки @0x48000000/0x48000400): детерминированная последовательность 107 записей; финал TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B→0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — ПОСЛЕДНИЙ; блоки 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41.
+    Тест эмулятора @ 0x1d640: §59: мотор-TIM init (TIM @0x40012C00 + channel-блоки @0x48000000/0x48000400): детерминированная последовательность 107 записей; финал TIM: +0x3C=0x8CA (prescaler), CCR +0x44/48/4C = 0x45B→0, +0x50=0x8C9, +0x54=0x1D24, +0x30=0x1DDD, +0x28/+0x2C=0x6060, +0x04=0x2A00, +0x0C=0x80; enable +0x00=0x41 — ПОСЛЕДНИЙ; блоки 0x48: A +0x2C=0x666/+0x10=0x2A0000, B +0x2C=0x66660000/+0x10=0xAA000000; r0=0x41.
+    """
     import struct as _st
     uc = run.uc
     for base, sz in ((0x40012c00, 0x400), (0x48000000, 0x2000)):
         uc.mem_write(base, b'\x00' * sz)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if (0x40012C00 <= addr < 0x40012C60) or (0x48000000 <= addr < 0x48000500):
             writes.append((addr, val))
     h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40012C00, 0x40012C60)
@@ -236,6 +266,9 @@ def _(run, rng):
     assert len(writes) == 107, f'записей={len(writes)} (ожидалось 107)'
     # финальные состояния
     def rd(a):
+        """The rd function of the script.
+        Функция rd скрипта.
+        """
         return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
     tim = {off: rd(0x40012C00 + off) for off in range(0, 0x60, 4)}
     assert tim[0x00] == 0x41 and tim[0x04] == 0x2A00 and tim[0x0C] == 0x80
@@ -257,12 +290,18 @@ def _(run, rng):
 
 @t(0x1BF48, '§59: МОТОР-ИНИТ (221 запись, детерминированно): 1) bl 0x1D640 (мотор-TIM @0x40012C00 + channel-блоки 0x48000000/0x48000400; enable TIM — запись #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: финал +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO-блок @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) → +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) → +0x10=5 (bit0+bit2); r0=0x48000C00')
 def _(run, rng):
+    """Emulator test @ 0x1bf48: §59: МОТОР-ИНИТ (221 запись, детерминированно): 1) bl 0x1D640 (мотор-TIM @0x40012C00 + channel-блоки 0x48000000/0x48000400; enable TIM — запись #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: финал +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO-блок @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) → +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) → +0x10=5 (bit0+bit2); r0=0x48000C00.
+    Тест эмулятора @ 0x1bf48: §59: МОТОР-ИНИТ (221 запись, детерминированно): 1) bl 0x1D640 (мотор-TIM @0x40012C00 + channel-блоки 0x48000000/0x48000400; enable TIM — запись #106); 2) bl 0x1C0B0 (ADC1 sensor-init §58: финал +0x18=1 ADON, +0x54=0x3CA2CC43 SQR ch C/B/A/F); 3) bl 0x1C1AC/0x1BEDC; 4) GPIO-блок @0x48000C00: CRL(+0x04) &= ~2, validated-setter 0x22000(r4, 2, cfg7) → +0x10=4 (bit2), CRL &= ~2, 0x22000(r4, 1, cfg7) → +0x10=5 (bit0+bit2); r0=0x48000C00.
+    """
     import struct as _st
     uc = run.uc
     for base, sz in ((0x40012400, 0x1000), (0x40012c00, 0x400), (0x48000000, 0x2000)):
         uc.mem_write(base, b'\x00' * sz)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if (0x40012000 <= addr < 0x40013000) or (0x48000000 <= addr < 0x48002000):
             writes.append((addr, val))
     h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, 0x40012000, 0x40013000)
@@ -276,6 +315,9 @@ def _(run, rng):
     # фаза 1 (0x1D640) кончается enable TIM — запись #106
     assert writes[106] == (0x40012C00, 0x41), f'#106={writes[106]}'
     def rd(a):
+        """The rd function of the script.
+        Функция rd скрипта.
+        """
         return _st.unpack_from('<I', bytes(uc.mem_read(a, 4)), 0)[0]
     # ADC1-финал (§58)
     a1 = {off: rd(0x40012400 + off) for off in range(0, 0x80, 4)}
@@ -303,12 +345,18 @@ def _(run, rng):
 
 @t(0x1C1AC, '§59: ADC-DMA transfer setup (блок @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C → [+0x108]=0x5D000041 (ctrl, тот же что в 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ-хвост: [**0xE000E100**]=0x200 (прямая запись bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear биты 8..15); r0=0')
 def _(run, rng):
+    """Emulator test @ 0x1c1ac: §59: ADC-DMA transfer setup (блок @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C → [+0x108]=0x5D000041 (ctrl, тот же что в 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ-хвост: [**0xE000E100**]=0x200 (прямая запись bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear биты 8..15); r0=0.
+    Тест эмулятора @ 0x1c1ac: §59: ADC-DMA transfer setup (блок @0x40020000): validated-writes [+0x100]=**0x40012450** (src=ADC1 DR), [+0x104]=**0x20001692** (dst=RAM+0x1692), bl 0x2359C → [+0x108]=0x5D000041 (ctrl, тот же что в 0x1E298); enable: +0x28=1, +0x14=1, +0x70=0x19, +0x50|=1; IRQ-хвост: [**0xE000E100**]=0x200 (прямая запись bit9), [NVIC+0x08 (0xE000E408)] &= ~0xFF00 (clear биты 8..15); r0=0.
+    """
     uc = run.uc
     uc.mem_write(0x40020000, b'\x00' * 0x200)
     # SYS-регион обнуляем: [0xE000E408] &= ~0xFF00 — значение зависит от предыдущего
     uc.mem_write(0xE000E000, b'\x00' * 0x1000)
     writes = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if addr >= 0x20017F00:   # стек отбрасываем
             writes.append((addr, val))
     h1 = uc.hook_add(UC_HOOK_MEM_WRITE, hw)   # всё пространство
@@ -361,6 +409,9 @@ def _parser_probe(run, state=1, head=0, toggle=0, byte=0, slot_data=None):
             uc.mem_write(RAM + 0x881 + head * 150 + off, bytes([v]))
     ev = []
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if RAM <= addr < RAM + 0x20000 and not (0x20017F00 <= addr < 0x20018000):
             ev.append((addr - RAM, val))
     h = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, RAM, RAM + 0x20000)
@@ -380,6 +431,9 @@ def _ctx(run, slot, n=13):
 @t(0x1E9E0, '§59.6: RX-парсер USART3 — dispatch-каркас: state=0 → только RAM+0x171=0; state=1 + неизвестный байт → RAM+0x171=0, state→0, head 0→1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC-структ {idx=5,crc=0x13,sum=0x9A}, флаг RAM+0x310=0, toggle 0→1, head 0→1; "G" (toggle=7): context @0x14CF, toggle 8→0 (wrap)')
 def _(run, rng):
     # state=0: только RAM+0x171=0
+    """Emulator test @ 0x1e9e0: §59.6: RX-парсер USART3 — dispatch-каркас: state=0 → только RAM+0x171=0; state=1 + неизвестный байт → RAM+0x171=0, state→0, head 0→1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC-структ {idx=5,crc=0x13,sum=0x9A}, флаг RAM+0x310=0, toggle 0→1, head 0→1; "G" (toggle=7): context @0x14CF, toggle 8→0 (wrap).
+    Тест эмулятора @ 0x1e9e0: §59.6: RX-парсер USART3 — dispatch-каркас: state=0 → только RAM+0x171=0; state=1 + неизвестный байт → RAM+0x171=0, state→0, head 0→1; "G" frame-start (toggle=0): context @0x10B5 = {6,"e",20,"O","K",0x13,0x9A}, CRC-структ {idx=5,crc=0x13,sum=0x9A}, флаг RAM+0x310=0, toggle 0→1, head 0→1; "G" (toggle=7): context @0x14CF, toggle 8→0 (wrap).
+    """
     ev = _parser_probe(run, state=0, byte=0x47)
     assert ev == [(0x171, 0)], f'state=0: {ev}'
     # неизвестный байт (0x00): минимальные записи
@@ -406,10 +460,16 @@ def _(run, rng):
 
 @t(0x1E9E0, '§59.6: RX-парсер — "A" telemetry-snapshot: ring[3..9] → RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (нибблы ring5), 0x2EC=ring6, ring7 → {bit7→0x2ED, bit6→0x2EE, [5:0]→0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §59.6: RX-парсер — "A" telemetry-snapshot: ring[3..9] → RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (нибблы ring5), 0x2EC=ring6, ring7 → {bit7→0x2ED, bit6→0x2EE, [5:0]→0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF.
+    Тест эмулятора @ 0x1e9e0: §59.6: RX-парсер — "A" telemetry-snapshot: ring[3..9] → RAM+0x2E8/9 (rev16(ring4<<8|ring3)), 0x2EA/EB (нибблы ring5), 0x2EC=ring6, ring7 → {bit7→0x2ED, bit6→0x2EE, [5:0]→0x2EF}, 0x2F0=ring8, 0x2F1=ring9; context = {0xC,"d",0x20,7,ring3..9,crc,0x9B}; crc=(0x64+0x20+7+Σring[3..9])&0xFF.
+    """
     data = {i: 0x10 + i for i in range(3, 10)}   # ring[3..9] = 0x13..0x19
     ev = _parser_probe(run, state=1, head=0, byte=0x41, slot_data=data)
     uc = run.uc
     def rd(off):
+        """The rd function of the script.
+        Функция rd скрипта.
+        """
         return uc.mem_read(RAM + off, 1)[0]
     # rev16: u16 LE @0x2E8 = rev16((ring4<<8)|ring3) = rev16(0x1413) = 0x1314
     assert (rd(0x2E8), rd(0x2E9)) == (0x14, 0x13), f'rev16: {rd(0x2E8):#x},{rd(0x2E9):#x}'
@@ -446,10 +506,16 @@ def _(run, rng):
 # ---------------------------------------------------------------------------
 
 def ref_crc8_step(x):
+    """The reference model (ref_crc8_step) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_crc8_step) — независимая Python-реализация задокументированного поведения.
+    """
     return ((x << 1) ^ (0x1B & -(x >> 7))) & 0xFF
 
 
 def ref_own_round(buf16):
+    """The reference model (ref_own_round) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_own_round) — независимая Python-реализация задокументированного поведения.
+    """
     b = bytearray(buf16)
     for i in range(4):
         g = i * 4
@@ -464,6 +530,9 @@ def ref_own_round(buf16):
 
 @t(0x1DD8C, '§59.7: «own» round — 16 B = 4×4 байта; каждая группа [A,B,C,D]: X=A^B^C^D; A''=A^crc8(A^B)^X, B''=B^crc8(B^C)^X, C''=C^crc8(C^D)^X, D''=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); чистая функция от буфера в r0')
 def _(run, rng):
+    """Emulator test @ 0x1dd8c: §59.7: «own» round — 16 B = 4×4 байта; каждая группа [A,B,C,D]: X=A^B^C^D; A=A^crc8(A^B)^X, B=B^crc8(B^C)^X, C=C^crc8(C^D)^X, D=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); чистая функция от буфера в r0.
+    Тест эмулятора @ 0x1dd8c: §59.7: «own» round — 16 B = 4×4 байта; каждая группа [A,B,C,D]: X=A^B^C^D; A=A^crc8(A^B)^X, B=B^crc8(B^C)^X, C=C^crc8(C^D)^X, D=D^crc8(D^A)^X; crc8(x)=((x<<1)^(0x1B&-(x>>7)))&0xFF (CRC-8 poly 0x1B MSB-first); чистая функция от буфера в r0.
+    """
     buf_off = 0x1F000
     for _ in range(32):
         data = bytes(rng.randrange(256) for _ in range(16))
@@ -514,11 +583,17 @@ def _dfd8_asr(v, n):
 
 
 def ref_dfd8_integ(acc, delta_s16, out_s16):
+    """The reference model (ref_dfd8_integ) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_dfd8_integ) — независимая Python-реализация задокументированного поведения.
+    """
     na = (acc + delta_s16 - out_s16) & 0xFFFFFFFF
     return na, _dfd8_asr(na, 5)
 
 
 def ref_dfd8_batpct(level):
+    """The reference model (ref_dfd8_batpct) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_dfd8_batpct) — независимая Python-реализация задокументированного поведения.
+    """
     if level >= 535:
         return 100
     if level < 415:
@@ -528,6 +603,9 @@ def ref_dfd8_batpct(level):
 
 @t(0x1DFD8, '§59.8: периодический таск USART3 — inline-логика (6 bl патч в NOP, save/restore): u16 tick @0x2BA++; 3 интегратора new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (пары 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); % батареи из level=s16[0x1794+12]: >=535→100, <415→0, иначе (level-415)*100//120 в byte[0x306]; главный u32 @0x314++')
 def _(run, rng):
+    """Emulator test @ 0x1dfd8: §59.8: периодический таск USART3 — inline-логика (6 bl патч в NOP, save/restore): u16 tick @0x2BA++; 3 интегратора new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (пары 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); % батареи из level=s16[0x1794+12]: >=535→100, <415→0, иначе (level-415)*100//120 в byte[0x306]; главный u32 @0x314++.
+    Тест эмулятора @ 0x1dfd8: §59.8: периодический таск USART3 — inline-логика (6 bl патч в NOP, save/restore): u16 tick @0x2BA++; 3 интегратора new_acc=(acc+delta-out)&0xFFFFFFFF, new_out=asr(new_acc,5) s16 (пары 0x298/0x278/0x27A, 0x288/0x284/0x286, 0x2A0/0x29C/0x29E); % батареи из level=s16[0x1794+12]: >=535→100, <415→0, иначе (level-415)*100//120 в byte[0x306]; главный u32 @0x314++.
+    """
     uc = run.uc
     S16 = {0x278, 0x284, 0x29C, 0x27A, 0x286, 0x29E}
     INTEG = [(0x298, 0x278, 0x27A), (0x288, 0x284, 0x286), (0x2A0, 0x29C, 0x29E)]
@@ -538,6 +616,9 @@ def _(run, rng):
             uc.mem_write(FLASH0 + b, DFD8_NOP4)
 
         def seed(off, fmt, v):
+            """The seed function of the script.
+            Функция seed скрипта.
+            """
             uc.mem_write(RAM + off, struct.pack(fmt, v))
 
         # --- 20 случайных наборов: интеграторы + счётчики ---
@@ -612,6 +693,9 @@ FOC_OUT = 0x838                # OUT @RAM+0x838/0x83C/0x840
 
 
 def ref_foc_clamp(v):
+    """The reference model (ref_foc_clamp) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_foc_clamp) — независимая Python-реализация задокументированного поведения.
+    """
     return max(-30000, min(30000, v))
 
 
@@ -633,6 +717,9 @@ def ref_1be1c(gate_low16, r0vals, sector, T, C):
 
 @t(0x1BE1C, '§60: TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938): гейт = бит15 низких16 u32[0x40012C54]; режим1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); режим2(=1) dispatch u16[r0+2] (0→null,1→B,2/3→C,4/5→A,6→B,≥7→null), хендлер A/B/C: две фазы (T-C)<<4 из u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], третья=-(сумма), clamp [-30000,30000]')
 def _(run, rng):
+    """Emulator test @ 0x1be1c: §60: TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938): гейт = бит15 низких16 u32[0x40012C54]; режим1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); режим2(=1) dispatch u16[r0+2] (0→null,1→B,2/3→C,4/5→A,6→B,≥7→null), хендлер A/B/C: две фазы (T-C)<<4 из u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], третья=-(сумма), clamp [-30000,30000].
+    Тест эмулятора @ 0x1be1c: §60: TIM capture → FOC реконструкция фазных токов (подфункция 0x1A938): гейт = бит15 низких16 u32[0x40012C54]; режим1(=0) OUT@RAM+0x838=clamp(r0[+0xc/+0x10/+0x14]); режим2(=1) dispatch u16[r0+2] (0→null,1→B,2/3→C,4/5→A,6→B,≥7→null), хендлер A/B/C: две фазы (T-C)<<4 из u32[0x40012440+{28,2c,30}]-u16[r0+{18,1a,1c}], третья=-(сумма), clamp [-30000,30000].
+    """
     uc = run.uc
     S = 0x1F000   # r0-структ в RAM
     # --- режим 1: гейт положит. (бит15=0), clamp+copy ---
@@ -683,11 +770,17 @@ FOC_TBL_OFF = 0xA6C6   # flash-offset таблицы 256×u16 (FLASH0 base)
 
 
 def _foc_tbl(uc):
+    """The helper function (_foc_tbl).
+    Вспомогательная функция (_foc_tbl).
+    """
     raw = uc.mem_read(FLASH0 + FOC_TBL_OFF, 512)
     return list(struct.unpack('<256h', raw))
 
 
 def ref_1e410(A, tbl):
+    """The reference model (ref_1e410) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_1e410) — независимая Python-реализация задокументированного поведения.
+    """
     b = (A >> 14) & 3
     i1 = (A >> 6) & 0xFF
     i2 = (0xFF - i1) & 0xFF
@@ -700,11 +793,17 @@ def ref_1e410(A, tbl):
 
 
 def _s16(v):
+    """The helper function (_s16).
+    Вспомогательная функция (_s16).
+    """
     v &= 0xFFFF
     return v - 0x10000 if (v & 0x8000) else v
 
 
 def _asr32(v, n):
+    """The helper function (_asr32).
+    Вспомогательная функция (_asr32).
+    """
     s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
     return s >> n
 
@@ -733,6 +832,9 @@ def ref_1d7ac(arg0, arg1, tbl):
 
 @t(0x1E410, '§60.1: табличная декодировка Q15-вектора (подфункция FOC): ветвь=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(−t2,−t1) b1:(t1,−t2) b2:(t2,t1) b3:(−t1,t2) → u32=(hi<<16)|lo')
 def _(run, rng):
+    """Emulator test @ 0x1e410: §60.1: табличная декодировка Q15-вектора (подфункция FOC): ветвь=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(−t2,−t1) b1:(t1,−t2) b2:(t2,t1) b3:(−t1,t2) → u32=(hi<<16)|lo.
+    Тест эмулятора @ 0x1e410: §60.1: табличная декодировка Q15-вектора (подфункция FOC): ветвь=A[15:14], i1=(A>>6)&0xFF, i2=~i1&0xFF; t1/t2=s16[TBL@flash0xA6C6[i]]; b0:(−t2,−t1) b1:(t1,−t2) b2:(t2,t1) b3:(−t1,t2) → u32=(hi<<16)|lo.
+    """
     tbl = _foc_tbl(run.uc)
     for _ in range(60):
         A = rng.getrandbits(32)
@@ -743,6 +845,9 @@ def _(run, rng):
 
 @t(0x1D7AC, '§60.1: cross+dot двух Q15-векторов (подфункция FOC): X=0x1e410(arg1), A=arg0; lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF)')
 def _(run, rng):
+    """Emulator test @ 0x1d7ac: §60.1: cross+dot двух Q15-векторов (подфункция FOC): X=0x1e410(arg1), A=arg0; lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF).
+    Тест эмулятора @ 0x1d7ac: §60.1: cross+dot двух Q15-векторов (подфункция FOC): X=0x1e410(arg1), A=arg0; lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое произведение /2^15 с округлением (p<0→+0x7FFF).
+    """
     tbl = _foc_tbl(run.uc)
     for _ in range(60):
         a0 = rng.getrandbits(32); a1 = rng.getrandbits(32)
@@ -767,6 +872,9 @@ BD88_B = 0x2328
 
 
 def _rnd2(V):
+    """The helper function (_rnd2).
+    Вспомогательная функция (_rnd2).
+    """
     if V < 0:
         V -= 1
     return _asr32(V & 0xFFFFFFFF, 1)
@@ -787,6 +895,9 @@ def ref_1bd88(gate_low16, x0, x2):
 
 @t(0x1BD88, '§60.2: 6-секторный FOC-классификатор (подфункция 0x1A938): гейт=бит15 низких16 u32[0x40012C54] (=0→обход); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V−1 if V<0 else V)>>1; u16[r0+2]=сектор: S<0,D<0→5 / S<0,D≥0→(r2>0?3:4) / S≥0,D<0→(r2>0?1:6) / S≥0,D≥0→2, r2=B·x2')
 def _(run, rng):
+    """Emulator test @ 0x1bd88: §60.2: 6-секторный FOC-классификатор (подфункция 0x1A938): гейт=бит15 низких16 u32[0x40012C54] (=0→обход); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V−1 if V<0 else V)>>1; u16[r0+2]=сектор: S<0,D<0→5 / S<0,D≥0→(r2>0?3:4) / S≥0,D<0→(r2>0?1:6) / S≥0,D≥0→2, r2=B·x2.
+    Тест эмулятора @ 0x1bd88: §60.2: 6-секторный FOC-классификатор (подфункция 0x1A938): гейт=бит15 низких16 u32[0x40012C54] (=0→обход); x0=s16[r1+0], x2=s16[r1+2]; S=rnd((B·x2+A·x0)/2), D=rnd((B·x2−A·x0)/2) A=0x3ce4 B=0x2328 rnd(V)=(V−1 if V<0 else V)>>1; u16[r0+2]=сектор: S<0,D<0→5 / S<0,D≥0→(r2>0?3:4) / S≥0,D<0→(r2>0?1:6) / S≥0,D≥0→2, r2=B·x2.
+    """
     uc = run.uc
     S_IN = 0x1F000; S_OUT = 0x1F100
     for _ in range(60):
@@ -818,6 +929,9 @@ D818_XHI = 0x10E   # RAM-offset X_hi
 
 
 def ref_1d818(arg0, X_lo, X_hi):
+    """The reference model (ref_1d818) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_1d818) — независимая Python-реализация задокументированного поведения.
+    """
     a_lo, a_hi = _s16(arg0), _s16(arg0 >> 16)
     P = _div15(X_hi * a_lo); Q = _div15(X_lo * a_hi)
     R = _div15(X_lo * a_lo); S = _div15(X_hi * a_hi)
@@ -826,6 +940,9 @@ def ref_1d818(arg0, X_lo, X_hi):
 
 @t(0x1D818, '§60.3: cross+dot (двойник 0x1d7ac, X из RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое /2^15 с округлением')
 def _(run, rng):
+    """Emulator test @ 0x1d818: §60.3: cross+dot (двойник 0x1d7ac, X из RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое /2^15 с округлением.
+    Тест эмулятора @ 0x1d818: §60.3: cross+dot (двойник 0x1d7ac, X из RAM): A=arg0 Q15, X=(s16[RAM+0x10c], s16[RAM+0x10e]); lo=cross(a_hi·X_lo−a_lo·X_hi), hi=dot(a_lo·X_lo+a_hi·X_hi); каждое /2^15 с округлением.
+    """
     uc = run.uc
     for _ in range(60):
         arg0 = rng.getrandbits(32)
@@ -855,11 +972,17 @@ def _(run, rng):
 
 
 def _asr15(v):
+    """The helper function (_asr15).
+    Вспомогательная функция (_asr15).
+    """
     s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
     return s >> 15
 
 
 def ref_1b3f2(P, X_lo, X_hi, R6):
+    """The reference model (ref_1b3f2) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_1b3f2) — независимая Python-реализация задокументированного поведения.
+    """
     cross = _asr15((R6 * X_hi) & 0xFFFFFFFF) - _asr15((P * X_lo) & 0xFFFFFFFF)
     dot = _asr15((R6 * X_lo) & 0xFFFFFFFF) + _asr15((P * X_hi) & 0xFFFFFFFF)
     t1 = -(dot << 14)
@@ -873,6 +996,9 @@ def ref_1b3f2(P, X_lo, X_hi, R6):
 
 @t(0x1B3F2, '§60.4: inline-блок FOC в 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6·Xhi)−asr15(P·Xlo)→RAM+0x3b8, dot=asr15(R6·Xlo)+asr15(P·Xhi)→RAM+0x3bc; r4+0x1c/0x20=asr15(∓t1±0x6ed9·cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d·cross+dot<<13); верификация mid-function jump (r4=RAM+0x040, stop 0x1b48a)')
 def _(run, rng):
+    """Emulator test @ 0x1b3f2: §60.4: inline-блок FOC в 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6·Xhi)−asr15(P·Xlo)→RAM+0x3b8, dot=asr15(R6·Xlo)+asr15(P·Xhi)→RAM+0x3bc; r4+0x1c/0x20=asr15(∓t1±0x6ed9·cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d·cross+dot<<13); верификация mid-function jump (r4=RAM+0x040, stop 0x1b48a).
+    Тест эмулятора @ 0x1b3f2: §60.4: inline-блок FOC в 0x1A938 (inlined cross+dot): P=u32[RAM+0x388], X_lo=s16[RAM+0x108], X_hi=s16[RAM+0x10a], R6=u32[RAM+0x3ac]; cross=asr15(R6·Xhi)−asr15(P·Xlo)→RAM+0x3b8, dot=asr15(R6·Xlo)+asr15(P·Xhi)→RAM+0x3bc; r4+0x1c/0x20=asr15(∓t1±0x6ed9·cross), r4+0x28=dot>>1, r4+0x24=asr15(0x376d·cross+dot<<13); верификация mid-function jump (r4=RAM+0x040, stop 0x1b48a).
+    """
     uc = run.uc
     for _ in range(40):
         P = rng.getrandbits(32) & 0x7FFFFFFF
@@ -911,12 +1037,18 @@ def _(run, rng):
 
 
 def _asr5(v):
+    """The helper function (_asr5).
+    Вспомогательная функция (_asr5).
+    """
     s = v if (v & 0x80000000) == 0 else (v - 0x100000000)
     return s >> 5
 
 
 @t(0x1AA08, '§60.5: inline-блок FOC в 0x1A938 — обработка/кламп параметров + leaky-интегратор. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(−s16[RAM+0x0a6],±s16[RAM+0x390]); (3) интегратор acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (паттерн 0x1DFD8). Изоляция mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4)')
 def _(run, rng):
+    """Emulator test @ 0x1aa08: §60.5: inline-блок FOC в 0x1A938 — обработка/кламп параметров + leaky-интегратор. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(−s16[RAM+0x0a6],±s16[RAM+0x390]); (3) интегратор acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (паттерн 0x1DFD8). Изоляция mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4).
+    Тест эмулятора @ 0x1aa08: §60.5: inline-блок FOC в 0x1A938 — обработка/кламп параметров + leaky-интегратор. (1) u16[RAM+0x044]=lo16(r0=cross+dot); (2) u16[RAM+0x38c]=clamp(−s16[RAM+0x0a6],±s16[RAM+0x390]); (3) интегратор acc=u32[RAM+0x094]: u16[RAM+0x046]=asr(acc_new,5) (паттерн 0x1DFD8). Изоляция mid-function jump (r4=RAM+0x040, r5=RAM+0x108, r6=0x2033, [sp+0x18]=RAM+0x040, stop 0x1abd4).
+    """
     uc = run.uc
     for _ in range(60):
         r0val = rng.getrandbits(32)
@@ -962,8 +1094,14 @@ def _(run, rng):
 
 @t(0x1B48A, '§60.6: inline-блок FOC в 0x1A938 — коммутация/классификатор секторов. Входы v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; порог 16383. Default (все≤порога): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max сектор: r4+0x38=16383, r4+0x3c=min(v30−asr(v2c,1)+8192,16383), r4+0x40=r1. Изоляция mid-function jump (stop 0x1b584)')
 def _(run, rng):
+    """Emulator test @ 0x1b48a: §60.6: inline-блок FOC в 0x1A938 — коммутация/классификатор секторов. Входы v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; порог 16383. Default (все≤порога): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max сектор: r4+0x38=16383, r4+0x3c=min(v30−asr(v2c,1)+8192,16383), r4+0x40=r1. Изоляция mid-function jump (stop 0x1b584).
+    Тест эмулятора @ 0x1b48a: §60.6: inline-блок FOC в 0x1A938 — коммутация/классификатор секторов. Входы v2c/v30/v34=u32[r4+0x2c/0x30/0x34]; порог 16383. Default (все≤порога): pass-through r4+0x38=v2c,0x3c=v30,0x40=v34. v2c-max сектор: r4+0x38=16383, r4+0x3c=min(v30−asr(v2c,1)+8192,16383), r4+0x40=r1. Изоляция mid-function jump (stop 0x1b584).
+    """
     uc = run.uc
     def run_sector(v2c, v30, v34, r1):
+        """The run_sector function of the script.
+        Функция run_sector скрипта.
+        """
         uc.mem_write(RAM, bytes(0x20000))
         r4 = RAM + 0x040
         for o, v in ((0x2c, v2c), (0x30, v30), (0x34, v34)):
@@ -1009,16 +1147,25 @@ def _(run, rng):
 
 
 def _s32(v):
+    """The helper function (_s32).
+    Вспомогательная функция (_s32).
+    """
     v &= 0xFFFFFFFF
     return v - 0x100000000 if (v & 0x80000000) else v
 
 
 def _asr(v, n):
+    """The helper function (_asr).
+    Вспомогательная функция (_asr).
+    """
     return _s32(v) >> n
 
 
 @t(0x1B470, '§60.7a: inline-фрагмент 0x1A938 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2−r0,−r0) else: (r0−r2,r1,−r2). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b492)')
 def _(run, rng):
+    """Emulator test @ 0x1b470: §60.7a: inline-фрагмент 0x1A938 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2−r0,−r0) else: (r0−r2,r1,−r2). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b492).
+    Тест эмулятора @ 0x1b470: §60.7a: inline-фрагмент 0x1A938 — вычисление v2c/v30/v34 (входы блока 3) из r0/r1/r2: if r0<=r2: (v2c,v30,v34)=(r1,r2−r0,−r0) else: (r0−r2,r1,−r2). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b492).
+    """
     uc = run.uc
     for _ in range(80):
         r0 = rng.randrange(-50000, 50000); r1 = rng.randrange(-50000, 50000)
@@ -1029,6 +1176,9 @@ def _(run, rng):
         uc.mem_write(SP + 0x18, struct.pack('<I', r4))
         from unicorn import UC_HOOK_CODE as _H
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             a = addr & ~1
             if a >= 0x1B492 or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1052,6 +1202,9 @@ def _(run, rng):
 
 @t(0x1B584, '§60.7b: inline-фрагмент 0x1A938 — хвост: svX=asr15(4500·vX)→r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b5e4)')
 def _(run, rng):
+    """Emulator test @ 0x1b584: §60.7b: inline-фрагмент 0x1A938 — хвост: svX=asr15(4500·vX)→r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b5e4).
+    Тест эмулятора @ 0x1b584: §60.7b: inline-фрагмент 0x1A938 — хвост: svX=asr15(4500·vX)→r4+0x44/0x48/0x4c; offset=r4+0x50=asr1(2250−max(sv)); фазы u16[RAM+0x382/0x384/0x386]=2250−(svX+offset). Изоляция mid-function jump (r4=RAM+0x040, stop 0x1b5e4).
+    """
     uc = run.uc
     for _ in range(80):
         v38 = rng.randrange(-20000, 20000); v3c = rng.randrange(-20000, 20000)
@@ -1064,6 +1217,9 @@ def _(run, rng):
         uc.mem_write(SP + 0x18, struct.pack('<I', r4))
         from unicorn import UC_HOOK_CODE as _H
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             a = addr & ~1
             if a >= 0x1B5E4 or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1094,6 +1250,9 @@ def _(run, rng):
 
 @t(0x1A9F2, '§60.7c: inline-фрагмент 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (затем bl 0x1d7ac). Изоляция mid-function jump (stop 0x1aa04)')
 def _(run, rng):
+    """Emulator test @ 0x1a9f2: §60.7c: inline-фрагмент 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (затем bl 0x1d7ac). Изоляция mid-function jump (stop 0x1aa04).
+    Тест эмулятора @ 0x1a9f2: §60.7c: inline-фрагмент 0x1A938 — pre-block-2 frame setup: base=pool(RAM+0x40), [sp+0x18]=base+0x60=RAM+0xa0, [sp+4]=u16[RAM+0xa0], [sp+6]=u16[RAM+0xa2] (затем bl 0x1d7ac). Изоляция mid-function jump (stop 0x1aa04).
+    """
     uc = run.uc
     for _ in range(50):
         a = rng.getrandbits(16); b = rng.getrandbits(16)
@@ -1102,6 +1261,9 @@ def _(run, rng):
         SP = 0x20017F00
         from unicorn import UC_HOOK_CODE as _H
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             aa = addr & ~1
             if aa >= 0x1AA04 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1138,6 +1300,9 @@ _ENTRY_TBL = None          # кэш: список 2048 u16
 
 
 def _entry_table():
+    """The helper function (_entry_table).
+    Вспомогательная функция (_entry_table).
+    """
     global _ENTRY_TBL
     if _ENTRY_TBL is None:
         with open(r'D:/SCOOTER_5_PRO/research/images/mcu_0007.bin', 'rb') as f:
@@ -1149,6 +1314,9 @@ def _entry_table():
 
 @t(0x1A938, '§60.8: entry 0x1A938 — табличная выборка (треугольный mapping по flash-таблице @0x9E38): idx=value>>4 | 1023−(value−16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta). Изоляция mid-function jump (r4=RAM+0x040)')
 def _(run, rng):
+    """Emulator test @ 0x1a938: §60.8: entry 0x1A938 — табличная выборка (треугольный mapping по flash-таблице @0x9E38): idx=value>>4 | 1023−(value−16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta). Изоляция mid-function jump (r4=RAM+0x040).
+    Тест эмулятора @ 0x1a938: §60.8: entry 0x1A938 — табличная выборка (треугольный mapping по flash-таблице @0x9E38): idx=value>>4 | 1023−(value−16384)>>4; u16[r4+4]=idx, u16[RAM+0x108]=tableE[idx], r0=±tableE[1024−idx]; + scaled-delta u16[r4+0x62]=asr16(0x93cc·delta). Изоляция mid-function jump (r4=RAM+0x040).
+    """
     uc = run.uc
     tbl = _entry_table()
     # (a) табличная выборка — полный диапазон value [0, 32767]
@@ -1159,6 +1327,9 @@ def _(run, rng):
         uc.mem_write(r4 + 2, struct.pack('<h', val))
         from unicorn import UC_HOOK_CODE as _H
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             aa = addr & ~1
             if aa >= 0x1A9D0 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1191,6 +1362,9 @@ def _(run, rng):
         uc.mem_write(POOLC + 4, struct.pack('<I', c4)); uc.mem_write(POOLC + 8, struct.pack('<I', c8))
         r4 = RAM + 0x040
         def _st2(uc_, addr, size, u):
+            """The helper function (_st2).
+            Вспомогательная функция (_st2).
+            """
             aa = addr & ~1
             if aa >= 0x1A966 or not (FLASH0 <= aa < FLASH0 + FW_LEN or 0x08000000 <= aa < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1223,6 +1397,9 @@ _FMT_D = [31104000, 2592000, 86400, 3600, 60]
 
 
 def ref_11bac(v):
+    """The reference model (ref_11bac) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_11bac) — независимая Python-реализация задокументированного поведения.
+    """
     out = [(v // _FMT_D[0]) & 0xFF]
     for i in range(1, len(_FMT_D)):
         out.append(((v % _FMT_D[i - 1]) // _FMT_D[i]) & 0xFF)
@@ -1232,6 +1409,9 @@ def ref_11bac(v):
 
 @t(0x11BAC, '§61: форматтер даты/времени — total-seconds → байты (цепочка остатков, дивизоры [31104000,2592000,86400,3600,60] ≈ 360d-год/30d-месяц/день/час/мин/сек): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60')
 def _(run, rng):
+    """Emulator test @ 0x11bac: §61: форматтер даты/времени — total-seconds → байты (цепочка остатков, дивизоры [31104000,2592000,86400,3600,60] ≈ 360d-год/30d-месяц/день/час/мин/сек): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60.
+    Тест эмулятора @ 0x11bac: §61: форматтер даты/времени — total-seconds → байты (цепочка остатков, дивизоры [31104000,2592000,86400,3600,60] ≈ 360d-год/30d-месяц/день/час/мин/сек): out[0]=v//D0, out[i]=(v%D[i-1])//D[i], out[5]=v%60.
+    """
     uc = run.uc
     OUT = RAM + 0x300
     for _ in range(100):
@@ -1239,6 +1419,9 @@ def _(run, rng):
         uc.mem_write(RAM, bytes(0x20000))
         from unicorn import UC_HOOK_CODE as _H
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             a = addr & ~1
             if a >= 0x11C2E or not (FLASH0 <= a < FLASH0 + FW_LEN or 0x08000000 <= a < 0x08000000 + FW_LEN):
                 uc_.emu_stop()
@@ -1258,16 +1441,25 @@ def _(run, rng):
 
 # --- 0x1d078 timer capture/period + speed-limit ramp (§69, corrected by random-sweep) ---
 def _sdiv(a, b):
+    """The helper function (_sdiv).
+    Вспомогательная функция (_sdiv).
+    """
     if b == 0:
         return 0
     q = abs(a) // abs(b)
     return q if (a < 0) == (b < 0) else -q
 def _s16(x):
+    """The helper function (_s16).
+    Вспомогательная функция (_s16).
+    """
     x &= 0xFFFF
     return x - 0x10000 if x >= 0x8000 else x
 
 @t(0x1D078, '§69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = setpoint замкнутого контура скорости (out2=сглаж. оценка ∝ 48000/V; вывод r4[+0x18]=structB[+0x64]=throttle/duty, НЕ скорость). Вериф. 200/200 random-sweep + setpoint 300/300')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = setpoint замкнутого контура скорости (out2=сглаж. оценка ∝ 48000/V; вывод r4[+0x18]=structB[+0x64]=throttle/duty, НЕ скорость). Вериф. 200/200 random-sweep + setpoint 300/300.
+    Тест эмулятора @ 0x1d078: §69: val=s16(sdiv(48000,V)) if F=byte[RAM+0x100]!=0 else 0; struct r4=RAM+0x1768: [+0]=u16(val), 2 leaky-интегратора (asr5 / asr3 clamp≥0) → out1=s16[+0x10], out2=s16[+8]; pct=u16[RAM+0x236]=sdiv(100*out2,208); mode-target: flag=byte[RAM+0x339]==1→522 / mode@0x229 0xb→125/2→u16@0x324/3→u16@0x326/else→208; struct[+0x14]=target if s16(target)<=u16[RAM+0x326] else u16[RAM+0x326] (signed clamp); structB@0x3c8[+0x2a]=target = setpoint замкнутого контура скорости (out2=сглаж. оценка ∝ 48000/V; вывод r4[+0x18]=structB[+0x64]=throttle/duty, НЕ скорость). Вериф. 200/200 random-sweep + setpoint 300/300.
+    """
     V = rng.randint(50, 60000)
     F = rng.getrandbits(1)
     acc1 = rng.getrandbits(32); out1 = rng.randint(-32768, 32767)
@@ -1316,6 +1508,9 @@ def _(run, rng):
 # --- 0x1d078 ramp-core PI-регулятор: P-term + 2-фазный toggle (§72) ---
 @t(0x1D078, '§72: ramp-core (Phase B, counter S+0x28=1) = PI-регулятор. P-term: S+0x2c=min(err,300), err=(target−out2_new) if out1_new<target else (out2_new−target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1→2→reset 0. positive-target домен; вериф. 400/400')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §72: ramp-core (Phase B, counter S+0x28=1) = PI-регулятор. P-term: S+0x2c=min(err,300), err=(target−out2_new) if out1_new<target else (out2_new−target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1→2→reset 0. positive-target домен; вериф. 400/400.
+    Тест эмулятора @ 0x1d078: §72: ramp-core (Phase B, counter S+0x28=1) = PI-регулятор. P-term: S+0x2c=min(err,300), err=(target−out2_new) if out1_new<target else (out2_new−target); S+0x5c=s16(S+0x2c)<<7. Toggle: counter 1→2→reset 0. positive-target домен; вериф. 400/400.
+    """
     V = rng.randint(10, 60000)
     F = rng.getrandbits(1)
     mode = rng.choice([2, 3, 0xb, 5, 7])
@@ -1362,6 +1557,9 @@ def _(run, rng):
 # --- 0x1d078 Phase B полная модель: I-term + anti-windup (§72.4) ---
 @t(0x1D078, '§72: Phase B полная модель — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; вериф. 2000/2000')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §72: Phase B полная модель — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; вериф. 2000/2000.
+    Тест эмулятора @ 0x1d078: §72: Phase B полная модель — I-term clamp[8000,131040] + anti-windup tail (reset u1760==0 / slew) + sxth out1/out2. S58/S60/S64/S2e; вериф. 2000/2000.
+    """
     V = rng.randint(10, 60000)
     F = rng.getrandbits(1)
     mode = rng.choice([2, 3, 0xb, 5, 7])
@@ -1448,6 +1646,9 @@ def _(run, rng):
 # --- 0x1a938 FOC: конфигурация моторного таймера (§73) ---
 @t(0x1A938, '§73: FOC entry конфигурирует моторный таймер @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear бит 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Эмулятор: TimModel + periph-capture. Детерминизм: 4 записи для любого value.')
 def _(run, rng):
+    """Emulator test @ 0x1a938: §73: FOC entry конфигурирует моторный таймер @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear бит 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Эмулятор: TimModel + periph-capture. Детерминизм: 4 записи для любого value..
+    Тест эмулятора @ 0x1a938: §73: FOC entry конфигурирует моторный таймер @0x40012c00 — CTRL(+0x30) RMW &= 0xDFFF (clear бит 13); DATA0/1/2 (+0x44/48/4c) = u16[RAM+0x386/384/382]. Эмулятор: TimModel + periph-capture. Детерминизм: 4 записи для любого value..
+    """
     from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
     uc = run.uc
     uc.mem_write(RAM, bytes(0x20000))          # чистая RAM → детерминизм
@@ -1459,6 +1660,9 @@ def _(run, rng):
     tim.set(0x54, 0x8000)                      # STAT бит15=1 → гейт FOC открыт (иначе обход)
     tim.set(0x30, 0xFFFF)                      # known pre-value для проверки RMW
     def _st(uc_, addr, size, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                 FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -1497,12 +1701,18 @@ def _(run, rng):
 # --- 0x1a938 FOC + TIM clock model (§73.x) ---
 @t(0x1A938, '§73.x: TIM clock model — такт контура (tick→update по period) управляет режимом FOC через STAT бит15: =0 → обход (0 записей таймера), event → set bit15 → config (4 записи). Свободно-ходный счётчик wrap; модель параметризована (period/step).')
 def _(run, rng):
+    """Emulator test @ 0x1a938: §73.x: TIM clock model — такт контура (tick→update по period) управляет режимом FOC через STAT бит15: =0 → обход (0 записей таймера), event → set bit15 → config (4 записи). Свободно-ходный счётчик wrap; модель параметризована (period/step)..
+    Тест эмулятора @ 0x1a938: §73.x: TIM clock model — такт контура (tick→update по period) управляет режимом FOC через STAT бит15: =0 → обход (0 записей таймера), event → set bit15 → config (4 записи). Свободно-ходный счётчик wrap; модель параметризована (period/step)..
+    """
     from emulator.mcu_emu import TimModel, MOTOR_TIM_BASE
     uc = run.uc
     TIM_OFFS = (MOTOR_TIM_BASE + 0x30, MOTOR_TIM_BASE + 0x44,
                 MOTOR_TIM_BASE + 0x48, MOTOR_TIM_BASE + 0x4c)
 
     def run_foc(stat_bit15):
+        """The run_foc function of the script.
+        Функция run_foc скрипта.
+        """
         uc.mem_write(RAM, bytes(0x20000))
         uc.mem_write(MOTOR_TIM_BASE, bytes(0x100))      # чистый моторный блок
         r4 = RAM + 0x040
@@ -1513,6 +1723,9 @@ def _(run, rng):
         before = len(run.emu.periph_writes)
 
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             aa = addr & ~1
             if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                     FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -1557,12 +1770,18 @@ def _(run, rng):
 # --- 0x1be1c ADC/capture model (§73.x) ---
 @t(0x1BE1C, '§73.x: ADC/capture model — 0x1be1c реконструирует фазные токи из T28/T2C/T30 (periph @0x40012468/6c/70): фаза=(T−C)<<4, 3-я=−сумма (Кирхгоф). sector→handler: 0→null,1→B,2/3→A,4/5→C,6→B. AdcModel.set_captures/set_currents.')
 def _(run, rng):
+    """Emulator test @ 0x1be1c: §73.x: ADC/capture model — 0x1be1c реконструирует фазные токи из T28/T2C/T30 (periph @0x40012468/6c/70): фаза=(T−C)<<4, 3-я=−сумма (Кирхгоф). sector→handler: 0→null,1→B,2/3→A,4/5→C,6→B. AdcModel.set_captures/set_currents..
+    Тест эмулятора @ 0x1be1c: §73.x: ADC/capture model — 0x1be1c реконструирует фазные токи из T28/T2C/T30 (periph @0x40012468/6c/70): фаза=(T−C)<<4, 3-я=−сумма (Кирхгоф). sector→handler: 0→null,1→B,2/3→A,4/5→C,6→B. AdcModel.set_captures/set_currents..
+    """
     from emulator.mcu_emu import (AdcModel, ADC_SECTOR_HANDLER,
                                   ADC_HANDLER_MEASURED)
     uc = run.uc
     r0 = RAM + 0x100
 
     def setup(sector, c18, c1a, c1c):
+        """The setup function of the script.
+        Функция setup скрипта.
+        """
         uc.mem_write(RAM, bytes(0x20000))
         uc.mem_write(r0, bytes(0x40))
         uc.mem_write(r0 + 2, struct.pack('<H', sector))
@@ -1572,7 +1791,13 @@ def _(run, rng):
         uc.mem_write(0x40012c54, struct.pack('<I', 0x8000))   # mode-2 гейт
 
     def run_be1c():
+        """The run_be1c function of the script.
+        Функция run_be1c скрипта.
+        """
         def _st(uc_, addr, size, u):
+            """The helper function (_st).
+            Вспомогательная функция (_st).
+            """
             aa = addr & ~1
             if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                     FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -1640,11 +1865,17 @@ def _(run, rng):
 # --- 0x1d078 closed loop: SpeedModel (замер скорости) (§73.x) ---
 @t(0x1D078, '§73.x closed loop: SpeedModel — замер скорости замыкает контур. set_period(V)→PID вычисляет val=s16(48000/V); set_speed(val) (V=48000//val) → PID даёт ровно val (для делителей 48000); stop() (F=0) → val=0. V=u32[RAM+0x158], F=byte[RAM+0x100].')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §73.x closed loop: SpeedModel — замер скорости замыкает контур. set_period(V)→PID вычисляет val=s16(48000/V); set_speed(val) (V=48000//val) → PID даёт ровно val (для делителей 48000); stop() (F=0) → val=0. V=u32[RAM+0x158], F=byte[RAM+0x100]..
+    Тест эмулятора @ 0x1d078: §73.x closed loop: SpeedModel — замер скорости замыкает контур. set_period(V)→PID вычисляет val=s16(48000/V); set_speed(val) (V=48000//val) → PID даёт ровно val (для делителей 48000); stop() (F=0) → val=0. V=u32[RAM+0x158], F=byte[RAM+0x100]..
+    """
     from emulator.mcu_emu import SpeedModel
     sm = SpeedModel(run.emu)
 
     def run_pid():
         # минимальное безопасное состояние 0x1d078 (как §69)
+        """The run_pid function of the script.
+        Функция run_pid скрипта.
+        """
         run.ram_write(0x229, bytes([3]))                 # mode=3 → target=u16[RAM+0x326]
         run.ram_write(0x326, struct.pack('<H', 200))
         run.ram_write(0x339, b'\x00')                    # flag=0
@@ -1679,6 +1910,9 @@ def _(run, rng):
 # --- 0x1d078 motor dynamics: АВТОНОМНЫЙ симул замкнутого контура (§73.x) ---
 @t(0x1D078, '§73.x motor dynamics: MotorModel (plant) замыкает АВТОНОМНЫЙ симул. target=208 → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(speed) → SpeedModel(V) → PID ... Скорость сходится к target: 0→overshoot~338→settle~207; throttle спадает. Детерминированно (fixed params).')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §73.x motor dynamics: MotorModel (plant) замыкает АВТОНОМНЫЙ симул. target=208 → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(speed) → SpeedModel(V) → PID ... Скорость сходится к target: 0→overshoot~338→settle~207; throttle спадает. Детерминированно (fixed params)..
+    Тест эмулятора @ 0x1d078: §73.x motor dynamics: MotorModel (plant) замыкает АВТОНОМНЫЙ симул. target=208 → PID 0x1d078 → throttle(u16[RAM+0x42c]) → plant(speed) → SpeedModel(V) → PID ... Скорость сходится к target: 0→overshoot~338→settle~207; throttle спадает. Детерминированно (fixed params)..
+    """
     from emulator.mcu_emu import MotorModel, SpeedModel
     uc = run.uc
     target = 208
@@ -1717,6 +1951,9 @@ def _(run, rng):
 # --- батарея: BatteryModel (SoC + разряд) (§73.x) ---
 @t(0x1DFD8, '§73.x battery: BatteryModel — SoC%→u16[RAM+0x306] (+сырое i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%→415/100%→535; разряд монотонно падает с нагрузкой, bounded [0,100], без нагрузки не меняется. Пороги FOC 90/10 гейтятся (byte@0x22e).')
 def _(run, rng):
+    """Emulator test @ 0x1dfd8: §73.x battery: BatteryModel — SoC%→u16[RAM+0x306] (+сырое i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%→415/100%→535; разряд монотонно падает с нагрузкой, bounded [0,100], без нагрузки не меняется. Пороги FOC 90/10 гейтятся (byte@0x22e)..
+    Тест эмулятора @ 0x1dfd8: §73.x battery: BatteryModel — SoC%→u16[RAM+0x306] (+сырое i16@0x17a0 [415..535]). set_soc round-trip; mapping 0%→415/100%→535; разряд монотонно падает с нагрузкой, bounded [0,100], без нагрузки не меняется. Пороги FOC 90/10 гейтятся (byte@0x22e)..
+    """
     from emulator.mcu_emu import BatteryModel, BATT_RAW_MIN, BATT_RAW_MAX
     uc = run.uc
     bm = BatteryModel(run.emu)
@@ -1748,9 +1985,15 @@ def _(run, rng):
 # --- запас хода: RangeModel (0x1d898) (§73.x) ---
 @t(0x1D898, '§73.x range: RangeModel — v=i16[RAM+0x27A]→X=(8000·v)>>16, R=10000·X/(500−X) (делитель 0x19994; div-by-zero→-1, отриц. знаменатель→отриц.). Closed-form вериф. random-sweep (v≥0) против firmware 0x1d898 + edge-cases (v=0/415/535/4096).')
 def _(run, rng):
+    """Emulator test @ 0x1d898: §73.x range: RangeModel — v=i16[RAM+0x27A]→X=(8000·v)>>16, R=10000·X/(500−X) (делитель 0x19994; div-by-zero→-1, отриц. знаменатель→отриц.). Closed-form вериф. random-sweep (v≥0) против firmware 0x1d898 + edge-cases (v=0/415/535/4096)..
+    Тест эмулятора @ 0x1d898: §73.x range: RangeModel — v=i16[RAM+0x27A]→X=(8000·v)>>16, R=10000·X/(500−X) (делитель 0x19994; div-by-zero→-1, отриц. знаменатель→отриц.). Closed-form вериф. random-sweep (v≥0) против firmware 0x1d898 + edge-cases (v=0/415/535/4096)..
+    """
     from emulator.mcu_emu import RangeModel
     rm = RangeModel(run.emu)
     def fw(v):
+        """The fw function of the script.
+        Функция fw скрипта.
+        """
         rm.set_value(v)
         run.call(0x1D898, (0, 0, 0, 0), max_insn=300000)
         X = struct.unpack('<H', run.uc.mem_read(RAM + 0x3E8, 2))[0]
@@ -1773,6 +2016,9 @@ def _(run, rng):
 # --- 0x1d898 аккумулятор (leaky integrator) (§73.x) ---
 @t(0x1D898, '§73.x range-acc: аккумулятор 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep против firmware + edge-cases.')
 def _(run, rng):
+    """Emulator test @ 0x1d898: §73.x range-acc: аккумулятор 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep против firmware + edge-cases..
+    Тест эмулятора @ 0x1d898: §73.x range-acc: аккумулятор 0x1d898 (leaky integrator) — new_0x3c=(old_0x3c+delta−prev_0x14)&0xFFFFFFFF, new_0x14=asr(new_0x3c,10)[i16]; delta=i16[RAM+0x26E]. Stateful-sweep против firmware + edge-cases..
+    """
     from emulator.mcu_emu import RangeModel, McuEmu
     from unicorn import UC_HOOK_CODE, UcError
     from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
@@ -1781,6 +2027,9 @@ def _(run, rng):
     # fresh McuEmu на каждый вызов (чистый путь, как в probe 250/250). Reuse emu +
     # re-zero RAM ломает large-A итерации (нере-zeroed periph → early unmapped fetch).
     def fw_acc(A, B, D):
+        """The fw_acc function of the script.
+        Функция fw_acc скрипта.
+        """
         femu = McuEmu(max_insn=300000)
         femu.uc.mem_write(RAM, bytes(0x20000))
         femu.uc.mem_write(RAM + 0x404, struct.pack('<I', A & 0xFFFFFFFF))  # old_0x3c
@@ -1788,6 +2037,9 @@ def _(run, rng):
         femu.uc.mem_write(RAM + 0x26E, struct.pack('<h', D))               # delta
         femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))             # v (не влияет на acc)
         def stop(uc_, a, s, u):
+            """The stop function of the script.
+            Функция stop скрипта.
+            """
             aa = a & ~1
             if not (0 <= aa < 0x25000 or 0x08000000 <= aa < 0x08000000 + 0x25000):
                 uc_.emu_stop()
@@ -1820,15 +2072,24 @@ def _(run, rng):
 # --- 0x1d898 state-machine: гейты статус-флагов (§73.x) ---
 @t(0x1D898, '§73.x range-sm: state-machine 0x1d898 — дефолт (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); гейт +0x286≠0 → (0x290,0x292)=(0,0); гейт +0x29e≠0 → (0x2a8,0x2aa)=(0,0). Флаги mode/LUT-driven (LUT 0x614-0x6c4/0x738-0x808), v/SoC не влияют. Fresh emu/call.')
 def _(run, rng):
+    """Emulator test @ 0x1d898: §73.x range-sm: state-machine 0x1d898 — дефолт (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); гейт +0x286≠0 → (0x290,0x292)=(0,0); гейт +0x29e≠0 → (0x2a8,0x2aa)=(0,0). Флаги mode/LUT-driven (LUT 0x614-0x6c4/0x738-0x808), v/SoC не влияют. Fresh emu/call..
+    Тест эмулятора @ 0x1d898: §73.x range-sm: state-machine 0x1d898 — дефолт (zeroed): (0x290,0x292,0x2a8,0x2aa)=(2,140,1,78); гейт +0x286≠0 → (0x290,0x292)=(0,0); гейт +0x29e≠0 → (0x2a8,0x2aa)=(0,0). Флаги mode/LUT-driven (LUT 0x614-0x6c4/0x738-0x808), v/SoC не влияют. Fresh emu/call..
+    """
     from unicorn import UC_HOOK_CODE, UcError
     from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3
     def status(extra):
+        """The status function of the script.
+        Функция status скрипта.
+        """
         femu = McuEmu(max_insn=300000)
         femu.uc.mem_write(RAM, bytes(0x20000))
         femu.uc.mem_write(RAM + 0x27A, struct.pack('<h', 500))
         for off, val in extra.items():
             femu.uc.mem_write(RAM + off, struct.pack('<B', val))
         def stop(uc_, a, s, u):
+            """The stop function of the script.
+            Функция stop скрипта.
+            """
             aa = a & ~1
             if not (0 <= aa < 0x25000 or 0x08000000 <= aa < 0x08000000 + 0x25000):
                 uc_.emu_stop()
@@ -1843,6 +2104,9 @@ def _(run, rng):
             pass
         femu.uc.hook_del(sh)
         def h(o):
+            """The h function of the script.
+            Функция h скрипта.
+            """
             return struct.unpack('<h', femu.uc.mem_read(RAM + o, 2))[0]
         return (h(0x290), h(0x292), h(0x2a8), h(0x2aa))
     # --- дефолт (zeroed state) ---
@@ -1859,6 +2123,9 @@ def _(run, rng):
 FW_LEN = 0x25000
 
 def _foc_amp(ccr):
+    """The helper function (_foc_amp).
+    Вспомогательная функция (_foc_amp).
+    """
     center = sum(ccr) / 3.0
     return max(abs(c - center) for c in ccr), center
 
@@ -1872,6 +2139,9 @@ def _foc_run(uc, current_ref):
     uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — не управляет PWM
     uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
     def stop(uc_, a, s, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -1891,6 +2161,9 @@ def _foc_run(uc, current_ref):
 @t(0x1A938, '§73.x FOC-интеграция: transfer-функция current-ref u16[RAM+0x224]→PWM CCR (RAM+0x382/384/386): amp монотонно растёт с ref (0→~0, 4000→~41, 8000→~83, 16384→~169, 28624→~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-фазная FOC-модуляция). Интегрир. контур: PID(0x1d078)→throttle 0x42c→0x224→FOC→PWM, скорость растёт от 0.')
 def _(run, rng):
     # --- transfer-функция FOC: amp монотонна в current-ref (fresh emu/call для чистоты) ---
+    """Emulator test @ 0x1a938: §73.x FOC-интеграция: transfer-функция current-ref u16[RAM+0x224]→PWM CCR (RAM+0x382/384/386): amp монотонно растёт с ref (0→~0, 4000→~41, 8000→~83, 16384→~169, 28624→~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-фазная FOC-модуляция). Интегрир. контур: PID(0x1d078)→throttle 0x42c→0x224→FOC→PWM, скорость растёт от 0..
+    Тест эмулятора @ 0x1a938: §73.x FOC-интеграция: transfer-функция current-ref u16[RAM+0x224]→PWM CCR (RAM+0x382/384/386): amp монотонно растёт с ref (0→~0, 4000→~41, 8000→~83, 16384→~169, 28624→~296), center≈1125..1131; CCR_A↑/CCR_B↓ (2-фазная FOC-модуляция). Интегрир. контур: PID(0x1d078)→throttle 0x42c→0x224→FOC→PWM, скорость растёт от 0..
+    """
     refs = (0, 4000, 8000, 16384, 28624)
     amps = []; centers = []
     for ref in refs:
@@ -1917,6 +2190,9 @@ def _(run, rng):
 # --- интегрированный контур: PID → throttle → FOC → PWM → plant (ОДИН emu, общий RAM) ---
 @t(0x1D078, '§73.x FOC-контур (интегрир.): ОДИН McuEmu, общий RAM. Шаги: SpeedModel(speed→V)→PID 0x1d078→throttle s16[RAM+0x42c]→u16[RAM+0x224]=throttle→FOC 0x1a938 (тот же emu)→PWM CCR→plant(throttle→speed). За 6 шагов скорость монотонно растёт от 0, throttle>0, FOC-amp>0 (полная цепочка прошивки — PID+FOC — исполняется каждый шаг на общем RAM).')
 def _(run, rng):
+    """Emulator test @ 0x1d078: §73.x FOC-контур (интегрир.): ОДИН McuEmu, общий RAM. Шаги: SpeedModel(speed→V)→PID 0x1d078→throttle s16[RAM+0x42c]→u16[RAM+0x224]=throttle→FOC 0x1a938 (тот же emu)→PWM CCR→plant(throttle→speed). За 6 шагов скорость монотонно растёт от 0, throttle>0, FOC-amp>0 (полная цепочка прошивки — PID+FOC — исполняется каждый шаг на общем RAM)..
+    Тест эмулятора @ 0x1d078: §73.x FOC-контур (интегрир.): ОДИН McuEmu, общий RAM. Шаги: SpeedModel(speed→V)→PID 0x1d078→throttle s16[RAM+0x42c]→u16[RAM+0x224]=throttle→FOC 0x1a938 (тот же emu)→PWM CCR→plant(throttle→speed). За 6 шагов скорость монотонно растёт от 0, throttle>0, FOC-amp>0 (полная цепочка прошивки — PID+FOC — исполняется каждый шаг на общем RAM)..
+    """
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R4, UC_ARM_REG_SP, UC_ARM_REG_LR
     emu = McuEmu(max_insn=400000)
@@ -1931,6 +2207,9 @@ def _(run, rng):
     uc.mem_write(RAM + 0x388, struct.pack('<I', 0))
     uc.mem_write(RAM + 0x3C8 + 0x28, struct.pack('<H', 1))
     def stop(uc_, a, s, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (0 <= aa < FW_LEN or FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -1971,6 +2250,9 @@ def _foc_run_pp(uc, current_ref, xlo=0, xhi=0, gate=False):
     if gate:
         uc.mem_write(0x40012C54, struct.pack('<I', 0x8000))   # STAT bit15=1
     def stop(uc_, a, s, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -1992,6 +2274,9 @@ def _foc_run_pp(uc, current_ref, xlo=0, xhi=0, gate=False):
 @t(0x1A938, '§73.x FOC current-ref→P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref идёт в cross+dot (§60.4) как P. Электро-контур НЕАКТИВЕН в изолированном FOC: measured vector s16[RAM+0x108/0x10a] не меняет PWM CCR (ни с gate=0, ни с STAT bit15=1) — feedback требует полного state-machine (сектор+реконструкция из ADC+PI) и live-gains мотора.')
 def _(run, rng):
     # --- P = [0x224] (1:1 copy), для нескольких ref ---
+    """Emulator test @ 0x1a938: §73.x FOC current-ref→P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref идёт в cross+dot (§60.4) как P. Электро-контур НЕАКТИВЕН в изолированном FOC: measured vector s16[RAM+0x108/0x10a] не меняет PWM CCR (ни с gate=0, ни с STAT bit15=1) — feedback требует полного state-machine (сектор+реконструкция из ADC+PI) и live-gains мотора..
+    Тест эмулятора @ 0x1a938: §73.x FOC current-ref→P: P=u32[RAM+0x388]=[u16 RAM+0x224] (1:1, PC 0x1aae4) — current-ref идёт в cross+dot (§60.4) как P. Электро-контур НЕАКТИВЕН в изолированном FOC: measured vector s16[RAM+0x108/0x10a] не меняет PWM CCR (ни с gate=0, ни с STAT bit15=1) — feedback требует полного state-machine (сектор+реконструкция из ADC+PI) и live-gains мотора..
+    """
     for ref in (4000, 8000, 16384):
         femu = McuEmu(trace=False, max_insn=200000)
         femu.uc.mem_write(RAM, bytes(0x20000))

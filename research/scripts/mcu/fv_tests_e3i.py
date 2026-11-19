@@ -17,6 +17,9 @@ from emulator.mcu_emu import (HSE_MHZ, PERIPH_REG_MAP, RCC_SETCLEAR_FAMILY,  # n
 
 @t(0x1302C, 'A7 §93: PeriphRegMap — карта регистров (30 блоков): целостность (уникальные базы, ключевые: RCC/FLASH/TIM1/ADC1/USART1/USART3/I2C2/SPI1/WWDG/NVIC/SCB/SysTick), HSE=20 МГц, base_of (USART1/RCC/SPI1/I2C2), block()')
 def _(run, rng):
+    """Emulator test @ 0x1302c: A7 §93: PeriphRegMap — карта регистров (30 блоков): целостность (уникальные базы, ключевые: RCC/FLASH/TIM1/ADC1/USART1/USART3/I2C2/SPI1/WWDG/NVIC/SCB/SysTick), HSE=20 МГц, base_of (USART1/RCC/SPI1/I2C2), block().
+    Тест эмулятора @ 0x1302c: A7 §93: PeriphRegMap — карта регистров (30 блоков): целостность (уникальные базы, ключевые: RCC/FLASH/TIM1/ADC1/USART1/USART3/I2C2/SPI1/WWDG/NVIC/SCB/SysTick), HSE=20 МГц, base_of (USART1/RCC/SPI1/I2C2), block().
+    """
     assert len(PERIPH_REG_MAP) == 30, f"блоков = {len(PERIPH_REG_MAP)} ждём 30"
     # уникальные базы
     bases = list(PERIPH_REG_MAP)
@@ -40,6 +43,9 @@ def _(run, rng):
 
 @t(0x1302C, 'A7 §93: RCC set/clear-семья (0xC6xx) — 6 примитивов: offset {0x00:0xC60C, 0x14:0xC624, 0x28:0xC644, 0x1C:0xC664, 0x10:0xC684, 0x18:0xC6A4}; gap 0xC63E..0xC684 = 0xC644(+0x28)/0xC664(+0x1C) — в карте RCC-блока')
 def _(run, rng):
+    """Emulator test @ 0x1302c: A7 §93: RCC set/clear-семья (0xC6xx) — 6 примитивов: offset {0x00:0xC60C, 0x14:0xC624, 0x28:0xC644, 0x1C:0xC664, 0x10:0xC684, 0x18:0xC6A4}; gap 0xC63E..0xC684 = 0xC644(+0x28)/0xC664(+0x1C) — в карте RCC-блока.
+    Тест эмулятора @ 0x1302c: A7 §93: RCC set/clear-семья (0xC6xx) — 6 примитивов: offset {0x00:0xC60C, 0x14:0xC624, 0x28:0xC644, 0x1C:0xC664, 0x10:0xC684, 0x18:0xC6A4}; gap 0xC63E..0xC684 = 0xC644(+0x28)/0xC664(+0x1C) — в карте RCC-блока.
+    """
     assert len(RCC_SETCLEAR_FAMILY) == 6
     assert RCC_SETCLEAR_FAMILY[0x28] == 0xC644
     assert RCC_SETCLEAR_FAMILY[0x1C] == 0xC664
@@ -55,6 +61,9 @@ def _(run, rng):
 
 @t(0x1302C, 'A7 §93: PeriphRegMap.touched_bases — сверка карты с periph-записями: 0x1302C(0x40004800) (RCC-пульс USART3) трогает RCC @0x40021000 (бит 0x40000 в +0x10) — база присутствует в карте')
 def _(run, rng):
+    """Emulator test @ 0x1302c: A7 §93: PeriphRegMap.touched_bases — сверка карты с periph-записями: 0x1302C(0x40004800) (RCC-пульс USART3) трогает RCC @0x40021000 (бит 0x40000 в +0x10) — база присутствует в карте.
+    Тест эмулятора @ 0x1302c: A7 §93: PeriphRegMap.touched_bases — сверка карты с periph-записями: 0x1302C(0x40004800) (RCC-пульс USART3) трогает RCC @0x40021000 (бит 0x40000 в +0x10) — база присутствует в карте.
+    """
     emu = McuEmu(max_insn=50000)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))

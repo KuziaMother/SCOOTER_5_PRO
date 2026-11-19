@@ -14,6 +14,9 @@ S = 0x3C8
 
 
 def name(rel):
+    """The name function of the script.
+    Функция name скрипта.
+    """
     if S <= rel < S + 0x80:
         return f"S+0x{rel - S:02x}"
     if W <= rel < W + 0x40:
@@ -22,10 +25,19 @@ def name(rel):
 
 
 def trace_call(run, label):
+    """The trace_call function of the script.
+    Функция trace_call скрипта.
+    """
     events = []
 
     def mk(tag):
+        """The mk function of the script.
+        Функция mk скрипта.
+        """
         def h(uc, access, address, size, value, user):
+            """The h function of the script.
+            Функция h скрипта.
+            """
             rel = address - RAM
             if rel < 0x150 or rel > 0x450:
                 return
@@ -44,6 +56,9 @@ def trace_call(run, label):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     run = Run(max_insn=500000)
     V, F = 3000, 1          # val=16 → out1=0, out2=2 после обновления
     mode, f339, c326, m2t = 3, 0, 520, 400

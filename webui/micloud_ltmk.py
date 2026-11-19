@@ -1,5 +1,33 @@
 #!/usr/bin/env python3
 """
+Getting the LTMK from the Mi Cloud for the new scooter profiles ("My scooters").
+
+It reuses the QR login and the RC4-encrypted cloud calls from
+tools/xct/token_extractor.py (the same code is already used by
+tools/fetch_firmware.py) — the session in secrets/micloud_session.json is shared
+between both, no repeated QR is needed while the session is valid.
+
+The key-getting scheme — docs/FACTS.md ("ltmk = the login key, the origin and the
+rotation") and docs/dreame_dfu_protocol.md section 6.5, verified on a real account
+on 2026-08-16:
+
+    POST /app/share/askbluetoothkey {type:own, did, keyid:0}
+    -> result.{key, encrypt_type}
+    encrypt_type==0: ltmk = hex_decode(key)
+    encrypt_type==1 (the Mi Home sharing PIN is set): ltmk = AES-128-CBC-NoPad(
+        key=MD5(pincode), iv=<hardcoded in the APK>, ct=hex_decode(key))
+
+The key is never logged in full and is not returned via the API without the explicit
+"reveal" request — only the length/the fact of getting it (the section 6 CLAUDE.md).
+
+NOT VERIFIED on a real account (unlike the askbluetoothkey scheme itself, which is
+verified — see docs/dreame_dfu_protocol.md section 6.5): the parsing of the device
+list (get_homes/get_devices) is written according to the structure used in
+tools/xct/token_extractor.py and the similar Xiaomi-cloud-tokens-extractor projects,
+but the concrete response keys (homelist/device_info/mac) were not checked live on
+this account — on a mismatch see list_devices() below; there is a fallback to the
+alternative field names and a clear error.
+
 Получение LTMK из Mi Cloud для новых профилей самокатов ("Мои самокаты").
 
 Переиспользует QR-логин и RC4-шифрованные вызовы облака из tools/xct/token_extractor.py
@@ -57,6 +85,8 @@ class LtmkError(Exception):
 
 
 def _save_session(c):
+    """Save the cloud connector session to secrets/micloud_session.json.
+    Сохранить сессию облачного коннектора в secrets/micloud_session.json."""
     os.makedirs(SECRETS_DIR, exist_ok=True)
     with open(SESSION_JSON, "w", encoding="utf-8") as f:
         json.dump({
@@ -67,6 +97,8 @@ def _save_session(c):
 
 
 def _load_session():
+    """Load the saved session into a new connector (None if absent/corrupt).
+    Загрузить сохранённую сессию в новый коннектор (None если нет/бито)."""
     if not os.path.exists(SESSION_JSON):
         return None
     try:
@@ -83,6 +115,8 @@ def _load_session():
 
 
 def _session_valid(c):
+    """Check the session via the get_device_cnt call (True if it answers).
+    Проверить сессию через get_device_cnt (True если отвечает)."""
     try:
         return bool(c.execute_api_call_encrypted(
             c.get_api_url("ru") + "/v2/user/get_device_cnt", {"data": "{}"}))
@@ -96,11 +130,15 @@ _qr_state = {"status": "idle"}  # idle|waiting|done|error
 
 
 def qr_login_status():
+    """The current QR login status (a dict copy).
+    Текущий статус QR-логина (копия dict)."""
     with _state_lock:
         return dict(_qr_state)
 
 
 def has_session():
+    """Whether a valid Mi Cloud session is present.
+    Есть ли валидная сессия Mi Cloud."""
     return get_connector() is not None
 
 
@@ -132,6 +170,8 @@ def start_qr_login():
     login_url = c._login_url
 
     def _wait():
+        """The background wait of the QR scan (the login steps 3/4).
+        Фоновое ожидание скана QR (login-шаги 3/4)."""
         try:
             ok = c.login_step_3() and c.login_step_4()
         except Exception as e:
@@ -203,6 +243,10 @@ def list_devices():
 
 
 def _decrypt_ltmk(key_hex, pincode):
+    """Decrypt the ltmk with the sharing PIN (AES-128-CBC-NoPad, the key = the MD5 of the
+    pincode, the IV is hardcoded in the APK).
+    Расшифровать ltmk PIN'ом шаринга (AES-128-CBC-NoPad, ключ = MD5 pincode, IV зашит
+    в APK)."""
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     aes_key = hashlib.md5(pincode.encode("utf-8")).digest()
     cipher = Cipher(algorithms.AES(aes_key), modes.CBC(LTMK_ENCRYPT_IV))
@@ -211,9 +255,12 @@ def _decrypt_ltmk(key_hex, pincode):
 
 
 def fetch_ltmk(did, country="ru", pincode=None):
-    """Тянет LTMK из облака для конкретного did. Если ключ на этом аккаунте
-    зашифрован PIN'ом шаринга (encrypt_type==1) и pincode не передан — бросает
-    LtmkError('PIN_REQUIRED'), вызывающий код должен переспросить PIN."""
+    """Pull the LTMK from the cloud for the specific did. If the key is encrypted with
+    the sharing PIN (encrypt_type==1) and the pincode is not passed — raise
+    LtmkError('PIN_REQUIRED'); the caller must ask for the PIN.
+    Тянет LTMK из облака для конкретного did. Если ключ на этом аккаунте зашифрован
+    PIN'ом шаринга (encrypt_type==1) и pincode не передан — бросает LtmkError
+    ('PIN_REQUIRED'), вызывающий код должен переспросить PIN."""
     c = get_connector()
     if not c:
         raise LtmkError("нет активной сессии Mi Cloud — сначала войдите по QR")
@@ -244,6 +291,8 @@ def fetch_ltmk(did, country="ru", pincode=None):
 
 
 def save_ltmk(mac, ltmk_bytes):
+    """Save the ltmk to secrets/ltmk_<MAC>.hex; return the path.
+    Сохранить ltmk в secrets/ltmk_<MAC>.hex; вернуть путь."""
     safe = mac.upper().replace(":", "")
     path = os.path.join(SECRETS_DIR, f"ltmk_{safe}.hex")
     os.makedirs(SECRETS_DIR, exist_ok=True)
@@ -253,10 +302,14 @@ def save_ltmk(mac, ltmk_bytes):
 
 
 def load_saved_ltmk_hex_exact(mac):
-    """Только точный per-MAC файл (secrets/ltmk_<MAC>.hex) — НЕ падает на общий
-    secrets/ltmk.hex, в отличие от dreame_auth.ltmk_path_for_mac. Для "показать
-    QR" это важно: иначе для нового MAC без своего файла показался бы ключ
-    ДРУГОГО (дефолтного) самоката — тихая и опасная путаница."""
+    """Only the exact per-MAC file (secrets/ltmk_<MAC>.hex) — NOT falling back to the
+    shared secrets/ltmk.hex, unlike dreame_auth.ltmk_path_for_mac. For the "show the QR"
+    this matters: otherwise for the new MAC without its own file the key of ANOTHER
+    (the default) scooter would be shown — a quiet and dangerous mix-up.
+    Только точный per-MAC файл (secrets/ltmk_<MAC>.hex) — НЕ падает на общий
+    secrets/ltmk.hex, в отличие от dreame_auth.ltmk_path_for_mac. Для "показать QR" это
+    важно: иначе для нового MAC без своего файла показался бы ключ ДРУГОГО (дефолтного)
+    самоката — тихая и опасная путаница."""
     safe = mac.upper().replace(":", "")
     path = os.path.join(SECRETS_DIR, f"ltmk_{safe}.hex")
     if not os.path.exists(path):

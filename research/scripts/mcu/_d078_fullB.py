@@ -11,6 +11,9 @@ from random import Random
 
 
 def sdiv(a, b):
+    """The sdiv function of the script.
+    Функция sdiv скрипта.
+    """
     if b == 0:
         return 0
     q = abs(a) // abs(b)
@@ -18,11 +21,17 @@ def sdiv(a, b):
 
 
 def s16(x):
+    """The s16 function of the script.
+    Функция s16 скрипта.
+    """
     x &= 0xFFFF
     return x - 0x10000 if x >= 0x8000 else x
 
 
 def s32(x):
+    """The s32 function of the script.
+    Функция s32 скрипта.
+    """
     x &= 0xFFFFFFFF
     return x - 0x100000000 if x >= 0x80000000 else x
 
@@ -100,6 +109,9 @@ def model_phaseB(V, F, mode, f339, c326, m2t,
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     run = Run(max_insn=500000)
     rng = Random(23)
     N = 2000

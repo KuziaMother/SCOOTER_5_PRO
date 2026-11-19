@@ -19,12 +19,18 @@ TGT_HI = 0x20000334   # exclusive
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     global d_bytes
     d_bytes = open(BIN, "rb").read()
     emu = McuEmu()
     hits = []
 
     def on_w(uc, access, address, size, value, user):
+        """The on_w function of the script.
+        Функция on_w скрипта.
+        """
         if TGT_LO <= address < TGT_HI:
             pc = uc.reg_read(UC_ARM_REG_LR)  # LR не подходит; берём PC ниже
             hits.append((address, size, value))
@@ -33,6 +39,9 @@ def main():
     # Unicorn: hook mem_write получает address/value; PC читаем как r15.
     from unicorn.arm_const import UC_ARM_REG_PC
     def on_w2(uc, access, address, size, value, user):
+        """The on_w2 function of the script.
+        Функция on_w2 скрипта.
+        """
         if TGT_LO <= address < TGT_HI:
             pc = uc.reg_read(UC_ARM_REG_PC)
             hits.append((pc, address, size, value))

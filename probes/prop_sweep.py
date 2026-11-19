@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Сессионный свип всех siid/piid самоката по BLE (только чтение).
+"""The session sweep of all the siid/piid of the scooter over the BLE (the read only).
+
+The goals (the TODO class B):
+  1. The live values of the telemetry/settings (the base for the section 34/31
+     correlations).
+  2. To find the app trigger of the GET sub 0x2A (the seed @0x871..@0x880, the 16 B) —
+     the candidates: the SIID_6 LOG_1..LOG_5 and the "raw" blob properties (the 16/18/20
+     B in the response).
+  3. To record the siid/piid -> the content mapping (for the siid/piid <-> CMD task).
+
+Everything decrypted (the plaintext responses) is duplicated into the log:
+logs/prop_sweep_<ts>.log
+
+Usage:  python probes/prop_sweep.py [--mac 2C:19:5C:DE:DE:88] [--no-logs]
+
+Сессионный свип всех siid/piid самоката по BLE (только чтение).
 
 Цели (TODO B-класс):
   1. Живые значения телеметрии/настроек (база для корреляций §34/§31).
@@ -46,10 +61,18 @@ BLOB_HINT = {7: "заголовок @0x844 (sub 0x22)?", 16: "СИД @0x871 (sub
 
 
 class Tee:
+    """The writer to the multiple streams (the stdout + the file), the errors are
+    suppressed.
+    Запись в несколько потоков (stdout + файл), ошибки подавляются."""
+
     def __init__(self, *streams):
+        """The streams to write to.
+        Потоки для записи."""
         self.streams = streams
 
     def write(self, s):
+        """Write to all the streams.
+        Записать во все потоки."""
         for st in self.streams:
             try:
                 st.write(s)
@@ -57,12 +80,18 @@ class Tee:
                 pass
 
     def flush(self):
+        """Flush all the streams.
+        Flush всех потоков."""
         for st in self.streams:
             with contextlib.suppress(Exception):
                 st.flush()
 
 
 async def read_one(t, sk, obj, app_cnt, out):
+    """Read one property (the request via spec_read) + the blob detection; append the
+    lines to out.
+    Прочитать одно свойство (запрос через spec_read) + blob-детект; дописать строки в
+    out."""
     s, p = obj
     name = sr.NAMES.get(obj, "?")
     print(f"--- siid={s} piid={p} [{name}] (app_cnt={app_cnt})")
@@ -98,6 +127,9 @@ async def read_one(t, sk, obj, app_cnt, out):
 
 
 async def run(mac):
+    """The run: the login + the full siid/piid sweep (the single properties, the log
+    file).
+    Прогон: логин + полный свип siid/piid (одиночные свойства, лог-файл)."""
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     try:

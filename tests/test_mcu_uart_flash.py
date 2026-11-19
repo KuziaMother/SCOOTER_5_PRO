@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-"""Офлайн-верификация tools/mcu_uart_flash.py против модели СТОРОНЫ MCU.
+"""The offline verification of tools/mcu_uart_flash.py against the MCU SIDE model.
+
+The model repeats the live verified sequence (logs/bw_flasher_log.txt, 2026-08-21):
+the handshake -> the 74 packets (0x800) -> the terminating empty packet -> the
+dfu_verify (the first response is empty) -> the dfu_active -> the reboot -> the
+get_ver "007".
+
+Plus the hostile conditions that kill the naive parser:
+  - the telemetry push frames go continuously, INCLUDING the chunk write phase;
+  - among them the frames with the CHK == 0x06 and the CHK == 0x15 (the false ACK
+    / the CRC-fail for the parser without the frame cutting);
+  - the frames are torn in the middle (the holdback logic of the Reader);
+  - some chunks answer only on the repeat (the retry path).
+
+The crypto anchor: the known vector from the live log (the uid=4A77..., the
+rand=01..10 -> the BLE_KEY 7049273DE6BD8383FBF33C3A128EB946). The CRC anchors of the
+wr_info: the a7dfe686 (the p1) and the 77f34c63 (the p74/p75) — from the same log.
+
+Офлайн-верификация tools/mcu_uart_flash.py против модели СТОРОНЫ MCU.
 
 Модель повторяет живую проверенную последовательность (logs/bw_flasher_log.txt,
 2026-08-21): handshake → 74 пакета(0x800) → терминирующий пустой пакет →
@@ -47,7 +65,9 @@ LIVE_KEY_01_10 = bytes.fromhex("7049273de6bd8383fbf33c3a128eb946")
 # --------------------------------------------------------------------------
 
 def make_push(sub, payload, chk=None):
-    """61 SUB LEN DATA CHK 9E; CHK = Σ(предшествующих) & 0xFF (или принудительно)."""
+    """The 61 SUB LEN DATA CHK 9E; the CHK = the sum (the preceding) & 0xFF (or
+    forced).
+    61 SUB LEN DATA CHK 9E; CHK = Σ(предшествующих) & 0xFF (или принудительно)."""
     body = bytes([0x61, sub, len(payload)]) + payload
     c = (sum(body) & 0xFF) if chk is None else chk
     return body + bytes([c, 0x9E])
@@ -58,6 +78,8 @@ PUSH_31 = make_push(0x31, bytes.fromhex("9b62cdcb8000190000"))
 # ЛОЖНЫЕ СРАСПЫ: валидные по структуре кадры с CHK 0x06 / 0x15.
 # Найдем payload так, чтобы Σ&0xFF дал нужное значение (последний байт подстраиваем).
 def push_with_chk(sub, base_payload, want):
+    """The push frame with the FORCED CHK (the false-ACK/CRC trap).
+    Push-кадр с ПРИНУДИТЕЛЬНЫМ CHK (ловушка ложного ACK/CRC)."""
     p = bytearray(base_payload)
     head = sum(bytes([0x61, sub, len(p)])) + sum(bytes(p[:-1]))
     p[-1] = (want - head) & 0xFF
@@ -77,9 +99,12 @@ for _f in (PUSH_30, PUSH_31, PUSH_ACK_TRAP, PUSH_CRC_TRAP):
 # --------------------------------------------------------------------------
 
 class McuEmulator:
-    """Отвечает на DFU-консоль как живой MCU из проверенного прогона."""
+    """Answers the DFU console as the live MCU from the verified run.
+    Отвечает на DFU-консоль как живой MCU из проверенного прогона."""
 
     def __init__(self, fw, delay=0.002):
+        """The firmware image + the state of the MCU side.
+        Образ прошивки + состояние MCU-стороны."""
         self.fw = fw
         self.delay = delay
         self.uid = LIVE_UID
@@ -100,13 +125,14 @@ class McuEmulator:
         self.ble_rand_val = None
         self.mcu_key_val = None
         self.rebooted = False
-        self.silent_active = False  # dfu_active без «ok» (ребут раньше ответа)
+        self.silent_active = False  # dfu_active без «ок» (ребут раньше ответа)
         self._stop = threading.Event()
         self._push_thread = None
 
     # -- устройство -> скрипт
     def _emit(self, data, split_at=None):
-        """Поставить байты в очередь; split_at — разорвать кадр на полпути."""
+        """Put the bytes into the queue; the split_at — tear the frame in the middle.
+        Поставить байты в очередь; split_at — разорвать кадр на полпути."""
         if split_at is not None and 0 < split_at < len(data):
             self.rx.put(data[:split_at])
             time.sleep(0.01)   # пауза, чтобы половина реально «повисла»
@@ -115,11 +141,16 @@ class McuEmulator:
             self.rx.put(data)
 
     def _respond(self, data, delay=None):
+        """The response with the delay.
+        Ответ с задержкой."""
         time.sleep(delay if delay is not None else self.delay)
         self._emit(data)
 
     # -- push-поток (враждебный: и в фазе записи, с ловушками CHK)
     def start_pushes(self, interval=0.03):
+        """Start the hostile push stream (including the write phase, with the CHK
+        traps).
+        Запустить враждебный push-поток (и в фазе записи, с ловушками CHK)."""
         # Кадры_emitятся атомарно (одним элементом очереди): байтовый интерливинг
         # ACKа ВНУТРИ рваного push-кадра — неоднозначный случай, в живых захватах
         # не наблюдался (в фазе записи push вообще молчал); holdback рваных кадров
@@ -128,6 +159,8 @@ class McuEmulator:
         i = 0
 
         def loop():
+            """The push loop (the frames every interval seconds).
+            Цикл push (кадры каждые interval секунд)."""
             nonlocal i
             while not self._stop.is_set():
                 d = traps[i % len(traps)]
@@ -139,10 +172,14 @@ class McuEmulator:
         self._push_thread.start()
 
     def stop(self):
+        """Stop the push stream.
+        Остановить push-поток."""
         self._stop.set()
 
     # -- скрипт -> устройство
     def on_write(self, data):
+        """The script->device bytes: the handshake/ack/chunk/text dispatch.
+        Байты скрипт->устройство: диспетч handshake/ack/чанк/текст."""
         self.tx_log += data
         if data == bytes.fromhex("532a7dac"):
             self._respond(bytes([0x64, 0x2A, 0x10]) + self.uid +
@@ -179,6 +216,9 @@ class McuEmulator:
             self._on_text(bytes(line))
 
     def _on_chunk(self, frame):
+        """The 133-byte chunk: the CRC check + the storage + the ACK (the every 97th
+        one — the retry path).
+        133-байтовый чанк: CRC-проверка + хранение + ACK (каждый 97-й — ретрай-путь)."""
         n = frame[1]
         assert frame[2] == 0xFF - n
         data, crc = frame[3:-2], binascii.crc_hqx(frame[3:-2], 0)
@@ -194,6 +234,10 @@ class McuEmulator:
         self._respond(b"\x06")
 
     def _on_text(self, line):
+        """The text console command (the get_ver/rd_info/ble_rand/mcu_key/nvm_write/
+        wr_info/dfu_verify/dfu_active).
+        Текстовая команда консоли (get_ver/rd_info/ble_rand/mcu_key/nvm_write/
+        wr_info/dfu_verify/dfu_active)."""
         if line == b"down get_ver":
             self.get_ver_calls += 1
             if self.rebooted:
@@ -208,7 +252,7 @@ class McuEmulator:
             key = sign_rand(self.uid, self.ble_rand_val, self.fw, muf.OFF0_DEFAULT, muf.OFF1_DEFAULT)
             self._respond(b"ok " + key + b"\r")
             return
-        if line == b"down mcu_rand":
+        if line.startswith(b"down mcu_rand"):
             self._respond(b"ok " + self.mcu_rand + b"\r")
             return
         if line.startswith(b"down mcu_key "):
@@ -254,17 +298,24 @@ class McuEmulator:
 
 
 class MockSerial:
-    """pyserial-совместимая обёртка над McuEmulator."""
+    """The pyserial-compatible wrapper over the McuEmulator.
+    pyserial-совместимая обёртка над McuEmulator."""
 
     def __init__(self, emu, *args, **kwargs):
+        """Bind the emulator.
+        Привязать эмулятор."""
         self.emu = emu
         self.pending = bytearray()
 
     def write(self, data):
+        """Write to the emulator (the script side).
+        Записать в эмулятор (сторона скрипта)."""
         self.emu.on_write(bytes(data))
         return len(data)
 
     def read(self, n=1):
+        """Read from the emulator queue (the device side).
+        Прочитать из очереди эмулятора (сторона устройства)."""
         if not self.pending:
             try:
                 self.pending += self.emu.rx.get(timeout=0.05)
@@ -275,12 +326,18 @@ class MockSerial:
         return d
 
     def flush(self):
+        """No-op (the mock has no output buffer).
+        Пустая операция (у мока нет выходного буфера)."""
         pass
 
     def close(self):
+        """Stop the emulator.
+        Остановить эмулятор."""
         self.emu.stop()
 
     def reset_input_buffer(self):  # pragma: no cover — наш скрипт её не вызывает
+        """Forbidden: it tears the push frame in the middle.
+        Запрещён: рвёт push-кадр пополам."""
         pytest.fail("reset_input_buffer запрещён (рвёт push-кадр пополам)")
 
 
@@ -289,11 +346,17 @@ class MockSerial:
 # --------------------------------------------------------------------------
 
 def test_keygen_known_vector():
+    """The keygen known vector (the live log anchor).
+    Known vector keygen (якорь живого лога)."""
     fw = FW_PATH.read_bytes()
     assert sign_rand(LIVE_UID, bytes(range(1, 17)), fw, 0x24187, 0x24387) == LIVE_KEY_01_10
 
 
 def test_reader_strips_valid_frames_only():
+    """The Reader cuts only the valid frames (the broken CHK is the data, the torn
+    tail is held back).
+    Reader вырезает только валидные кадры (битый CHK — данные, рваный хвост
+    удерживается)."""
     s = muf.Reader.__new__(muf.Reader)
     s.raw = bytearray()
     s.clean = bytearray()
@@ -319,7 +382,8 @@ def test_reader_strips_valid_frames_only():
 
 
 def _run_flash(capsys, silent_active=False):
-    """Прогнать mcu_uart_flash.main() над эмулятором; вернуть (emu, out)."""
+    """Run the mcu_uart_flash.main() over the emulator; return the (emu, out).
+    Прогнать mcu_uart_flash.main() над эмулятором; вернуть (emu, out)."""
     fw = FW_PATH.read_bytes()
     emu = McuEmulator(fw)
     emu.silent_active = silent_active
@@ -338,6 +402,10 @@ def _run_flash(capsys, silent_active=False):
 
 
 def _assert_write_flow(emu, out, fw):
+    """The assertions of the whole write flow (the handshake/packets/chunks/
+    confirmations/wr_info/verify/active/result).
+    Ассерты всего write-потока (handshake/пакеты/чанки/подтверждения/wr_info/
+    verify/active/итог)."""
     # -- handshake
     assert emu.get_ver_calls >= 2          # warmup + явный get_ver (+ после)
     assert emu.ble_rand_val is not None and len(emu.ble_rand_val) == 16
@@ -376,13 +444,20 @@ def _assert_write_flow(emu, out, fw):
 
 
 def test_full_flash_flow(capsys):
+    """The full flash flow (the live 2026-08-21 sequence).
+    Полный flash-цикл (живая последовательность 2026-08-21)."""
     emu, out, fw = _run_flash(capsys)
     _assert_write_flow(emu, out, fw)
     print(out)
 
 
 def test_full_flash_flow_silent_active(capsys):
-    """Живой сценарий 2026-08-22: «ok» на dfu_active потерян в ребуте.
+    """The live scenario 2026-08-22: the "ok" on the dfu_active is lost in the
+    reboot.
+
+    The script must not crash, but verify the read-only: the version returned + the
+    DFU region is cleaned (the rd_info) — and count the activation as committed.
+    Живой сценарий 2026-08-22: «ок» на dfu_active потерян в ребуте.
 
     Скрипт должен не падать, а проверить read-only: версия вернулась +
     DFU-регион очищен (rd_info) — и засчитать активацию закоммиченной.

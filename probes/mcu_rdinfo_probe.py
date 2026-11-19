@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 """
+The READ-ONLY: it tries the `down rd_info` with the different 3-byte suffixes to
+understand whether it is the reader of the NVM/DFU region by the selector (and whether
+the data can be dumped so). It writes NOTHING — the rd_info = the read info. If some
+selector gives a reply NOT of the "ok ..." form, we record it too (but we do not repeat
+the command aggressively).
+
 READ-ONLY: пробует `down rd_info` с разными 3-байтными суффиксами, чтобы понять,
 является ли он читателем NVM/DFU-региона по селектору (и можно ли так дампит данные).
 НИЧЕГО не пишет — rd_info = read info. Если какой-то селектор даст ответ НЕ вида
@@ -10,18 +16,27 @@ import serial
 
 
 class Reader:
+    """The push filter (the 0x61...chk 9E frames are cut out of the clean buffer).
+    Push-фильтр (кадры 0x61…chk 9E отбрасываются из clean-буфера)."""
+
     def __init__(self, s):
+        """Wrap the serial port s.
+        Обёртка над последовательным портом s."""
         self.s = s
         self.raw = bytearray()
         self.clean = bytearray()
 
     def _pump(self):
+        """Read a chunk into the raw + classify.
+        Прочитать чанк в raw + классифицировать."""
         d = self.s.read(256)
         if d:
             self.raw += d
         self._classify()
 
     def _classify(self):
+        """Split the raw: cut the valid push frames into the clean, hold the tail.
+        Разделить raw: валидные push-кадры выкинуть, clean пополнить, хвост удержать."""
         out = bytearray(); i, n = 0, len(self.raw)
         while i < n:
             b = self.raw[i]
@@ -39,6 +54,8 @@ class Reader:
         del self.raw[:i]; self.clean += out
 
     def read_until(self, term, timeout=3.0):
+        """The bytes up to the term (inclusive); on the timeout — everything there is.
+        Байты до `term` включительно; на таймауте — всё, что есть."""
         end = time.time() + timeout
         while True:
             j = self.clean.find(term)
@@ -49,10 +66,14 @@ class Reader:
             self._pump()
 
     def drain(self):
+        """Take everything from the clean and return it.
+        Забрать всё из clean и вернуть."""
         d = bytes(self.clean); del self.clean[:]; return d
 
 
 def main():
+    """The rd_info suffix sweep (the read-only run).
+    Обход суффиксов rd_info (read-only прогон)."""
     s = serial.Serial("COM3", 19200, timeout=0.2)
     r = Reader(s)
     try:

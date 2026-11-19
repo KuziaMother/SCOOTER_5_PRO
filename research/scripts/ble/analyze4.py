@@ -13,12 +13,18 @@ md = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_LITTLE_ENDIAN)
 
 def nearest_string(off):
     # строка, начинающаяся в [off-3 .. off]
+    """The nearest_string function of the script.
+    Функция nearest_string скрипта.
+    """
     for o in (off, off-1, off-2, off-3):
         if o in strings: return strings[o]
     return None
 
 def analyze_region(a, b, out):
     # границы функций по push {..,lr}
+    """The analyze_region function of the script.
+    Функция analyze_region скрипта.
+    """
     starts = [o for o in range(a, b, 2)
               if (struct.unpack_from("<H", d, o)[0] & 0xFF00) == 0xB500]
     starts.append(b)

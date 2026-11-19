@@ -20,6 +20,9 @@ RES = os.path.dirname(os.path.dirname(HERE))   # research/
 
 
 def read_u16(d, i, signed=False):
+    """The read_u16 function of the script.
+    Функция read_u16 скрипта.
+    """
     return struct.unpack_from("<h" if signed else "<H", d, i)[0]
 
 
@@ -89,6 +92,9 @@ def dump_battery_curves(d, start=0x18036, lo=2500, hi=4400, drop=50):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", default=os.path.join(RES, "images", "mcu_0007.bin"))
     ap.add_argument("--min-len", type=int, default=6)

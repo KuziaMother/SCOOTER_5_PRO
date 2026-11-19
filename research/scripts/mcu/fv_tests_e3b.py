@@ -31,6 +31,9 @@ def _rx_probe(run, cmd, payload=b''):
         uc.mem_write(UsartRxContext.slot_base(s), bytes(0x96))
 
     def hw(u_, acc, addr, size, val, usr):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if RAM <= addr < RAM + 0x20000 and not (0x20017F00 <= addr < 0x20018000):
             ev.append((addr - RAM, val & 0xFF))
 
@@ -43,10 +46,16 @@ def _rx_probe(run, cmd, payload=b''):
 
 
 def _ctx(run, slot, n=13):
+    """The helper function (_ctx).
+    Вспомогательная функция (_ctx).
+    """
     return bytes(run.uc.mem_read(UsartRxContext.slot_base(slot), n))
 
 
 def _rd(run, off):
+    """The helper function (_rd).
+    Вспомогательная функция (_rd).
+    """
     return run.uc.mem_read(RAM + off, 1)[0]
 
 
@@ -54,6 +63,9 @@ def _rd(run, off):
             'RAM+0x2D2..0x2D7 (C); tail 0x2D1/0x2D8 записан (значение — carry-over); '
             'head 0→1, state→0, 0x171=0')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "B"/"C" SET-блоки: ring[3..8] → RAM+0x2CB..0x2D0 (B) / RAM+0x2D2..0x2D7 (C); tail 0x2D1/0x2D8 записан (значение — carry-over); head 0→1, state→0, 0x171=0.
+    Тест эмулятора @ 0x1e9e0: §80: RX "B"/"C" SET-блоки: ring[3..8] → RAM+0x2CB..0x2D0 (B) / RAM+0x2D2..0x2D7 (C); tail 0x2D1/0x2D8 записан (значение — carry-over); head 0→1, state→0, 0x171=0.
+    """
     for cmd, base, tail in (('B', 0x2CB, 0x2D1), ('C', 0x2D2, 0x2D8)):
         payload = bytes([0x11, 0x22, 0x33, 0x44, 0x55, 0x66])
         ev = _rx_probe(run, cmd, payload)
@@ -69,6 +81,9 @@ def _(run, rng):
             'ring6→0x308, ring8→0x30A, ring9→0x30C, 0x30E=0; ring5/7/10 не пишутся')
 def _(run, rng):
     # нормальные значения
+    """Emulator test @ 0x1e9e0: §80: RX "D" SET+clamp: ring3→0x2E6, ring4→0x306 (clamp min 0x64: 0xFF→0x64), ring6→0x308, ring8→0x30A, ring9→0x30C, 0x30E=0; ring5/7/10 не пишутся.
+    Тест эмулятора @ 0x1e9e0: §80: RX "D" SET+clamp: ring3→0x2E6, ring4→0x306 (clamp min 0x64: 0xFF→0x64), ring6→0x308, ring8→0x30A, ring9→0x30C, 0x30E=0; ring5/7/10 не пишутся.
+    """
     payload = bytes([0x01, 0x02, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88])
     ev = _rx_probe(run, 'D', payload)
     got = dict(ev)
@@ -87,6 +102,9 @@ def _(run, rng):
 @t(0x1E9E0, '§80: RX "F" varlen-copy: двухпроходный — сначала clear 0x2F2..0x305 (20B), '
             'затем ring[3..3+len)→0x2F2.. (len≤0x14); счётчик-проход 0x174')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "F" varlen-copy: двухпроходный — сначала clear 0x2F2..0x305 (20B), затем ring[3..3+len)→0x2F2.. (len≤0x14); счётчик-проход 0x174.
+    Тест эмулятора @ 0x1e9e0: §80: RX "F" varlen-copy: двухпроходный — сначала clear 0x2F2..0x305 (20B), затем ring[3..3+len)→0x2F2.. (len≤0x14); счётчик-проход 0x174.
+    """
     payload = bytes([0x31, 0x32, 0x33, 0x34, 0x35])
     ev = _rx_probe(run, 'F', payload)
     vals = {}
@@ -102,6 +120,9 @@ def _(run, rng):
 @t(0x1E9E0, '§80: RX "H" SET 4B + response: ring[3..6]→0x354..0x357; context @0x10B5 = '
             '{9,\'d\',0x2c,4,d1..d4,crc,0x9B}; crc=Σctx[1..]&0xFF (running-sum @0x175)')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "H" SET 4B + response: ring[3..6]→0x354..0x357; context @0x10B5 = {9,'d',0x2c,4,d1..d4,crc,0x9B}; crc=Σctx[1..]&0xFF (running-sum @0x175).
+    Тест эмулятора @ 0x1e9e0: §80: RX "H" SET 4B + response: ring[3..6]→0x354..0x357; context @0x10B5 = {9,'d',0x2c,4,d1..d4,crc,0x9B}; crc=Σctx[1..]&0xFF (running-sum @0x175).
+    """
     payload = bytes([0x41, 0x42, 0x43, 0x44])
     ev = _rx_probe(run, 'H', payload)
     got = dict(ev)
@@ -119,6 +140,9 @@ def _(run, rng):
             'J → ctx {6,\'d\',0x2f,1,[carry],crc,0x9B}, 0x36C=0 (ctx4 J — register carry-over; '
             'crc детерминирован только для I: (0x64+c2+c3)&0xFF)')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "I"/"J" response + флаги: I → ctx {5,'d',0x2e,0,crc=0x92,0x9B}, 0x36A=0; J → ctx {6,'d',0x2f,1,[carry],crc,0x9B}, 0x36C=0 (ctx4 J — register carry-over; crc детерминирован только для I: (0x64+c2+c3)&0xFF).
+    Тест эмулятора @ 0x1e9e0: §80: RX "I"/"J" response + флаги: I → ctx {5,'d',0x2e,0,crc=0x92,0x9B}, 0x36A=0; J → ctx {6,'d',0x2f,1,[carry],crc,0x9B}, 0x36C=0 (ctx4 J — register carry-over; crc детерминирован только для I: (0x64+c2+c3)&0xFF).
+    """
     for cmd, fl, head, c2, c3, c4, crc_i in (('I', 0x36A, 5, 0x2E, 0, 0, 4),
                                              ('J', 0x36C, 6, 0x2F, 1, 0, 5)):
         ev = _rx_probe(run, cmd, bytes([0x51, 0x52, 0x53]))
@@ -136,6 +160,9 @@ def _(run, rng):
             'crc=0x65+LEN+0x4f+0x4b), флаги 0x369/0x36F=0, toggle 0→1 (ctx в слоте 0, '
             'следующий кадр — слот 1)')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "K"/"c" frame-start: ctx {6,'e',LEN,'O','K',crc,0x9A} (LEN=0x1b/0x53, crc=0x65+LEN+0x4f+0x4b), флаги 0x369/0x36F=0, toggle 0→1 (ctx в слоте 0, следующий кадр — слот 1).
+    Тест эмулятора @ 0x1e9e0: §80: RX "K"/"c" frame-start: ctx {6,'e',LEN,'O','K',crc,0x9A} (LEN=0x1b/0x53, crc=0x65+LEN+0x4f+0x4b), флаги 0x369/0x36F=0, toggle 0→1 (ctx в слоте 0, следующий кадр — слот 1).
+    """
     for cmd, fl, ln in (('K', 0x369, 0x1B), ('c', 0x36F, 0x53)):
         ev = _rx_probe(run, cmd, bytes([0x91, 0x92]))
         got = dict(ev)
@@ -150,6 +177,9 @@ def _(run, rng):
 @t(0x1E9E0, '§80: RX "`"/"a" response-сборщики: ctx {5,\'d\',0x50/0x51,0,crc,0x9B}; '
             'crc=0x64+len_field (0xB4/0xB5); checksum 0x9B=0xFF-0x64')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §80: RX "`"/"a" response-сборщики: ctx {5,'d',0x50/0x51,0,crc,0x9B}; crc=0x64+len_field (0xB4/0xB5); checksum 0x9B=0xFF-0x64.
+    Тест эмулятора @ 0x1e9e0: §80: RX "`"/"a" response-сборщики: ctx {5,'d',0x50/0x51,0,crc,0x9B}; crc=0x64+len_field (0xB4/0xB5); checksum 0x9B=0xFF-0x64.
+    """
     for cmd, c2, crc in ((chr(0x60), 0x50, 0xB4), ('a', 0x51, 0xB5)):
         ev = _rx_probe(run, cmd, bytes([0x71, 0x72, 0x73]))
         ctx = _ctx(run, 0)
@@ -163,6 +193,9 @@ def _(run, rng):
             'response/d-фрейм (ctx[1]=0x64) = H/I/J/`/a; telemetry = A; frame-start = @/G/K/c. '
             'Единый dispatch-цепочка cmp 0x41..0x4A/0x60/0x61 → 0x1ea82')
 def _(run, rng):
+    """Emulator test @ 0x1e9e0: §96: RX "E" SET-коллектор (закрыт): payload[0..5] → 3 u16-слота 0x2DA/0x2DC/0x2DE (u16=(p[2k]<<8)|p[2k+1]); полный набор коллекторов: SET = B/C (6B 0x2CB/0x2D2), D (0x2E6/0x306 clamp), E (u16 0x2DA), F (20B 0x2F2); response/d-фрейм (ctx[1]=0x64) = H/I/J/`/a; telemetry = A; frame-start = @/G/K/c. Единый dispatch-цепочка cmp 0x41..0x4A/0x60/0x61 → 0x1ea82.
+    Тест эмулятора @ 0x1e9e0: §96: RX "E" SET-коллектор (закрыт): payload[0..5] → 3 u16-слота 0x2DA/0x2DC/0x2DE (u16=(p[2k]<<8)|p[2k+1]); полный набор коллекторов: SET = B/C (6B 0x2CB/0x2D2), D (0x2E6/0x306 clamp), E (u16 0x2DA), F (20B 0x2F2); response/d-фрейм (ctx[1]=0x64) = H/I/J/`/a; telemetry = A; frame-start = @/G/K/c. Единый dispatch-цепочка cmp 0x41..0x4A/0x60/0x61 → 0x1ea82.
+    """
     payload = bytes([0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6])
     ev = _rx_probe(run, 'E', payload)
     got = dict(ev)

@@ -35,6 +35,9 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=60000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -46,10 +49,16 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=60000):
 
 
 def _r(uc, off, size=1):
+    """The helper function (_r).
+    Вспомогательная функция (_r).
+    """
     return int.from_bytes(bytes(uc.mem_read(RAM + off, size)), 'little')
 
 
 def _p(uc, addr, size=4):
+    """The helper function (_p).
+    Вспомогательная функция (_p).
+    """
     return int.from_bytes(bytes(uc.mem_read(addr, size)), 'little')
 
 
@@ -66,6 +75,9 @@ def _ramw(emu):
 @t(0x15B84, 'E2-b81: 0x15b84() — byte-флаг (45 insn, ret=1): byte[0xB8C]=1 '
             '(1 запись). fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x15b84: E2-b81: 0x15b84() — byte-флаг (45 insn, ret=1): byte[0xB8C]=1 (1 запись). fresh-emu golden..
+    Тест эмулятора @ 0x15b84: E2-b81: 0x15b84() — byte-флаг (45 insn, ret=1): byte[0xB8C]=1 (1 запись). fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x15B84)
     rw = _ramw(emu)
     assert rw == [(0xB8C, 1, 1)], \
@@ -80,6 +92,9 @@ def _(run, rng):
 @t(0x15DF4, 'E2-b81: 0x15df4() — короткий инициализатор (48 insn, ret=0, tail в '
             'unmapped): без побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0x15df4: E2-b81: 0x15df4() — короткий инициализатор (48 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0x15df4: E2-b81: 0x15df4() — короткий инициализатор (48 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0x15DF4)
     assert len(emu.periph_writes) == 0, \
         f'0x15df4: P={len(emu.periph_writes)} ждём 0'
@@ -91,6 +106,9 @@ def _(run, rng):
 @t(0x16040, 'E2-b81: 0x16040() — тривиальный (2 insn, ret=0, нормальный выход): '
             'без побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0x16040: E2-b81: 0x16040() — тривиальный (2 insn, ret=0, нормальный выход): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0x16040: E2-b81: 0x16040() — тривиальный (2 insn, ret=0, нормальный выход): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0x16040)
     assert len(emu.periph_writes) == 0, \
         f'0x16040: P={len(emu.periph_writes)} ждём 0'
@@ -102,6 +120,9 @@ def _(run, rng):
 @t(0x173CC, 'E2-b81: 0x173cc() — короткий инициализатор (77 insn, ret=0, tail в '
             'unmapped): без побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0x173cc: E2-b81: 0x173cc() — короткий инициализатор (77 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0x173cc: E2-b81: 0x173cc() — короткий инициализатор (77 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0x173CC)
     assert len(emu.periph_writes) == 0, \
         f'0x173cc: P={len(emu.periph_writes)} ждём 0'
@@ -113,6 +134,9 @@ def _(run, rng):
 @t(0x1A688, 'E2-b81: 0x1a688() — короткий инициализатор (12 insn, ret=0, tail в '
             'unmapped): без побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0x1a688: E2-b81: 0x1a688() — короткий инициализатор (12 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0x1a688: E2-b81: 0x1a688() — короткий инициализатор (12 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0x1A688)
     assert len(emu.periph_writes) == 0, \
         f'0x1a688: P={len(emu.periph_writes)} ждём 0'
@@ -124,6 +148,9 @@ def _(run, rng):
 @t(0x1DE5E, 'E2-b81: 0x1de5e() — чистый блок (627 insn, ret=0, tail в unmapped): '
             'без побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0x1de5e: E2-b81: 0x1de5e() — чистый блок (627 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0x1de5e: E2-b81: 0x1de5e() — чистый блок (627 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0x1DE5E)
     assert len(emu.periph_writes) == 0, \
         f'0x1de5e: P={len(emu.periph_writes)} ждём 0'
@@ -136,6 +163,9 @@ def _(run, rng):
             'byte[0xA43]=0x04, byte[0xA44]=0x63, byte[0xA45]=0x44, '
             'byte[0xA46]=0xA7, byte[0xA47]=0x9C (5 записей). fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x1f1cc: E2-b81: 0x1f1cc() — magic-байты (65 insn, ret=1): byte[0xA43]=0x04, byte[0xA44]=0x63, byte[0xA45]=0x44, byte[0xA46]=0xA7, byte[0xA47]=0x9C (5 записей). fresh-emu golden..
+    Тест эмулятора @ 0x1f1cc: E2-b81: 0x1f1cc() — magic-байты (65 insn, ret=1): byte[0xA43]=0x04, byte[0xA44]=0x63, byte[0xA45]=0x44, byte[0xA46]=0xA7, byte[0xA47]=0x9C (5 записей). fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x1F1CC)
     rw = _ramw(emu)
     assert rw == [(0xA43, 1, 0x04), (0xA44, 1, 0x63), (0xA45, 1, 0x44),
@@ -151,6 +181,9 @@ def _(run, rng):
 @t(0x1F71C, 'E2-b81: 0x1f71c() — короткий чистый блок (~22 insn, ret=0, tail в '
             'unmapped): без побочных эффектов; insn плавающий (20..100).')
 def _(run, rng):
+    """Emulator test @ 0x1f71c: E2-b81: 0x1f71c() — короткий чистый блок (~22 insn, ret=0, tail в unmapped): без побочных эффектов; insn плавающий (20..100)..
+    Тест эмулятора @ 0x1f71c: E2-b81: 0x1f71c() — короткий чистый блок (~22 insn, ret=0, tail в unmapped): без побочных эффектов; insn плавающий (20..100)..
+    """
     uc, emu, lp = _fresh_probe(0x1F71C)
     assert len(emu.periph_writes) == 0, \
         f'0x1f71c: P={len(emu.periph_writes)} ждём 0'
@@ -163,6 +196,9 @@ def _(run, rng):
 @t(0x216E4, 'E2-b81: 0x216e4() — короткий чистый блок (~10 insn, ret=0, tail в '
             'unmapped): без побочных эффектов; insn плавающий (5..60).')
 def _(run, rng):
+    """Emulator test @ 0x216e4: E2-b81: 0x216e4() — короткий чистый блок (~10 insn, ret=0, tail в unmapped): без побочных эффектов; insn плавающий (5..60)..
+    Тест эмулятора @ 0x216e4: E2-b81: 0x216e4() — короткий чистый блок (~10 insn, ret=0, tail в unmapped): без побочных эффектов; insn плавающий (5..60)..
+    """
     uc, emu, lp = _fresh_probe(0x216E4)
     assert len(emu.periph_writes) == 0, \
         f'0x216e4: P={len(emu.periph_writes)} ждём 0'
@@ -175,6 +211,9 @@ def _(run, rng):
 @t(0xC20C, 'E2-b81: 0xc20c() — тривиальный (9 insn, ret=0, tail в unmapped): без '
            'побочных эффектов. smoke+ret+insn golden.')
 def _(run, rng):
+    """Emulator test @ 0xc20c: E2-b81: 0xc20c() — тривиальный (9 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    Тест эмулятора @ 0xc20c: E2-b81: 0xc20c() — тривиальный (9 insn, ret=0, tail в unmapped): без побочных эффектов. smoke+ret+insn golden..
+    """
     uc, emu, lp = _fresh_probe(0xC20C)
     assert len(emu.periph_writes) == 0, \
         f'0xc20c: P={len(emu.periph_writes)} ждём 0'
@@ -187,6 +226,9 @@ def _(run, rng):
             '0x40010828=[0x10], 0x40010818=[0x10]; SPI1_DR=[3,0,0,0]+0xFF×N (N>=10). '
             'fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x13b14: E2-b81: 0x13b14() — GPIOB/DR-цикл (~5999 insn, ret=0/1 по фазе, 38 записей): 0x40010828=[0x10], 0x40010818=[0x10]; SPI1_DR=[3,0,0,0]+0xFF×N (N>=10). fresh-emu golden..
+    Тест эмулятора @ 0x13b14: E2-b81: 0x13b14() — GPIOB/DR-цикл (~5999 insn, ret=0/1 по фазе, 38 записей): 0x40010828=[0x10], 0x40010818=[0x10]; SPI1_DR=[3,0,0,0]+0xFF×N (N>=10). fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x13B14)
     assert 5000 <= emu.insn <= 6500, \
         f'0x13b14: insn={emu.insn} ждём ~5999'
@@ -206,6 +248,9 @@ def _(run, rng):
 @t(0xD00C, 'E2-b81: 0xd00c() — I2C-magic-спин (insn>=50000, ret=1/6, 3 записи): '
            '0x40022004: 0x45670123→0xCDEF89AB; 0x4002200C=0xFFFFFFFF. fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0xd00c: E2-b81: 0xd00c() — I2C-magic-спин (insn>=50000, ret=1/6, 3 записи): 0x40022004: 0x45670123→0xCDEF89AB; 0x4002200C=0xFFFFFFFF. fresh-emu golden..
+    Тест эмулятора @ 0xd00c: E2-b81: 0xd00c() — I2C-magic-спин (insn>=50000, ret=1/6, 3 записи): 0x40022004: 0x45670123→0xCDEF89AB; 0x4002200C=0xFFFFFFFF. fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0xD00C)
     assert emu.insn >= 50000, f'0xd00c: insn={emu.insn} ждём спин (>=50000)'
     assert _pw(emu, 0x40022004) == [0x45670123, 0xCDEF89AB], \
@@ -221,6 +266,9 @@ def _(run, rng):
 @t(0x57A0, 'E2-b81: 0x57a0() — чистый спин (insn>=50000, ret=маленькое значение по фазе '
            'спина, напр. 0x249/0x2BE): без периферийных/RAM-побочных эффектов.')
 def _(run, rng):
+    """Emulator test @ 0x57a0: E2-b81: 0x57a0() — чистый спин (insn>=50000, ret=маленькое значение по фазе спина, напр. 0x249/0x2BE): без периферийных/RAM-побочных эффектов..
+    Тест эмулятора @ 0x57a0: E2-b81: 0x57a0() — чистый спин (insn>=50000, ret=маленькое значение по фазе спина, напр. 0x249/0x2BE): без периферийных/RAM-побочных эффектов..
+    """
     uc, emu, lp = _fresh_probe(0x57A0)
     assert emu.insn >= 50000, f'0x57a0: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \

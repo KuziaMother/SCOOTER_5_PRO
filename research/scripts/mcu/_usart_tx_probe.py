@@ -24,6 +24,9 @@ def find_frames(data):
     return frames
 
 def run_and_scan(seed):
+    """The run_and_scan function of the script.
+    Функция run_and_scan скрипта.
+    """
     emu = McuEmu(max_insn=400_000)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))     # чистая RAM
@@ -32,6 +35,9 @@ def run_and_scan(seed):
         uc.mem_write(RAM + off, struct.pack('<%dI' % (sz//4 or 1), *([val] + [0]*(sz//4-1)))[:sz])
     emu.hook_periph_ready()
     def _st(uc_, addr, size, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + 0x23680 or FLASH1 <= aa < FLASH1 + 0x23680):
             uc_.emu_stop()

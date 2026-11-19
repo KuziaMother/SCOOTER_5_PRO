@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""The scratch MD-check: the isolated Capstone decode of the bytes @0x1EA0E
+(the disputed Thumb encoding) and the halfword view.
+
+Скрэтч-MD-проверка: изолированный Capstone-декод байтов @0x1EA0E
+(спорное Thumb-кодирование) + вид по halfword'ам.
+"""
 import os, sys, io, struct
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_LITTLE_ENDIAN

@@ -1,6 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Живой захват пушей свойств (TODO B «Живой пуш-захват», §18).
+"""The live capture of the property pushes (the TODO B "the live push capture", the
+section 18).
+
+The scenario in one session (the Mi Home in parallel is NOT needed — the BLE
+single-connection):
+  1. the connect + the login
+  2. the baseline: the 2.4 TAIL_LIGHT, the 2.2 IS_LOCKED, the 1.1 RIDING_MODE
+  3. the SET 2.4=1 (the tail light ON) -> wait for the push
+  4. the SET 2.4=0 (the light OFF) -> wait for the push
+  5. (optional --lock) the SET 2.2=1/0 -> the IS_LOCKED push
+
+All the 0x001b notifications are decrypted and logged: logs/push_capture_<ts>.log
+
+The SET format (the docs/BLE.md section 6): the op=0, the element [u8 siid][u16 piid]
+[u16 (type<<12)|vlen][value]. The SAFETY: only the light/the lock — the standard
+controlled properties, nothing destructive.
+
+Usage:  python probes/push_capture.py [--no-light] [--lock] [--hold 5]
+
+Живой захват пушей свойств (TODO B «Живой пуш-захват», §18).
 
 Сценарий в одной сессии (Mi Home параллельно НЕ нужен — BLE single-connection):
   1. connect + login
@@ -38,7 +57,8 @@ CH_NOTIFY = 0x001B
 
 
 def build_set(obj, value, vtype, tid=2):
-    """SET-кадр: op=0, один элемент с value."""
+    """The SET frame: the op=0, one element with the value.
+    SET-кадр: op=0, один элемент с value."""
     s, p = obj
     body = struct.pack("<BHH", s & 0xFF, p & 0xFFFF, (vtype & 0xF) << 12 | len(value)) + value
     total = 6 + len(body)
@@ -46,14 +66,19 @@ def build_set(obj, value, vtype, tid=2):
 
 
 class PushWatcher:
-    """Расшифровывает и печатает ВСЕ уведомления 0x001b из очереди транспорта."""
+    """Decrypts and prints ALL the 0x001b notifications from the transport queue.
+    Расшифровывает и печатает ВСЕ уведомления 0x001b из очереди транспорта."""
 
     def __init__(self, t, sk):
+        """Bind the transport t + the session key sk.
+        Привязать транспорт t + session key sk."""
         self.t = t
         self.sk = sk
         self.count = 0
 
     async def run(self, timeout):
+        """Watch the notifications until the timeout; return the push count.
+        Смотреть уведомления до таймаута; вернуть число пушей."""
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
@@ -75,6 +100,10 @@ class PushWatcher:
         return self.count
 
     def _try_decode(self, b):
+        """The transport: the [u16 counter] + the CCM cipher (the dev key) — as in the
+        GET response; None if not our format (the transport ACK/CTR).
+        Транспорт: [u16 counter] + CCM-шифр (dev key) — как в ответе на GET; None если
+        не наш формат (транспортный ACK/CTR)."""
         # транспорт: [u16 counter] + CCM-шифр (dev key) — как в ответе на GET
         if len(b) < 6:
             return None
@@ -87,6 +116,8 @@ class PushWatcher:
 
 
 async def do_read(t, sk, obj, app_cnt):
+    """The single GET read (the response print); return the incremented app_cnt.
+    Одиночный GET-чтение (печать ответа); вернуть увеличенный app_cnt."""
     pt = await sr.spec_request(t, sk, [obj], app_cnt)
     if pt:
         for line in sr.parse_reply(pt):
@@ -95,6 +126,10 @@ async def do_read(t, sk, obj, app_cnt):
 
 
 async def do_set(t, sk, obj, value, vtype, app_cnt):
+    """The SET with the CTR/DATA handshake (the ready-ack, the pull, the response
+    read); return the incremented app_cnt.
+    SET с CTR/DATA-рукопожатием (ready-ack, pull, чтение ответа); вернуть увеличенный
+    app_cnt."""
     name = sr.NAMES.get(obj, f"{obj[0]}.{obj[1]}")
     print(f"=== SET {name} = {value} (app_cnt={app_cnt}) ===")
     payload = sr.enc_app(sk, app_cnt, build_set(obj, value, vtype))
@@ -104,6 +139,8 @@ async def do_set(t, sk, obj, value, vtype, app_cnt):
     await t.write(CH_WRITE, struct.pack("<HBBH", 0, 0x00, 0, len(frames)))
 
     async def send_seq(n):
+        """Send the n-th DATA frame of the SET payload.
+        Отправить n-й DATA-кадр SET-пейлоада."""
         if 1 <= n <= len(frames):
             await t.write(CH_WRITE, struct.pack("<H", n) + frames[n - 1])
 
@@ -173,6 +210,9 @@ async def do_set(t, sk, obj, value, vtype, app_cnt):
 
 
 async def run(mac, do_light=True, do_lock=False, hold=5):
+    """The whole scenario: the login, the baseline, the light/atmo/TCS/lock sets with the
+    push watching.
+    Весь сценарий: логин, baseline, set свет/atmo/TCS/замок с наблюдением пушей."""
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     try:
@@ -202,6 +242,8 @@ async def run(mac, do_light=True, do_lock=False, hold=5):
             await asyncio.sleep(0.2)
 
         async def set_and_watch(obj, value, label):
+            """The SET + the push-watch window (the hold seconds).
+            SET + окно наблюдения пушей (hold секунд)."""
             nonlocal app_cnt
             app_cnt = await do_set(t, sk, obj, value, 0, app_cnt)
             print(f"   окно {hold}с на пуш после: {label}")
@@ -251,15 +293,24 @@ if __name__ == "__main__":
     buf = io.StringIO()
 
     class Tee:
+        """The writer to the multiple streams (the stdout/the buffer/the file).
+        Запись в несколько потоков (stdout/буфер/файл)."""
+
         def __init__(self, *ss):
+            """The streams to write to.
+            Потоки для записи."""
             self.ss = ss
 
         def write(self, s):
+            """Write to all the streams (the errors are suppressed).
+            Записать во все потоки (ошибки подавляются)."""
             for st in self.ss:
                 with contextlib.suppress(Exception):
                     st.write(s)
 
         def flush(self):
+            """Flush all the streams.
+            Flush всех потоков."""
             for st in self.ss:
                 with contextlib.suppress(Exception):
                     st.flush()

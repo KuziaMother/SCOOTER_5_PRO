@@ -31,6 +31,9 @@ def split_row(line):
 
 def main():
     # fname → (кол-во колонок, индекс размера)
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     layouts = [('MCU_MAP.md', 7, 1), ('BLE_MAP.md', 8, 2)]
     issues = []
     for fname, expect, size_idx in layouts:

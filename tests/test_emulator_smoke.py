@@ -1,4 +1,11 @@
-"""Интеграционный smoke-тест: прогоняет emulator/run_emulator.py целиком —
+"""The integration smoke test: it runs the emulator/run_emulator.py in full — all the
+7 scenarios against the REAL dreame_auth.py/dreame_flasher.py/probes/spec_read.py,
+without the BLE and without the live device (see the emulator/README.md). The slowest
+test in the package (the reassembling of the channel 18-byte frames is paced, ~2-3
+minutes) — this is the only end-to-end check that the protocol is not broken after
+the fixes.
+
+Интеграционный smoke-тест: прогоняет emulator/run_emulator.py целиком —
 все 7 сценариев против НАСТОЯЩИХ dreame_auth.py/dreame_flasher.py/probes/spec_read.py,
 без BLE и без живого устройства (см. emulator/README.md). Самый долгий тест в
 пакете (реассемблинг канальных 18-байтных кадров пейсится, ~2-3 минуты) — это
@@ -11,6 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def test_run_emulator_all_scenarios_pass():
+    """All the 7 emulator scenarios pass (the end-to-end protocol check).
+    Все 7 сценариев эмулятора проходят (сквозная проверка протокола)."""
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     proc = subprocess.run(
         [sys.executable, os.path.join(ROOT, "emulator", "run_emulator.py")],

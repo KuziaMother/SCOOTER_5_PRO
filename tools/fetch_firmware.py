@@ -41,6 +41,8 @@ import token_extractor as tx  # noqa: E402
 
 
 def save_session(c):
+    """Save the Mi Cloud session to secrets/micloud_session.json (git-ignored).
+    Сохранить сессию Mi Cloud в secrets/micloud_session.json (git-ignore)."""
     os.makedirs(os.path.dirname(SESSION_JSON), exist_ok=True)
     with open(SESSION_JSON, "w", encoding="utf-8") as f:
         json.dump({"userId": c.userId, "ssecurity": c._ssecurity,
@@ -50,6 +52,8 @@ def save_session(c):
 
 
 def load_session():
+    """Load the saved Mi Cloud session (None if absent/corrupt).
+    Загрузить сохранённую сессию Mi Cloud (None если нет/бито)."""
     if not os.path.exists(SESSION_JSON):
         return None
     try:
@@ -66,10 +70,14 @@ def load_session():
 
 
 def flush(*a):
+    """print with flush (the live logs).
+    print с flush (живые логи)."""
     print(*a, flush=True)
 
 
 def latest_ver(c, country, did):
+    """Ask the cloud for the latest firmware version of the device (the encrypted call).
+    Спросить облако про последнюю версию прошивки устройства (зашифрованный вызов)."""
     url = c.get_api_url(country) + "/v2/device/latest_ver"
     data = {"did": str(did), "model": MODEL, "platform": "android",
             "plugin_level": 0, "app_level": 0}
@@ -77,8 +85,11 @@ def latest_ver(c, country, did):
 
 
 def find_fw_entries(obj, acc):
-    """Рекурсивно ищем компоненты прошивки. latest_ver кладёт BLE в url/md5,
-    а MCU — в mcu_safe_url/mcu_md5 (и есть diff_url для дельта-обновления)."""
+    """Recursively find the firmware components. latest_ver puts the BLE into
+    url/md5, and the MCU — into mcu_safe_url/mcu_md5 (and there is the diff_url for the
+    delta update).
+    Рекурсивно ищем компоненты прошивки. latest_ver кладёт BLE в url/md5, а MCU — в
+    mcu_safe_url/mcu_md5 (и есть diff_url для дельта-обновления)."""
     if isinstance(obj, dict):
         # BLE / основной образ
         url = obj.get("url") or obj.get("safe_url") or obj.get("download_url")
@@ -100,6 +111,8 @@ def find_fw_entries(obj, acc):
 
 
 def download(entry, idx):
+    """Download the firmware image (with the MD5 check) to firmware_ota/.
+    Скачать образ прошивки (с проверкой MD5) в firmware_ota/."""
     import requests
     os.makedirs(OUT_DIR, exist_ok=True)
     r = requests.get(entry["url"], timeout=60)
@@ -118,7 +131,9 @@ def download(entry, idx):
 
 
 def local_versions():
-    """Версии, что уже лежат у нас в firmware_ota/ (по прошлой проверке latest_ver)."""
+    """The versions that already lie in firmware_ota/ (per the previous latest_ver
+    check).
+    Версии, что уже лежат у нас в firmware_ota/ (по прошлой проверке latest_ver)."""
     path = os.path.join(OUT_DIR, "latest_ver_ru.json")
     if not os.path.exists(path):
         return {}
@@ -130,6 +145,9 @@ def local_versions():
 
 
 def qr_login():
+    """The QR login to the Mi Cloud (the steps 1..4, the QR to the file, the session
+    save).
+    QR-логин в Mi Cloud (шаги 1..4, QR в файл, сохранение сессии)."""
     os.makedirs(HERE, exist_ok=True)
     c = tx.QrCodeXiaomiCloudConnector()
     if not c.login_step_1():
@@ -151,6 +169,8 @@ def qr_login():
 
 
 def main():
+    """The CLI entry point (--download/--relogin).
+    CLI-вход (--download/--relogin)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--download", action="store_true",
                      help="скачать образ(ы), ТОЛЬКО если версия новее уже имеющейся")

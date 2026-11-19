@@ -1,3 +1,9 @@
+"""The scratch sweep of the 0xD078 function (the PID/accumulator trace): the
+reference vs the emulator over the mode/saturation grid.
+
+Скрэтч-перебор функции 0xD078 (trace PID/аккумуляторов): референс vs эмулятор
+по сетке режимов/ограничений.
+"""
 import sys, struct, random
 sys.path.insert(0,'..'); sys.path.insert(0,'../../..')
 from unicorn import UcError, UC_HOOK_CODE
@@ -5,21 +11,65 @@ from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_SP
 from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
 FW_LEN=len(open(r'D:\SCOOTER_5_PRO\research\images\mcu_0007.bin','rb').read())
 def sdiv(a,b):
+    """The sdiv function of the script.
+    Функция sdiv скрипта.
+    """
     if b==0: return 0
     q=abs(a)//abs(b); return q if (a<0)==(b<0) else -q
-def s16(x): x&=0xffff; return x-0x10000 if x>=0x8000 else x
+
+def s16(x):
+    """The s16 function of the script.
+    Функция s16 скрипта.
+    """
+    x&=0xffff; return x-0x10000 if x>=0x8000 else x
 def run(V,F,acc1,out1,acc2,out2,mode,maxc,m2t,m3t):
+    """The run function of the script.
+    Функция run скрипта.
+    """
     emu=McuEmu(max_insn=400000); uc=emu.uc
     uc.mem_write(RAM,b'\x00'*0x20000)
-    def w16(o,v): uc.mem_write(RAM+o,struct.pack('<H',v&0xffff))
-    def w32(o,v): uc.mem_write(RAM+o,struct.pack('<I',v&0xffffffff))
-    def wb (o,v): uc.mem_write(RAM+o,bytes([v&0xff]))
+    """The w16 function of the script.
+    Функция w16 скрипта.
+    """
+    """The w16 function of the script.
+    Функция w16 скрипта.
+    """
+    def w16(o,v):
+        """The w16 function of the script.
+        Функция w16 скрипта.
+        """
+        uc.mem_write(RAM+o,struct.pack('<H',v&0xffff))
+    """The w32 function of the script.
+    Функция w32 скрипта.
+    """
+    """The w32 function of the script.
+    Функция w32 скрипта.
+    """
+    def w32(o,v):
+        """The w32 function of the script.
+        Функция w32 скрипта.
+        """
+        uc.mem_write(RAM+o,struct.pack('<I',v&0xffffffff))
+    """The wb function of the script.
+    Функция wb скрипта.
+    """
+    """The wb function of the script.
+    Функция wb скрипта.
+    """
+    def wb (o,v):
+        """The wb function of the script.
+        Функция wb скрипта.
+        """
+        uc.mem_write(RAM+o,bytes([v&0xff]))
     w32(0x158,V); wb(0x100,F)
     w16(0x1768+0,0); w32(0x1768+4,acc2); w16(0x1768+8,out2&0xffff)
     w32(0x1768+0xc,acc1); w16(0x1768+0x10,out1&0xffff)
     wb(0x229,mode); w16(0x339,maxc); w16(0x324,m2t); w16(0x326,m3t)
     uc.reg_write(UC_ARM_REG_SP,STACK_TOP); uc.reg_write(UC_ARM_REG_LR,0x0BADF001)
     def stop(uc_,a,s,u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         if not(FLASH0<=a<FLASH0+FW_LEN or FLASH1<=a<FLASH1+FW_LEN): uc_.emu_stop()
     hs=uc.hook_add(UC_HOOK_CODE,stop)
     try: uc.emu_start(0x1d078|1,0,count=400000)

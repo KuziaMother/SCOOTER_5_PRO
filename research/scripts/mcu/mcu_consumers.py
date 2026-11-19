@@ -56,6 +56,9 @@ TARGETS = [
 
 
 def target_of(off):
+    """The target_of function of the script.
+    Функция target_of скрипта.
+    """
     for name, lo, hi in TARGETS:
         if lo <= off < hi:
             return name
@@ -139,6 +142,9 @@ def dynamic_scan(funcs, cap=20000):
         rec = []
 
         def on_r(uc, access, address, size, value, user, _rec=rec):
+            """The on_r function of the script.
+            Функция on_r скрипта.
+            """
             tname = target_of(address - RAM)
             if tname is not None:
                 pc = uc.reg_read(UC_ARM_REG_PC)
@@ -179,6 +185,9 @@ def disasm_window(d, pc, win=24):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--dynamic", action="store_true", help="read-taint по всем функциям")
     ap.add_argument("--win", type=int, default=24, help="размер окна дизассемблера")

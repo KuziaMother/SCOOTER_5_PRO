@@ -1,13 +1,31 @@
 #!/usr/bin/env python3
 """
+The READ-ONLY probe of the MCU DFU console over the UART (19200 8N1) — it writes
+NOTHING.
+
+The goal: the live confirmation of the section 70 (the string pool of the DFU commands)
+without the risk for the device.
+
+It does ONLY:
+  1. it listens to the spontaneous push stream (the 0x61...chk 9E frames) — it confirms
+     the baud/the link;
+  2. the `down get_ver` -> the MCU version (the "0007" is expected);
+  3. the `down rd_info` -> the state of the DFU/NVM region (the "ok ..." is expected).
+
+It does NOT send: the nvm_write / wr_info / dfu_verify / dfu_active / the FW chunks —
+nothing is written into the NVM/flash, the motor is not touched. The command terminator
+= the CR (0x0d) — the same as in the pool strings of the section 70.
+
+Usage:  python probes/mcu_uart_readonly.py [--port COM3] [--listen 2.0]
+
 READ-ONLY зонд MCU DFU-консоли по UART (19200 8N1) — НИЧЕГО не пишет.
-====================================================================
+
 Цель: live-подтверждение §70 (строковый пул команд DFU) без риска для устройства.
 
 Делает ТОЛЬКО:
   1. слушает спонтанный push-поток (кадры 0x61…chk 9E) — подтверждает baud/связь;
-  2. `down get_ver`  -> версия MCU (ожидается "0007");
-  3. `down rd_info`  -> состояние DFU/NVM-региона (ожидается "ok …").
+  2. `down get_ver` -> версия MCU (ожидается "0007");
+  3. `down rd_info` -> состояние DFU/NVM-региона (ожидается "ok …").
 
 НЕ шлёт: nvm_write / wr_info / dfu_verify / dfu_active / чанки FW — ничего не
 пишется в NVM/flash, мотор не трогается. Терминатор команды = \r (0x0d) — тот же,
@@ -22,21 +40,31 @@ import serial
 
 
 class Reader:
-    """Копия push-фильтра из tools/mcu_uart_flash.py (валидные push-кадры отбрасываются)."""
+    """The copy of the push filter from tools/mcu_uart_flash.py (the valid push frames
+    are cut out).
+    Копия push-фильтра из tools/mcu_uart_flash.py (валидные push-кадры отбрасываются)."""
 
     def __init__(self, s):
+        """Wrap the serial port s.
+        Обёртка над последовательным портом s."""
         self.s = s
         self.raw = bytearray()
         self.clean = bytearray()
         self.push_frames = 0
 
     def _pump(self):
+        """Read a chunk into the raw + classify.
+        Прочитать чанк в raw + классифицировать."""
         d = self.s.read(256)
         if d:
             self.raw += d
         self._classify()
 
     def _classify(self):
+        """Split the raw: cut the valid push frames into the clean (the counter++), hold
+        the tail.
+        Разделить raw: валидные push-кадры выкинуть (счётчик++), clean пополнить, хвост
+        удержать."""
         out = bytearray()
         i, n = 0, len(self.raw)
         while i < n:
@@ -60,6 +88,8 @@ class Reader:
         self.clean += out
 
     def read_until(self, term, timeout=3.0):
+        """The bytes up to the term (inclusive); on the timeout — everything there is.
+        Байты до `term` включительно; на таймауте — всё, что есть."""
         end = time.time() + timeout
         while True:
             j = self.clean.find(term)
@@ -74,6 +104,8 @@ class Reader:
             self._pump()
 
     def drain(self):
+        """Take everything from the clean and return it.
+        Забрать всё из clean и вернуть."""
         d = bytes(self.clean)
         del self.clean[:]
         return d
@@ -103,6 +135,9 @@ def cmd(r, payload, timeout=3.0):
 
 
 def main():
+    """The read-only run: the push-stream listening + the get_ver/rd_info (the --port/
+    --listen options).
+    READ-ONLY прогон: слушание push-потока + get_ver/rd_info (опции --port/--listen)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--listen", type=float, default=2.0, help="секунд слушать push-поток")

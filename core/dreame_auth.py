@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-LAST_SK=None
 """
+Dreame Scooter 5 Pro — security-chip login probe (stage A): raise the channel
+transport (A4 -> MNG) on FE95/0x0016, exchange P-256 public keys, confirm the
+login with an ltmk pin (AES-CCM over the device pubkey CRC32), then probe the
+DFU channel and collect read-only info. No flash writes.
+
 Dreame Scooter 5 Pro — security-chip login, ЭТАП A (проба транспорта).
 ======================================================================
 
@@ -20,6 +24,8 @@ Dreame Scooter 5 Pro — security-chip login, ЭТАП A (проба транс�
 Использование:
     python dreame_auth.py [MAC]
 """
+
+LAST_SK = None   # derived sessionKey (debug) / выведенный sessionKey (для удобства отладки)
 
 import os
 import sys
@@ -48,6 +54,8 @@ PKT_NAMES = {0: "CTR", 1: "ACK", 2: "SINGLE", 3: "SINGLE_ACK", 4: "MNG", 5: "MNG
 
 
 def sid(ch_or_uuid):
+    """Characteristic SID = low 16 bits of the UUID (Mi spec).
+    SID характеристики = низкие 16 бит UUID (Mi spec)."""
     u = str(getattr(ch_or_uuid, "uuid", ch_or_uuid)).replace("-", "")
     return int(u[:8], 16) & 0xFFFF
 
@@ -60,6 +68,8 @@ def gen_ec_keypair():
 
 
 def decode(data: bytes) -> str:
+    """Human-readable transport frame decode (CTR/ACK/SINGLE/MNG/DATA).
+    Человекочитаемая расшифровка транспорта."""
     if len(data) < 3:
         return f"raw={data.hex()}"
     seq = struct.unpack_from("<H", data, 0)[0]
@@ -71,7 +81,11 @@ def decode(data: bytes) -> str:
 
 
 class Transport:
+    """BLE channel transport over FE95: A4 -> MNG/MNG_ACK, CTR/ACK/DATA streams, SINGLE.
+    BLE-канальный транспорт FE95: A4 → MNG/MNG_ACK, CTR/ACK/DATA-потоки, SINGLE."""
     def __init__(self, mac):
+        """Init: MAC, client, characteristics, RX queue (sid, bytes).
+        Инициализация: MAC, client, характеристики, RX-очередь (sid, bytes)."""
         self.mac = mac
         self.client = None
         self.chars = {}
@@ -81,6 +95,8 @@ class Transport:
         self.pkg_num = 6
 
     async def connect(self):
+        """Connect, find FE95, subscribe to all notify characteristics.
+        Подключение, поиск FE95, подписка на notify всех notify-характеристик."""
         self.client = BleakClient(self.mac, timeout=20.0)
         await self.client.connect()
         fe95 = next(s for s in self.client.services
@@ -97,6 +113,8 @@ class Transport:
                     print(f"    [notify fail 0x{s:04x}] {e}")
 
     def _on_notify(self, sender, data):
+        """Notify callback: control reply (login result 0x21/0x22) + RX queue + log.
+        Notify-callback: ответ контроля (login result 0x21/0x22) + очередь RX + лог."""
         s = sid(sender)
         b = bytes(data)
         if s == CH_CONTROL:
@@ -105,6 +123,8 @@ class Transport:
         print(f"    <<< 0x{s:04x} {b.hex():<30} [{decode(b)}]")
 
     async def write(self, ch_sid, data, response=False):
+        """GATT write to a channel by SID.
+        GATT-запись в канал по SID."""
         await self.client.write_gatt_char(self.chars[ch_sid], data, response=response)
 
     async def drain(self, timeout=2.5):
@@ -118,6 +138,8 @@ class Transport:
         return out
 
     async def a4_handshake(self):
+        """A4 -> MNG -> MNG_ACK; True if MNG received (saves maxPkgNum/maxDMTU).
+        A4 → MNG → MNG_ACK. True если MNG получен (maxPkgNum/maxDMTU сохранены)."""
         print("\n=== A4 handshake ===")
         while not self.rx.empty():
             self.rx.get_nowait()
@@ -163,6 +185,8 @@ class Transport:
             print("    [!] нет start-ACK на CTR"); return False
 
         async def send_frames(seqs):
+            """Send the DATA frames seqs (W/O-RESP with pacing).
+            Отправить DATA-кадры seqs (W/O-RESP с пейсингом)."""
             for i in seqs:
                 dp = struct.pack("<H", i) + frames[i - 1]
                 await self.write(char, dp, response=resp_data)
@@ -183,9 +207,13 @@ class Transport:
         print("    [!] reliable-цикл не завершился (много resend)"); return False
 
     async def _wait_ack(self, timeout, char=CH_LOGIN):
+        """Wait for an ACK (True/False).
+        Ждёт ACK."""
         return (await self._wait_ack_status(timeout, char)) is not None
 
     async def _wait_ack_status(self, timeout, char=CH_LOGIN):
+        """Wait for an ACK; returns the status (or None on timeout).
+        Ждёт ACK, возвращает status (None при таймауте)."""
         st, _ = await self._wait_ack_full(timeout, char)
         return st
 
@@ -297,6 +325,8 @@ class Transport:
         return payload
 
     async def close(self):
+        """Disconnect from the scooter.
+        Отключение от самоката."""
         if self.client and self.client.is_connected:
             await self.client.disconnect()
             print("[*] disconnected")
@@ -357,6 +387,8 @@ CCM_NONCE = bytes(range(0x10, 0x1c))     # 10 11 ... 1b (12 байт)
 
 
 def derive_session_key(priv, dev_pub_raw, ltmk):
+    """ECDH(P-256) + HKDF(SHA256, login salt/info) -> (shared 32B, sessionKey 64B).
+    ECDH(P-256) + HKDF(SHA256, salt/info login) → (shared 32B, sessionKey 64B)."""
     dev_pub = ec.EllipticCurvePublicKey.from_encoded_point(
         ec.SECP256R1(), b"\x04" + dev_pub_raw)
     shared = priv.exchange(ec.ECDH(), dev_pub)          # 32B X-coord
@@ -367,6 +399,8 @@ def derive_session_key(priv, dev_pub_raw, ltmk):
 
 
 async def stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
+    """Login confirm: AES-CCM(CRC32(pubkey)) streamed on ch=5; 0x21/0x22 reply -> True/False/None.
+    Login-подтверждение: AES-CCM(CRC32(pubkey)) потоком на ch=5; ответ 0x21/0x22 → True/False/None."""
     global LAST_SK
     shared, sk = derive_session_key(priv, dev_pub, ltmk)
     LAST_SK = sk
@@ -396,6 +430,8 @@ async def stage_b_confirm(t, priv, dev_pub, ltmk, crc_be=False):
 async def collect_info(t, report):
     """Read-only сбор телеметрии. Пишет строки в список report."""
     def line(s):
+        """Print to the console + append to the report.
+        Печать в консоль + append в report."""
         print("  " + s); report.append(s)
 
     # 1. GATT READ характеристики
@@ -415,11 +451,15 @@ async def collect_info(t, report):
         results = {}
 
         def on_c(sender, data):
+            """Collect the MCU 0x001C channel notify into results['last'].
+            Collect notify MCU-канала 0x001C в results['last']."""
             if sid(sender) == 0x001C:
                 results.setdefault("last", []).append(bytes(data))
         await t.client.start_notify(t.chars[0x001C], on_c)
 
         async def q(op, param=None):
+            """Write an opcode to 0x001C and read the first reply (1.2 s).
+            Записать opcode в 0x001C и прочитать первый ответ (1.2 с)."""
             results["last"] = []
             fr = bytes([op]) if param is None else bytes([op, len(param)]) + param
             await t.client.write_gatt_char(t.chars[0x001C], fr, response=False)
@@ -493,12 +533,16 @@ async def collect_info(t, report):
 
 
 def ccm_encrypt(sk, counter, plaintext):
+    """AES-CCM encrypt a session frame (key=sk[16:32], nonce=sk[36:40]+0x00000000+ctr LE, tag4).
+    AES-CCM (key=sk[16:32], nonce=sk[36:40]+0×4+ctr LE, tag4) — шифрование session-кадра."""
     key = sk[16:32]
     nonce = sk[36:40] + b"\x00\x00\x00\x00" + struct.pack("<I", counter)
     return AESCCM(key, tag_length=4).encrypt(nonce, plaintext, None)
 
 
 def ccm_decrypt(sk, counter, data):
+    """AES-CCM decrypt a session frame (key=sk[0:16]); None on a bad tag.
+    AES-CCM (key=sk[0:16]) — расшифровка session-кадра; None при неверном tag."""
     from cryptography.exceptions import InvalidTag
     key = sk[0:16]
     nonce = sk[32:36] + b"\x00\x00\x00\x00" + struct.pack("<I", counter)
@@ -767,6 +811,8 @@ async def stage_c_probe(t):
 
 
 async def main():
+    """CLI: connect -> A4 -> Stage A (pubkey) -> Stage B (confirm) -> Stage D (DFU probe) + read-only info.
+    CLI: connect → A4 → Stage A (pubkey) → Stage B (confirm) → Stage D (DFU-проба) + read-only info."""
     mac = sys.argv[1] if len(sys.argv) > 1 else MAC_DEFAULT
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(mac)

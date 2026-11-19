@@ -1,7 +1,23 @@
 #!/usr/bin/env python3
 """
+The READ-ONLY decoder of the MCU->BLE push frames (0x61 'a'/'a1') over the UART 19200.
+
+The pure observation — it sends NOTHING, it only listens and decodes the spontaneous
+push stream. The validation: the section 47.2 (the 'a0' telemetry), the section 47.3
+(the 'a1' battery), the section 34.2 (the mode).
+
+The format (the wire, without the slot len prefix):  61 [sub] [len] [...data] [chk] 9E
+  the chk = the sum (the frame bytes up to the chk) & 0xFF,  the trailer = 0x9E.
+'a0' (sub=0x30): [3]=the mode nibble (@0x228<<4|@0x229), [6]=the biased i16@0x31c,
+  [7]=|i16@0x290|, [8]=the status, [9..a]=the u16@0x236 (the percent section 69/34.2),
+  [b]=the flag, [c]=the bit3@0x244
+'a1' (sub=0x31): [3]=@0x2e6, [4]=the battery %, [5..6]=the u16@0x308 BE, [7..8]=the
+  u16@0x30a BE, [9]=the temperature in degrees C, [a..b]=the range BE
+
+Usage:  python probes/mcu_push_decode.py [--port COM3] [--listen 5.0] [--max N]
+
 READ-ONLY декодер push-кадров MCU→BLE (0x61 'a'/'a1') по UART 19200.
-====================================================================
+
 Чисто наблюдение — НИЧЕГО не отправляем, только слушаем и декодируем спонтанный
 push-поток. Валидация: §47.2 ('a0' телеметрия), §47.3 ('a1' батарея), §34.2 (режим).
 
@@ -21,7 +37,8 @@ import serial
 
 
 def collect_frames(s, secs):
-    """Собираем полные валидные push-кадры из потока."""
+    """Collect the full valid push frames from the stream.
+    Собираем полные валидные push-кадры из потока."""
     buf = bytearray()
     frames = []
     end = time.time() + secs
@@ -55,11 +72,14 @@ def collect_frames(s, secs):
 
 
 def dec_biased(raw):
-    """i16@0x31c: v>=0 -> v; v<0 -> (128-v)&0xFF. Обратное."""
+    """The i16@0x31c: the v>=0 -> v; the v<0 -> (128-v)&0xFF. The inverse (the decode).
+    i16@0x31c: v>=0 -> v; v<0 -> (128-v)&0xFF. Обратное (декодирование)."""
     return raw if raw < 128 else 128 - raw
 
 
 def decode_a0(f):
+    """The 'a0' frame (sub=0x30): the mode/status/percent/flag line.
+    Кадр 'a0' (sub=0x30): строка mode/status/процента/флагов."""
     mode_hi, mode_lo = f[3] >> 4, f[3] & 0xF
     p236 = (f[9] << 8) | f[10]
     return (f"mode@0x229={mode_lo} (@0x228={mode_hi})  mask=0x{f[5]:02x}  "
@@ -68,12 +88,16 @@ def decode_a0(f):
 
 
 def decode_a1(f):
+    """The 'a1' frame (sub=0x31): the battery/temperature/range line.
+    Кадр 'a1' (sub=0x31): строка батарея/температура/запас хода."""
     return (f"@0x2e6={f[3]}  **батарея%={f[4]}**  u16@0x308={(f[5]<<8)|f[6]}  "
             f"u16@0x30a={(f[7]<<8)|f[8]}  **температура°C={f[9]}**  "
             f"запас хода={(f[10]<<8)|f[11]}")
 
 
 def main():
+    """The CLI entry point (--port/--listen/--max).
+    CLI-вход (--port/--listen/--max)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--listen", type=float, default=5.0)

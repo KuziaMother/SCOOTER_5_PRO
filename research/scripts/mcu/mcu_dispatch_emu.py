@@ -20,6 +20,9 @@ STUB = 0x08024D00          # bx lr в хвосте образа
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     sensor = int(sys.argv[1], 0) if len(sys.argv) > 1 else 5000
     mode = int(sys.argv[2], 0) if len(sys.argv) > 2 else 1
     state = int(sys.argv[3], 0) if len(sys.argv) > 3 else 100
@@ -43,13 +46,22 @@ def main():
     events = []
 
     def h_tim1(uc, access, address, size, value, user):
+        """The h_tim1 function of the script.
+        Функция h_tim1 скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "R" if access == 1 else "W",
                        address - 0x40012C00, value))
 
     def h_tbl(uc, access, address, size, value, user):
+        """The h_tbl function of the script.
+        Функция h_tbl скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "TBL", address - 0x08000000, 0))
 
     def h_portw(uc, access, address, size, value, user):
+        """The h_portw function of the script.
+        Функция h_portw скрипта.
+        """
         events.append((uc.reg_read(UC_ARM_REG_PC), "PW", address - 0x48000000, value))
 
     uc.hook_add(UC_HOOK_MEM_READ, h_tim1, None, 0x40012C30, 0x40012C50)

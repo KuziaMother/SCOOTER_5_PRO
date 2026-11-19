@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe 2: the MCU version gate with the CLEAN BLE bank (the previous probe showed the two-stage gate: the dirty BLE bank (last!=0) -> status 5 (the session conflict); the clean BLE bank (last=0) -> status 7 (the real gate)).
 Проба 2: версионный гейт MCU при ЧИСТОМ BLE-банке.
 
 Предыдущая проба показала двухступенчатый гейт:
@@ -16,6 +17,7 @@
 версии = отказ status 6 + сброс банка, проверено).
 
 Запуск:  python probes/mcu_gate_clean_version.py
+Проба 2: версионный гейт MCU при ЧИСТОМ BLE-банке (предыдущая проба показала двухступенчатый гейт: грязный BLE-банк (last!=0) -> status 5 (конфликт сессий); чистый BLE-банк (last=0) -> status 7 (реальный гейт)).
 """
 import asyncio
 import os
@@ -35,6 +37,8 @@ VER_OFF = 0x22
 
 
 async def ensure_clean_ble_bank(t):
+    """Check that the BLE bank is clean (the last=0), otherwise — exit.
+    Проверить, что BLE-банк чист (last=0), иначе — выход."""
     last, crc = await get_last_index(t, OPS["ble"])
     if last == 0:
         print("[i] BLE-банк чист (last=0)")
@@ -49,6 +53,9 @@ async def ensure_clean_ble_bank(t):
 
 
 async def main():
+    """The run: the MCU fragment 1 with the clean BLE bank (the "0008 in the header"
+    retry).
+    Прогон: MCU-фрагмент 1 при чистом BLE-банке (повтор «0008 в заголовке»)."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

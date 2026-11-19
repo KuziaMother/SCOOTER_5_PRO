@@ -9,6 +9,9 @@ from func_verify import Run  # noqa
 MODE_NAMES = {0: "in/резо", 1: "out-одн", 2: "out-дв/AF", 3: "in-pull?"}
 
 def pinmap(entry, label):
+    """The pinmap function of the script.
+    Функция pinmap скрипта.
+    """
     run = Run(max_insn=400000)
     from emulator.mcu_emu import GpioModel, GPIO_PORT_BASE
     uc = run.uc
@@ -18,6 +21,9 @@ def pinmap(entry, label):
     from unicorn import UC_HOOK_CODE, UcError
     from emulator.mcu_emu import FLASH0, FLASH1
     def _st(uc_, addr, size, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + 0x23680 or FLASH1 <= aa < FLASH1 + 0x23680):
             uc_.emu_stop()

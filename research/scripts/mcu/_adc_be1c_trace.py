@@ -14,6 +14,9 @@ FW_LEN = 0x25000
 
 
 def run_be1c(sector, c18, c1a, c1c, t28, t2c, t30):
+    """The run_be1c function of the script.
+    Функция run_be1c скрипта.
+    """
     emu = McuEmu(max_insn=200000)
     emu.uc.mem_write(RAM, bytes(0x20000))
     r0 = RAM + 0x100
@@ -30,6 +33,9 @@ def run_be1c(sector, c18, c1a, c1c, t28, t2c, t30):
     emu.uc.mem_write(0x40012440 + 0x30, struct.pack('<I', t30 & 0xFFFFFFFF))
 
     def stop(uc_, addr, size, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                 FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -61,6 +67,9 @@ def classify(out):
 
 def main():
     # разные diff, чтобы различить handler: (T−C): 28→4000, 2c→6000, 30→8000
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     c18, c1a, c1c = 1000, 2000, 3000
     t28, t2c, t30 = 5000, 8000, 11000
     d28 = (t28 - c18) << 4   # 64000

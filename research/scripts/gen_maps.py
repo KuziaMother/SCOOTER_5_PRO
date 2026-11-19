@@ -830,6 +830,9 @@ def attach_catalog(funcs, catalog):
     return att
 
 def stats(funcs, att):
+    """The stats function of the script.
+    Функция stats скрипта.
+    """
     n = len(funcs)
     total = sum(s for _, s, _ in funcs)
     by = {}
@@ -841,6 +844,9 @@ def stats(funcs, att):
     return n, total, by, (wsum / total if total else 0.0)
 
 def write_mcu(path):
+    """The write_mcu function of the script.
+    Функция write_mcu скрипта.
+    """
     funcs = parse_readme(os.path.join(RES, 'functions_mcu', 'README.md'), has_vaddr=False)
     att = attach_catalog(funcs, ANALYZED_MCU)
     n, total, by, pct = stats(funcs, att)
@@ -943,6 +949,9 @@ ANALYZED_BLE = [
 ]
 
 def write_ble(path):
+    """The write_ble function of the script.
+    Функция write_ble скрипта.
+    """
     funcs = parse_readme(os.path.join(RES, 'functions_ble', 'README.md'), has_vaddr=True)
     att = attach_catalog(funcs, ANALYZED_BLE)
     n, total, by, pct = stats(funcs, att)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe 3: what the status 7 means — "rejected and not buffered" or "buffered with the flag".
 Проба 3: что означает status 7 — «отклонено и не буферизовано» или «буферизовано с флагом»?
 
 Последовательность (одна сессия, без commit, чистые банки):
@@ -14,6 +15,7 @@
 Печатает полные сырые события 0x0017 (без фильтрации) — вдруг в них больше байт.
 
 Запуск:  python probes/mcu_gate_repeat.py
+Проба 3: что означает status 7 — «отклонено и не буферизовано» или «буферизовано с флагом».
 """
 import asyncio
 import os
@@ -31,6 +33,8 @@ MCU_IMG = os.path.join(ROOT, "firmware_ota",
 
 
 async def main():
+    """The run: the fragment 1 twice (the status A/B comparison) + the fragment 2.
+    Прогон: фрагмент 1 дважды (сравнение status A/B) + фрагмент 2."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

@@ -8,6 +8,9 @@ from func_verify import Run, RAM
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     run = Run(max_insn=500000)
     # Чистые входы: F=0 (val=0), out1_new=out2_new=0, target=150, old_int=8000
     V, F = 60000, 0
@@ -40,6 +43,9 @@ def main():
     run.ram_write(0x3C8 + 0x2E, struct.pack('<H', s2e_old))
 
     def rd(off, n=4):
+        """The rd function of the script.
+        Функция rd скрипта.
+        """
         return struct.unpack('<I', run.ram_read(0x3C8 + off, n))[0] if n == 4 \
             else struct.unpack('<H', run.ram_read(0x3C8 + off, 2))[0]
 

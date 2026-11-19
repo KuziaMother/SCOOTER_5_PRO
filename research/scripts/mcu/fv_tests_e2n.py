@@ -29,6 +29,9 @@ _CRC_TBL = [struct.unpack_from('<H', _FW, 0x19784 + 2 * i)[0] for i in range(256
 
 
 def _crc16(buf):
+    """The helper function (_crc16).
+    Вспомогательная функция (_crc16).
+    """
     crc = 0
     for b in buf:
         crc = (_CRC_TBL[b ^ (crc >> 8)] ^ (crc << 8)) & 0xFFFF
@@ -51,6 +54,9 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -62,10 +68,16 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
 
 
 def _r(uc, off, size=1):
+    """The helper function (_r).
+    Вспомогательная функция (_r).
+    """
     return int.from_bytes(bytes(uc.mem_read(RAM + off, size)), 'little')
 
 
 def _p(uc, off, size=4):
+    """The helper function (_p).
+    Вспомогательная функция (_p).
+    """
     return int.from_bytes(bytes(uc.mem_read(off, size)), 'little')
 
 
@@ -78,6 +90,9 @@ def _p(uc, off, size=4):
            '3 кейса (v=0 / inc / капа+clr).')
 def _(run, rng):
     # A: fresh, v=0
+    """Emulator test @ 0x1984: E2-b69: 0x1984() — напряжение-хендлер: v=0x87ec()=byte[0xB82]. v==0: byte[0xA74]=0, byte[0xA72]|=8 (set bit3). v!=0: bit3[0xA72]==0 → byte[0xA74]=0; иначе byte[0xA74]++, если >=3 → byte[0xA74]=0 и byte[0xA72]&=~8. Tail: bit3[0xA72]==0 → bl 0x8b58+0x8b10 (motor-off, ~700 insn) → ret=0; иначе ret=1. 3 кейса (v=0 / inc / капа+clr)..
+    Тест эмулятора @ 0x1984: E2-b69: 0x1984() — напряжение-хендлер: v=0x87ec()=byte[0xB82]. v==0: byte[0xA74]=0, byte[0xA72]|=8 (set bit3). v!=0: bit3[0xA72]==0 → byte[0xA74]=0; иначе byte[0xA74]++, если >=3 → byte[0xA74]=0 и byte[0xA72]&=~8. Tail: bit3[0xA72]==0 → bl 0x8b58+0x8b10 (motor-off, ~700 insn) → ret=0; иначе ret=1. 3 кейса (v=0 / inc / капа+clr)..
+    """
     uc, emu, lp = _fresh_probe(0x1984)
     assert _r(uc, 0xA72) == 8, f'0x1984 A: byte[0xA72]={_r(uc, 0xA72)} ждём 8'
     assert _r(uc, 0xA74) == 0, f'0x1984 A: byte[0xA74]={_r(uc, 0xA74)} ждём 0'
@@ -109,6 +124,9 @@ def _(run, rng):
            'bl 0xaf94(0xDD8), delay 0x1F4, bl 0x2a5c (I2C, ~16K insn, ret 0x10); '
            '0x2a5c()!=0 → byte[0xA72]&=~8; ret=0x10. 4 кейса (clr/inc/capa/I2C-tail).')
 def _(run, rng):
+    """Emulator test @ 0x20d8: E2-b69: 0x20d8() — flag-хендлер: bit3[0xA71]==0 → byte[0xA7A]=0, ret=0. bit3==1: c=byte[0xA7A]+1 (uxtb); c<5 → ret=c; c>=5: byte[0xA7A]=0, bl 0xaf94(0xDD8), delay 0x1F4, bl 0x2a5c (I2C, ~16K insn, ret 0x10); 0x2a5c()!=0 → byte[0xA72]&=~8; ret=0x10. 4 кейса (clr/inc/capa/I2C-tail)..
+    Тест эмулятора @ 0x20d8: E2-b69: 0x20d8() — flag-хендлер: bit3[0xA71]==0 → byte[0xA7A]=0, ret=0. bit3==1: c=byte[0xA7A]+1 (uxtb); c<5 → ret=c; c>=5: byte[0xA7A]=0, bl 0xaf94(0xDD8), delay 0x1F4, bl 0x2a5c (I2C, ~16K insn, ret 0x10); 0x2a5c()!=0 → byte[0xA72]&=~8; ret=0x10. 4 кейса (clr/inc/capa/I2C-tail)..
+    """
     uc, emu, lp = _fresh_probe(0x20D8)
     assert _r(uc, 0xA7A) == 0, f'0x20d8 A: byte[0xA7A]={_r(uc, 0xA7A)} ждём 0'
     assert uc.reg_read(UC_ARM_REG_R0) == 0, \
@@ -138,6 +156,9 @@ def _(run, rng):
            '5 кейса (гейт off / chk=0 / chk!=0 / капы).')
 def _(run, rng):
     # A: гейт off (byte[0x102]=0) — сброс/бездействие
+    """Emulator test @ 0x42b8: E2-b69: 0x42b8() — счётчик-гейт: byte[0x102]!=1 → u16[0x116]=0, byte[0x118]=0, ret=0. byte[0x102]==1: C=0x87c8(0x40010C00, 0x800) — чексумма 256 байт PERIPH (XOR + 8-шаговый бит-микс; 0x00×256→0, 0xFF×256→0xFA); C!=0 → byte[0x118]++, >5 → byte[0x118]=0, byte[0x8A]=1, byte[0x102]=0; u16[0x116]++, >0x3E8 → u16[0x116]=0, byte[0x8A]=0, byte[0x102]=0; ret = u16[0x116] (или 0 после капы). 5 кейса (гейт off / chk=0 / chk!=0 / капы)..
+    Тест эмулятора @ 0x42b8: E2-b69: 0x42b8() — счётчик-гейт: byte[0x102]!=1 → u16[0x116]=0, byte[0x118]=0, ret=0. byte[0x102]==1: C=0x87c8(0x40010C00, 0x800) — чексумма 256 байт PERIPH (XOR + 8-шаговый бит-микс; 0x00×256→0, 0xFF×256→0xFA); C!=0 → byte[0x118]++, >5 → byte[0x118]=0, byte[0x8A]=1, byte[0x102]=0; u16[0x116]++, >0x3E8 → u16[0x116]=0, byte[0x8A]=0, byte[0x102]=0; ret = u16[0x116] (или 0 после капы). 5 кейса (гейт off / chk=0 / chk!=0 / капы)..
+    """
     uc, emu, lp = _fresh_probe(0x42B8)
     assert _r(uc, 0x116, 2) == 0 and _r(uc, 0x118) == 0, '0x42b8 A: сброс ждём'
     assert uc.reg_read(UC_ARM_REG_R0) == 0,         f'0x42b8 A: ret={uc.reg_read(UC_ARM_REG_R0)} ждём 0'
@@ -179,6 +200,9 @@ def _(run, rng):
            'иначе 0x87c8(0x40010800, 0x100)!=0 (XOR PERIPH) → 0xA65 остаётся 1, ret=1; '
            'иначе 0xA65=0, ret=0. 3 кейса (fresh / step2-проход / keep-1).')
 def _(run, rng):
+    """Emulator test @ 0x4630: E2-b69: 0x4630() — permission-гейт: byte[0xA65]=1; если byte[0x89] ∈ {2,3} и byte[0x107]==1 и 0x8e14()=byte[0x1378]==0 → byte[0xA66]=1, иначе 0; затем 0xA66==1|byte[0x3E]==1|byte[0x36]==0|0xa6a4()==1 → 0xA66=0; и byte[0x3D]==1|byte[0x3E]==1|byte[0x36]==0|flash[0x2000]==1 → 0xA65=0, иначе 0x87c8(0x40010800, 0x100)!=0 (XOR PERIPH) → 0xA65 остаётся 1, ret=1; иначе 0xA65=0, ret=0. 3 кейса (fresh / step2-проход / keep-1)..
+    Тест эмулятора @ 0x4630: E2-b69: 0x4630() — permission-гейт: byte[0xA65]=1; если byte[0x89] ∈ {2,3} и byte[0x107]==1 и 0x8e14()=byte[0x1378]==0 → byte[0xA66]=1, иначе 0; затем 0xA66==1|byte[0x3E]==1|byte[0x36]==0|0xa6a4()==1 → 0xA66=0; и byte[0x3D]==1|byte[0x3E]==1|byte[0x36]==0|flash[0x2000]==1 → 0xA65=0, иначе 0x87c8(0x40010800, 0x100)!=0 (XOR PERIPH) → 0xA65 остаётся 1, ret=1; иначе 0xA65=0, ret=0. 3 кейса (fresh / step2-проход / keep-1)..
+    """
     uc, emu, lp = _fresh_probe(0x4630)
     assert _r(uc, 0xA65) == 0 and _r(uc, 0xA66) == 0, '0x4630 A: сброс ждём'
     assert uc.reg_read(UC_ARM_REG_R0) == 0, \
@@ -206,6 +230,9 @@ def _(run, rng):
            'bfi → byte[0xF71]=0x93, ret=0x10; иначе если byte[0xF71]&1 → 0x1bdc(0x93) + '
            'delay → u16[0xF70]=0, ret=r4=... (0x10); иначе ret=0. 3 кейса (off/on/state).')
 def _(run, rng):
+    """Emulator test @ 0x5274: E2-b69: 0x5274() — I2C2-poll (dev 0x3E, reg 0x93): r4=1; если byte[0xA65]==1 и byte[0xF71]&1==0 → 0x9438 + 0xbf58 + delay 0x1F4 + 0x1c60(0x7F, 8) + bfi → byte[0xF71]=0x93, ret=0x10; иначе если byte[0xF71]&1 → 0x1bdc(0x93) + delay → u16[0xF70]=0, ret=r4=... (0x10); иначе ret=0. 3 кейса (off/on/state)..
+    Тест эмулятора @ 0x5274: E2-b69: 0x5274() — I2C2-poll (dev 0x3E, reg 0x93): r4=1; если byte[0xA65]==1 и byte[0xF71]&1==0 → 0x9438 + 0xbf58 + delay 0x1F4 + 0x1c60(0x7F, 8) + bfi → byte[0xF71]=0x93, ret=0x10; иначе если byte[0xF71]&1 → 0x1bdc(0x93) + delay → u16[0xF70]=0, ret=r4=... (0x10); иначе ret=0. 3 кейса (off/on/state)..
+    """
     uc, emu, lp = _fresh_probe(0x5274)
     assert uc.reg_read(UC_ARM_REG_R0) == 0, \
         f'0x5274 A: ret={uc.reg_read(UC_ARM_REG_R0)} ждём 0'
@@ -232,6 +259,9 @@ def _(run, rng):
            'desc = GPIOB CRL + 0x0800 + tег 0x10110000 + IRQ3 → ISER0=0x8, '
            'CRL=0xFF3FFFFF, ODR=0xFFFFF7FF, CRH=0xFF7FFFFF, APB2RSTR|=0x2000. ret=1.')
 def _(run, rng):
+    """Emulator test @ 0x332c: E2-b69: 0x332c(descs, count) — GPIO batch-конфигуратор: ret=1; для каждого desc: u32[desc+7] ∈ {0x10110000..0x10320000} (6 тегов) → bl 0x163b4(port), u16[desc+4]==0x800 и port==0x40010C00 → sp14=byte[desc+6] (иначе 0), bl 0x85c8(port, val) — GPIO config (CR/ODR), bl 0x2bbc (EXTI), тег 0x10x1 → prio 8 / 0x10x2 → 0xC / иначе 0x10, bl 0x59a4(sp+8) — NVIC, byte[sp+4..6]=desc[0x11..0x13], bl 0xc0b4 (ISER0 |= 1<<(irq>>5)); иначе else-ветка (sp13/14, 0x85c8, 0x87e2 для тегов 1/0x11). Кейс B: desc = GPIOB CRL + 0x0800 + tег 0x10110000 + IRQ3 → ISER0=0x8, CRL=0xFF3FFFFF, ODR=0xFFFFF7FF, CRH=0xFF7FFFFF, APB2RSTR|=0x2000. ret=1..
+    Тест эмулятора @ 0x332c: E2-b69: 0x332c(descs, count) — GPIO batch-конфигуратор: ret=1; для каждого desc: u32[desc+7] ∈ {0x10110000..0x10320000} (6 тегов) → bl 0x163b4(port), u16[desc+4]==0x800 и port==0x40010C00 → sp14=byte[desc+6] (иначе 0), bl 0x85c8(port, val) — GPIO config (CR/ODR), bl 0x2bbc (EXTI), тег 0x10x1 → prio 8 / 0x10x2 → 0xC / иначе 0x10, bl 0x59a4(sp+8) — NVIC, byte[sp+4..6]=desc[0x11..0x13], bl 0xc0b4 (ISER0 |= 1<<(irq>>5)); иначе else-ветка (sp13/14, 0x85c8, 0x87e2 для тегов 1/0x11). Кейс B: desc = GPIOB CRL + 0x0800 + tег 0x10110000 + IRQ3 → ISER0=0x8, CRL=0xFF3FFFFF, ODR=0xFFFFF7FF, CRH=0xFF7FFFFF, APB2RSTR|=0x2000. ret=1..
+    """
     uc, emu, lp = _fresh_probe(0x332C, args=(RAM + 0x3000, 0))
     assert uc.reg_read(UC_ARM_REG_R0) == 1, \
         f'0x332c A: ret={uc.reg_read(UC_ARM_REG_R0)} ждём 1 (count=0)'
@@ -266,7 +296,13 @@ def _(run, rng):
            'frame[3] ∈ {0x10, 3} → memcpy count=frame[5] из frame+6 → P+4, ret=1; '
            'иначе ret=0. 3 кейса (accept/badcrc/len).')
 def _(run, rng):
+    """Emulator test @ 0x3838: E2-b69: 0x3838(frame, len) — frame-парсер: u16 len ∈ [6, 0x82] (иначе 0); frame[2..5] → RAM+0x10B8..+0x10BB (P); target16 = (frame[len]<<8)|frame[len+1] (BE-поле, хранится hi→lo); crc = 0x3c4c(frame+2, len-2) = CRC-16 (табл. 0x19784, init 0); accept при crc==target16 и frame[5]<0x96 и frame[2]==0x90 и frame[3] ∈ {0x10, 3} → memcpy count=frame[5] из frame+6 → P+4, ret=1; иначе ret=0. 3 кейса (accept/badcrc/len)..
+    Тест эмулятора @ 0x3838: E2-b69: 0x3838(frame, len) — frame-парсер: u16 len ∈ [6, 0x82] (иначе 0); frame[2..5] → RAM+0x10B8..+0x10BB (P); target16 = (frame[len]<<8)|frame[len+1] (BE-поле, хранится hi→lo); crc = 0x3c4c(frame+2, len-2) = CRC-16 (табл. 0x19784, init 0); accept при crc==target16 и frame[5]<0x96 и frame[2]==0x90 и frame[3] ∈ {0x10, 3} → memcpy count=frame[5] из frame+6 → P+4, ret=1; иначе ret=0. 3 кейса (accept/badcrc/len)..
+    """
     def mk(crc_ok=True):
+        """The mk function of the script.
+        Функция mk скрипта.
+        """
         f = bytearray(12)
         f[0] = 8
         f[2], f[3], f[4], f[5] = 0x90, 0x10, 0x00, 0x01
@@ -304,6 +340,9 @@ def _(run, rng):
            'sum(frame[2..6])≡0, frame[7]==r7) и byte[P+0x2E]==0xFF-frame[2] → ret=1, '
            'иначе 0. 3 кейса (accept/len<4/len>0x28).')
 def _(run, rng):
+    """Emulator test @ 0x54dc: E2-b69: 0x54dc(frame, len) — frame-парсер-вариант: u16 len ∈ [4, 0x28] (иначе 0); 0x11d6(P=RAM+0x11F3, 0x2F) zero; frame[2..4] → P+1..P+3, len!=4 → P+0=0x10; count=frame[4] ≤ 0x28; memcpy count из frame+5 → P+5; tail: frame[7] → P+0x2D, frame[8] → P+0x2E; r7=0x1e34(frame+2, len-2)=sum(frame[2..len-1]) mod 256; accept при byte[P+0x2D]==r7 (т.е. sum(frame[2..6])≡0, frame[7]==r7) и byte[P+0x2E]==0xFF-frame[2] → ret=1, иначе 0. 3 кейса (accept/len<4/len>0x28)..
+    Тест эмулятора @ 0x54dc: E2-b69: 0x54dc(frame, len) — frame-парсер-вариант: u16 len ∈ [4, 0x28] (иначе 0); 0x11d6(P=RAM+0x11F3, 0x2F) zero; frame[2..4] → P+1..P+3, len!=4 → P+0=0x10; count=frame[4] ≤ 0x28; memcpy count из frame+5 → P+5; tail: frame[7] → P+0x2D, frame[8] → P+0x2E; r7=0x1e34(frame+2, len-2)=sum(frame[2..len-1]) mod 256; accept при byte[P+0x2D]==r7 (т.е. sum(frame[2..6])≡0, frame[7]==r7) и byte[P+0x2E]==0xFF-frame[2] → ret=1, иначе 0. 3 кейса (accept/len<4/len>0x28)..
+    """
     g = bytearray(10)
     g[0] = 8
     g[2], g[3], g[4], g[5], g[6] = 0x10, 0x20, 0x02, 0x30, 0x9E
@@ -335,6 +374,9 @@ def _(run, rng):
            'byte[0xF36]=byte[0xF37]=1; u32[0xF95]=0xF3C; u16[0xF99..0xF9D]=0x12C×3; '
            'byte[0xF9F]=byte[0xFA0]=1. fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x5a38: E2-b69: 0x5a38() — I2C-прединит (396 insn, ret=1): byte[0x80]=2; u16[0xF10..0xF28]=0x12C×13; u32[0xF2C]=0xF3C; u16[0xF30..0xF34]=0x12C×3; byte[0xF36]=byte[0xF37]=1; u32[0xF95]=0xF3C; u16[0xF99..0xF9D]=0x12C×3; byte[0xF9F]=byte[0xFA0]=1. fresh-emu golden..
+    Тест эмулятора @ 0x5a38: E2-b69: 0x5a38() — I2C-прединит (396 insn, ret=1): byte[0x80]=2; u16[0xF10..0xF28]=0x12C×13; u32[0xF2C]=0xF3C; u16[0xF30..0xF34]=0x12C×3; byte[0xF36]=byte[0xF37]=1; u32[0xF95]=0xF3C; u16[0xF99..0xF9D]=0x12C×3; byte[0xF9F]=byte[0xFA0]=1. fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x5A38)
     assert uc.reg_read(UC_ARM_REG_R0) == 1, \
         f'0x5a38: ret={uc.reg_read(UC_ARM_REG_R0)} ждём 1'
@@ -364,6 +406,9 @@ def _(run, rng):
            '0x40010414=0x100000; ICER0(0xE000E180) str 0x8; ret=0x20017FE8 '
            '(STACK_TOP-0x18, mусорный tail). fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x58b0: E2-b69: 0x58b0() — NVIC IRQ3-setup (91 insn): 0x5970(0x100000) + struct {0x100000, 0, 8, 1} → 0x59a4; golden: AFIO 0x40010400=0xFFFFFFFF, 0x40010404=0xFFEFFFFF, 0x40010408=0xFFFFFFFF, 0x4001040C=0xFFEFFFFF, 0x40010414=0x100000; ICER0(0xE000E180) str 0x8; ret=0x20017FE8 (STACK_TOP-0x18, mусорный tail). fresh-emu golden..
+    Тест эмулятора @ 0x58b0: E2-b69: 0x58b0() — NVIC IRQ3-setup (91 insn): 0x5970(0x100000) + struct {0x100000, 0, 8, 1} → 0x59a4; golden: AFIO 0x40010400=0xFFFFFFFF, 0x40010404=0xFFEFFFFF, 0x40010408=0xFFFFFFFF, 0x4001040C=0xFFEFFFFF, 0x40010414=0x100000; ICER0(0xE000E180) str 0x8; ret=0x20017FE8 (STACK_TOP-0x18, mусорный tail). fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x58B0)
     assert _p(uc, 0x40010400) == 0xFFFFFFFF, \
         f'0x58b0: [0x40010400]={_p(uc, 0x40010400):#x} ждём 0xFFFFFFFF'
@@ -387,6 +432,9 @@ def _(run, rng):
            'byte[0x44]=byte[0x45]=0x19; u16[0xF10..0xF28]=0xE10×13; zero-clear '
            'byte[0xF70..0xFBB] (108 B, финал — str 4B @0xFBB). fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x51d8: E2-b69: 0x51d8() — телеметрия-init (994 insn, ret=0x2710): byte[0x44]=byte[0x45]=0x19; u16[0xF10..0xF28]=0xE10×13; zero-clear byte[0xF70..0xFBB] (108 B, финал — str 4B @0xFBB). fresh-emu golden..
+    Тест эмулятора @ 0x51d8: E2-b69: 0x51d8() — телеметрия-init (994 insn, ret=0x2710): byte[0x44]=byte[0x45]=0x19; u16[0xF10..0xF28]=0xE10×13; zero-clear byte[0xF70..0xFBB] (108 B, финал — str 4B @0xFBB). fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x51D8)
     assert uc.reg_read(UC_ARM_REG_R0) == 0x2710, \
         f'0x51d8: ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0x2710'
@@ -406,6 +454,9 @@ def _(run, rng):
            'стек (I2C-структуры), без RAM/PERIPH-побочных эффектов в fresh-состоянии. '
            'ret=0x10. fresh-emu smoke+ret.')
 def _(run, rng):
+    """Emulator test @ 0x3668: E2-b69: 0x3668() — charger-detection (584 insn): 0x8afc() + I2C-машина 0x908c против 0xFF-периферии → det=0x10; все записи — только локальный стек (I2C-структуры), без RAM/PERIPH-побочных эффектов в fresh-состоянии. ret=0x10. fresh-emu smoke+ret..
+    Тест эмулятора @ 0x3668: E2-b69: 0x3668() — charger-detection (584 insn): 0x8afc() + I2C-машина 0x908c против 0xFF-периферии → det=0x10; все записи — только локальный стек (I2C-структуры), без RAM/PERIPH-побочных эффектов в fresh-состоянии. ret=0x10. fresh-emu smoke+ret..
+    """
     uc, emu, lp = _fresh_probe(0x3668)
     assert uc.reg_read(UC_ARM_REG_R0) == 0x10, \
         f'0x3668: ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0x10'
@@ -418,6 +469,9 @@ def _(run, rng):
            'через I2C-машину 0x908c (dev 0x3E); fresh 0xFF-периферия → детерминированный '
            'путь, все записи — только локальный стек; ret=0x10. fresh-emu smoke+ret.')
 def _(run, rng):
+    """Emulator test @ 0x4de0: E2-b69: 0x4de0() — poll (574 insn): 0x1bdc(0x93) & 0x1bdc(0x94) + delay 0x1F4 через I2C-машину 0x908c (dev 0x3E); fresh 0xFF-периферия → детерминированный путь, все записи — только локальный стек; ret=0x10. fresh-emu smoke+ret..
+    Тест эмулятора @ 0x4de0: E2-b69: 0x4de0() — poll (574 insn): 0x1bdc(0x93) & 0x1bdc(0x94) + delay 0x1F4 через I2C-машину 0x908c (dev 0x3E); fresh 0xFF-периферия → детерминированный путь, все записи — только локальный стек; ret=0x10. fresh-emu smoke+ret..
+    """
     uc, emu, lp = _fresh_probe(0x4DE0)
     assert uc.reg_read(UC_ARM_REG_R0) == 0x10, \
         f'0x4de0: ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0x10'

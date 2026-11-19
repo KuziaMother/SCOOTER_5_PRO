@@ -28,7 +28,13 @@ POP = (0x1E4D6, 0x1E5DC, 0x1E614)
 
 
 class RMapper:
+    """The RMapper class (the research helper).
+    Класс RMapper (исследовательский вспомогатель).
+    """
     def __init__(self):
+        """The helper function (__init__).
+        Вспомогательная функция (__init__).
+        """
         self.emu = McuEmu(trace=False, max_insn=200000)
         self.emu.uc.mem_write(PERIPH, bytes(PERIPH_SIZE))
         self.emu.uc.mem_write(SYS, bytes(SYS_SIZE))
@@ -38,6 +44,9 @@ class RMapper:
         self.h2 = self.emu.uc.hook_add(UC_HOOK_MEM_WRITE, self._h_write)
 
     def _h_code(self, uc, address, size, user):
+        """The helper function (_h_code).
+        Вспомогательная функция (_h_code).
+        """
         if getattr(self, "_ret", False):
             uc.emu_stop()
             return
@@ -48,9 +57,15 @@ class RMapper:
             uc.emu_stop()
 
     def _h_write(self, uc, access, address, size, value, user):
+        """The helper function (_h_write).
+        Вспомогательная функция (_h_write).
+        """
         self.writes.append((address, size, value & ((1 << (8 * size)) - 1)))
 
     def reset(self, state, slot=0, idx=0):
+        """The reset function of the script.
+        Функция reset скрипта.
+        """
         e = self.emu.uc
         e.mem_write(RX_STATE, bytes([state]))
         e.mem_write(RX_SLOT, bytes([slot]))
@@ -63,6 +78,9 @@ class RMapper:
         self.stopped = None
 
     def step(self, state, byte):
+        """The step function of the script.
+        Функция step скрипта.
+        """
         self.reset(state)
         e = self.emu.uc
         e.mem_write(USART3_SR, struct.pack("<I", 0x400))
@@ -81,6 +99,9 @@ class RMapper:
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--states", default="0-40",
                     help="диапазон состояний 'a-b' или список '1,2,3'")

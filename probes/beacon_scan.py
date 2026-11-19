@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 """
+The scan of the scooter BLE advertisements and the MiBeacon parsing (the FE95 service
+data).
+
+The hypothesis: the telemetry (the battery and so on) goes NOT via the GATT but by the
+MiBeacon objects in the advertisement — that's how the Xiaomi BLE devices without the
+MIoT properties report. The 5 Pro has not a single telemetry property in the MIoT spec,
+the GATT channels are silent, and we have the device key -> this is the main remaining
+software path.
+
+Completely passive: it only listens to the air, writes nothing and does not connect.
+
+Usage:  python beacon_scan.py [--secs 30]
+
 Скан BLE-рекламы самоката и разбор MiBeacon (service data FE95).
 
 Гипотеза: телеметрия (батарея и пр.) уходит НЕ через GATT, а объектами MiBeacon
@@ -35,7 +48,8 @@ OBJ = {
 }
 
 def fc_bits(fctrl: int) -> dict:
-    """Канонические поля frame_control MiBeacon (как в xiaomi_ble/ble_monitor)."""
+    """The canonical fields of the MiBeacon frame_control (as in xiaomi_ble/ble_monitor).
+    Канонические поля frame_control MiBeacon (как в xiaomi_ble/ble_monitor)."""
     return {
         "version": fctrl >> 12,
         "auth_mode": (fctrl >> 10) & 3,
@@ -51,6 +65,10 @@ def fc_bits(fctrl: int) -> dict:
 
 
 def parse_mibeacon(sd: bytes):
+    """Parse the MiBeacon service data (the frame_ctrl/objects); return the human
+    lines.
+    Разобрать MiBeacon service data (frame_ctrl/объекты); вернуть человекочитаемые
+    строки."""
     if len(sd) < 5:
         return f"слишком коротко: {sd.hex()}"
     fctrl, pid, cnt = struct.unpack("<HHB", sd[:5])
@@ -95,10 +113,15 @@ def parse_mibeacon(sd: bytes):
 
 
 async def run(secs: float, mac: str):
+    """The passive scan of the advertisements for the given seconds (the unique service
+    data dumps).
+    Пассивный скан рекламы заданное число секунд (уникальные service data)."""
     seen = {}
     print(f"=== слушаем рекламу {secs:.0f} с (самокат ВКЛЮЧЁН) ===\n")
 
     def cb(dev, adv):
+        """The scan callback: the MAC filter + the unique service-data collection.
+        Callback скана: фильтр по MAC + сбор уникальных service data."""
         if dev.address.upper() != mac.upper():
             return
         for uuid, sd in (adv.service_data or {}).items():

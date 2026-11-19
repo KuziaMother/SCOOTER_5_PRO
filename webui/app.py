@@ -63,6 +63,8 @@ MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
 def load_scooters():
+    """Load the scooter list from secrets/scooters.json (the default entry if absent/corrupt).
+    Загрузить список самокатов из secrets/scooters.json (дефолтная запись если нет/бито)."""
     if os.path.exists(SCOOTERS_FILE):
         try:
             with open(SCOOTERS_FILE, "r", encoding="utf-8") as f:
@@ -75,19 +77,28 @@ def load_scooters():
 
 
 def save_scooters(lst):
+    """Save the scooter list to secrets/scooters.json.
+    Сохранить список самокатов в secrets/scooters.json."""
     os.makedirs(os.path.dirname(SCOOTERS_FILE), exist_ok=True)
     with open(SCOOTERS_FILE, "w", encoding="utf-8") as f:
         json.dump(lst, f, ensure_ascii=False, indent=2)
 
 
 def _ts():
+    """The current time as HH:MM:SS.
+    Текущее время как HH:MM:SS."""
     return datetime.now().strftime("%H:%M:%S")
 
 
 class WebState:
-    """Тред-безопасное состояние: BLE-поток пишет, HTTP-запросы читают."""
+    """Thread-safe state: the BLE thread writes, the HTTP requests read.
+    Тред-безопасное состояние: BLE-поток пишет, HTTP-запросы читают."""
 
     def __init__(self):
+        """Create the lock, the queue, the stop event (the SET control is off by default
+        (section 5)) + reset.
+        Создать lock, очередь, stop-событие (управление (SET) выключено по умолчанию
+        (§5)) + reset."""
         self.lock = threading.RLock()
         self.thread = None
         self.stop_event = threading.Event()
@@ -96,6 +107,9 @@ class WebState:
         self.reset()
 
     def reset(self):
+        """Reset the volatile fields (the status, the properties, the history, the
+        counters) under the lock.
+        Сбросить волатильные поля (status, properties, history, counters) под lock."""
         with self.lock:
             self.status = "idle"
             self.message = ""
@@ -111,6 +125,8 @@ class WebState:
             self._eid = 0
 
     def _add_event(self, msg):
+        """Append the event to the ring (up to 300 items).
+        Добавить событие в кольцо (до 300)."""
         if not msg:
             return
         self._eid += 1
@@ -160,10 +176,14 @@ class WebState:
 
     @property
     def running(self):
+        """Whether the BLE thread is alive.
+        Жив ли BLE-поток."""
         with self.lock:
             return self.thread is not None and self.thread.is_alive()
 
     def snapshot(self):
+        """A deep copy of the state for the /api/state response (under the lock).
+        Копия состояния для ответа /api/state (под lock)."""
         with self.lock:
             return {
                 "status": self.status,
@@ -229,26 +249,36 @@ def _worker(mac, mode, interval, static_interval):
 
 @app.get("/")
 def index():
+    """The main page.
+    Главная страница."""
     return render_template("index.html")
 
 
 @app.get("/service")
 def service_page():
+    """The service page.
+    Сервисная страница."""
     return render_template("service.html")
 
 
 @app.get("/api/state")
 def api_state():
+    """The state snapshot (JSON).
+    Снимок состояния (JSON)."""
     return jsonify(STATE.snapshot())
 
 
 @app.get("/api/scooters")
 def api_scooters():
+    """The saved scooter list.
+    Сохранённый список самокатов."""
     return jsonify(ok=True, scooters=load_scooters())
 
 
 @app.post("/api/scooters")
 def api_scooters_add():
+    """Add a scooter (name + MAC) to the saved list.
+    Добавить самокат (имя + MAC) в список."""
     data = request.get_json(silent=True) or {}
     name = str(data.get("name", "")).strip()
     mac = str(data.get("mac", "")).strip().upper()
@@ -266,7 +296,9 @@ def api_scooters_add():
 
 
 def _scan_worker(timeout, result):
-    """Скан в отдельном потоке со своим event loop (тот же паттерн, что _worker)."""
+    """The scan in a separate thread with its own event loop (the same pattern as
+    _worker).
+    Скан в отдельном потоке со своим event loop (тот же паттерн, что _worker)."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -279,7 +311,9 @@ def _scan_worker(timeout, result):
 
 @app.post("/api/scooters/scan")
 def api_scooters_scan():
-    """Пассивный скан эфира (§4: только слушает рекламу, ничего не пишет на устройство)."""
+    """A passive air scan (section 4: it only listens to the advertisements and writes
+    nothing to the device).
+    Пассивный скан эфира (§4: только слушает рекламу, ничего не пишет на устройство)."""
     if STATE.running:
         return jsonify(ok=False, error="сессия уже запущена — сначала остановите"), 409
 
@@ -303,6 +337,8 @@ def api_scooters_scan():
 
 @app.post("/api/scooters/delete")
 def api_scooters_delete():
+    """Remove a scooter by MAC from the saved list.
+    Удалить самокат по MAC из списка."""
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     scooters = load_scooters()
@@ -315,6 +351,8 @@ def api_scooters_delete():
 
 @app.get("/api/ltmk/status")
 def api_ltmk_status():
+    """The ltmk session status + the QR login status.
+    Статус ltmk-сессии + статус QR-логина."""
     return jsonify(ok=True, logged_in=ml.has_session(), qr=ml.qr_login_status())
 
 
@@ -333,11 +371,15 @@ def api_ltmk_qr_start():
 
 @app.get("/api/ltmk/qr_status")
 def api_ltmk_qr_status():
+    """The QR login status.
+    Статус QR-логина."""
     return jsonify(ok=True, **ml.qr_login_status())
 
 
 @app.get("/api/ltmk/devices")
 def api_ltmk_devices():
+    """The Mi Cloud device list (for the ltmk selection).
+    Список устройств Mi Cloud (для выбора ltmk)."""
     try:
         devices = ml.list_devices()
     except ml.LtmkError as e:
@@ -395,8 +437,10 @@ FW_TYPE_TO_TARGET = {"upd": "ble", "mcu": "mcu"}
 
 @app.get("/api/firmware/installed")
 def api_firmware_installed():
-    """Последняя известная версия из телеметрии главной страницы (если там
-    шёл поллинг) — своей BLE-сессии эта страница не открывает."""
+    """The last known versions from the main page telemetry (if it was polling there) —
+    this page does not open its own BLE session.
+    Последняя известная версия из телеметрии главной страницы (если там шёл поллинг) —
+    своей BLE-сессии эта страница не открывает."""
     with STATE.lock:
         ble = STATE.properties.get("4.5")   # FIRMWARE_VERSION
         bms = STATE.properties.get("4.3")   # BMS_FIRMWARE_VERSION
@@ -407,9 +451,12 @@ def api_firmware_installed():
 
 @app.post("/api/firmware/check")
 def api_firmware_check():
-    """Ищет did по MAC среди устройств аккаунта (та же сессия, что LTMK) и
-    спрашивает Mi Cloud про последнюю версию. Помечает каждую запись,
-    скачана ли она уже локально (по MD5)."""
+    """Find the did by the MAC among the account's devices (the same session as the
+    LTMK) and ask the Mi Cloud about the latest version. It marks each entry as already
+    downloaded locally (by the MD5) or not.
+    Ищет did по MAC среди устройств аккаунта (та же сессия, что LTMK) и спрашивает Mi
+    Cloud про последнюю версию. Помечает каждую запись, скачана ли она уже локально (по
+    MD5)."""
     data = request.get_json(silent=True) or {}
     mac = str(data.get("mac", "")).strip().upper()
     if not MAC_RE.match(mac):
@@ -434,6 +481,8 @@ def api_firmware_check():
 
 @app.get("/api/firmware/local")
 def api_firmware_local():
+    """The list of the locally downloaded firmware images.
+    Список локально скачанных прошивок."""
     items = fo.local_firmware_list()
     for it in items:
         it["target"] = FW_TYPE_TO_TARGET.get(it["type"])
@@ -442,6 +491,8 @@ def api_firmware_local():
 
 @app.post("/api/firmware/download")
 def api_firmware_download():
+    """Download a firmware image by the URL (with the MD5 check).
+    Скачать прошивку по URL (с проверкой MD5)."""
     data = request.get_json(silent=True) or {}
     url = str(data.get("url", "")).strip()
     md5 = str(data.get("md5", "")).strip()
@@ -459,9 +510,12 @@ def api_firmware_download():
 
 @app.post("/api/firmware/flash/start")
 def api_firmware_flash_start():
-    """Заливка образа (без переключения) — commit=False. §5: необратимая
-    часть (switchFirmware) в отдельном эндпоинте /commit, только по явному
-    следующему запросу пользователя."""
+    """Flash the image (without the switch) — commit=False. Section 5: the irreversible
+    part (the switchFirmware) is in a separate /commit endpoint, only on the explicit
+    next user request.
+    Заливка образа (без переключения) — commit=False. §5: необратимая часть
+    (switchFirmware) в отдельном эндпоинте /commit, только по явному следующему запросу
+    пользователя."""
     if STATE.running:
         return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
                                         "— одно BLE-соединение на процесс"), 409
@@ -480,10 +534,14 @@ def api_firmware_flash_start():
 
 @app.post("/api/firmware/flash/commit")
 def api_firmware_flash_commit():
-    """switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Резюм по CRC
-    внутри dreame_flasher.flash сам проверит, что все фрагменты на месте,
-    прежде чем реально переключать; если чего-то не хватает — сначала
-    докачает. Вызывается только по явному подтверждению в UI (модалка)."""
+    """The switchFirmware — an IRREVERSIBLE operation (the brick risk). The CRC resume
+    inside dreame_flasher.flash checks itself that all the fragments are in place before
+    actually switching; if something is missing — it downloads the rest first. It is
+    called only on the explicit confirmation in the UI (the modal).
+    switchFirmware — НЕОБРАТИМАЯ операция (риск кирпича). Резюм по CRC внутри
+    dreame_flasher.flash сам проверит, что все фрагменты на месте, прежде чем реально
+    переключать; если чего-то не хватает — сначала докачает. Вызывается только по явному
+    подтверждению в UI (модалка)."""
     if STATE.running:
         return jsonify(ok=False, error="сначала остановите поллинг-сессию на главной странице "
                                         "— одно BLE-соединение на процесс"), 409
@@ -503,6 +561,13 @@ def api_firmware_flash_commit():
 
 @app.get("/api/firmware/flash/status")
 def api_firmware_flash_status():
+    """The flash status. Without the ok=True wrapper: FLASH_STATE already carries its
+    own "ok" field (the counter of the successful fragments) — jsonify(ok=True, ...) was
+    falling with "got multiple values for keyword argument 'ok'" (500, not the JSON). The
+    frontend reads the fields directly (st.phase/st.ok/...); the wrapper is not needed.
+    Статус заливки. Без ok=True-обёртки: FLASH_STATE уже несёт своё поле "ok" (счётчик
+    удачных фрагментов) — jsonify(ok=True, ...) падал с "got multiple values" (500, не
+    JSON). Фронтенд читает поля напрямую (st.phase/st.ok/...), обёртка не нужна."""
     # без ok=True-обёртки: FLASH_STATE уже несёт своё поле "ok" (счётчик удачных
     # фрагментов) — jsonify(ok=True, **fw.status()) падал с "got multiple values
     # for keyword argument 'ok'" (500, не JSON). Фронтенд читает поля напрямую
@@ -512,19 +577,25 @@ def api_firmware_flash_status():
 
 @app.get("/api/firmware/flash/log")
 def api_firmware_flash_log():
-    """Постоянный лог заливок/переключений (logs/flash_log.jsonl) — переживает
-    перезапуск сервера, в отличие от FLASH_STATE (только память)."""
+    """The persistent flash/switch log (logs/flash_log.jsonl) — it survives the server
+    restart, unlike the FLASH_STATE (memory only).
+    Постоянный лог заливок/переключений (logs/flash_log.jsonl) — переживает перезапуск
+    сервера, в отличие от FLASH_STATE (только память)."""
     return jsonify(ok=True, entries=fw.read_log(limit=300))
 
 
 @app.post("/api/start")
 def api_start():
+    """Start the session (once|poll|push) in a background thread.
+    Запустить сессию (once|poll|push) в фоновом потоке."""
     if STATE.running:
         return jsonify(ok=False, error="уже запущено"), 409
 
     data = request.get_json(silent=True) or {}
 
     def param(name, dflt):
+        """The parameter from the JSON body or the query string (the default if absent).
+        Параметр из JSON-тела или query-string (дефолт если нет)."""
         if name in data and data[name] not in (None, ""):
             return data[name]
         return request.args.get(name, dflt)
@@ -563,6 +634,8 @@ def api_start():
 
 @app.post("/api/stop")
 def api_stop():
+    """Stop the running session (the stop event).
+    Остановить запущенную сессию (stop-событие)."""
     if not STATE.running:
         return jsonify(ok=False, error="не запущено"), 409
     STATE.stop_event.set()
@@ -572,6 +645,8 @@ def api_stop():
 
 @app.post("/api/write_mode")
 def api_write_mode():
+    """Enable/disable the write (SET) mode.
+    Включить/выключить режим управления (SET)."""
     data = request.get_json(silent=True) or {}
     enabled = bool(data.get("enabled"))
     with STATE.lock:
@@ -582,7 +657,9 @@ def api_write_mode():
 
 @app.post("/api/set")
 def api_set():
-    """SET одного разрешённого свойства (§5: только при включённом режиме управления)."""
+    """The SET of one of the allowed properties (section 5: only when the write mode is
+    enabled).
+    SET одного разрешённого свойства (§5: только при включённом режиме управления)."""
     if not STATE.running:
         return jsonify(ok=False, error="сессия не запущена"), 409
     with STATE.lock:
@@ -628,6 +705,10 @@ def api_set():
 
 
 def main():
+    """Run the Flask app on the localhost (the port from the SCOOTER_WEB_PORT/PUSH_WEB_PORT
+    environment variable; the debug via SCOOTER_WEB_DEBUG=1).
+    Запустить Flask-приложение на localhost (порт из SCOOTER_WEB_PORT/PUSH_WEB_PORT;
+    debug через SCOOTER_WEB_DEBUG=1)."""
     port = int(os.environ.get("SCOOTER_WEB_PORT", os.environ.get("PUSH_WEB_PORT", "8321")))
     debug = os.environ.get("SCOOTER_WEB_DEBUG") == "1"
     print(f"[scooter-web] UI: http://127.0.0.1:{port}  (только localhost; read-only)")

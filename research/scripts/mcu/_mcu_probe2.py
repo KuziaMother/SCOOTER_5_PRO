@@ -24,6 +24,9 @@ starts.sort()
 md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
 
 def prev_start(t):
+    """The prev_start function of the script.
+    Функция prev_start скрипта.
+    """
     best = None
     for s in starts:
         if s <= t:

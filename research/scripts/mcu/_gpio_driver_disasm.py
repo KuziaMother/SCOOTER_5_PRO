@@ -9,6 +9,9 @@ FW = os.path.join(os.path.dirname(__file__), "..", "..", "images", "mcu_0007.bin
 fw = open(FW, "rb").read()
 
 def disasm(off, n=0x200):
+    """The disasm function of the script.
+    Функция disasm скрипта.
+    """
     code = fw[off:off+n]
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
     md.detail = True

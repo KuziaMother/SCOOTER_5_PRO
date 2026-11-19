@@ -29,6 +29,9 @@ _FW = open(_IMG, 'rb').read()
 
 
 def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
+    """The helper function (_fresh_probe).
+    Вспомогательная функция (_fresh_probe).
+    """
     emu = McuEmu(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -44,6 +47,9 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -60,11 +66,17 @@ _1A7AC_TBL = _FW[0xA907:0xA907 + 256]
 
 def _xt(v):
     # 0x1dd8c-раунд: xtime в GF(2^8) с полиномом 0x1B (проверено 4/4)
+    """The helper function (_xt).
+    Вспомогательная функция (_xt).
+    """
     return ((v << 1) ^ ((v >> 7) * 0x1B)) & 0xFF
 
 
 def _perm16(g):
     # одновременная перестановка (реестровая загрузка до стрб, эмпирика 0x1a7e0..)
+    """The helper function (_perm16).
+    Вспомогательная функция (_perm16).
+    """
     o = list(g)
     g[1] = o[5]
     g[2] = o[0xA]
@@ -81,6 +93,9 @@ def _perm16(g):
 
 
 def _ref_1a7ac(grid16, src):
+    """Emulator test @ 0x1a7ac.
+    Тест эмулятора @ 0x1a7ac.
+    """
     g = bytearray(grid16)
     for i in range(16):
         g[i] ^= src[i]
@@ -109,6 +124,9 @@ def _ref_1a7ac(grid16, src):
             '(4 группы: b_i ^ xtime(b_i ^ next) ^ parity-4), key-XOR src[r5*16..]; r5=0xA: '
             'только финальный XOR src[0xA0..]. ret=4. Рефмодель (2 случайных + нуль-кейс).')
 def _(run, rng):
+    """Emulator test @ 0x1a7ac: E2-b68: 0x1a7ac(grid, src) — 16B-блок-шифр in-place grid[0..15]: key0-XOR src[0..15]; 10 раундов (r5=1..0xA): S-box 0xA907, одновременная перестановка 12 байтов (1←5, 2←0xA, 3←0xF, 5←9, 6←0xE, 7←3, 9←0xD, 0xA←2, 0xB←7, 0xD←1, 0xE←6, 0xF←0xB; 0/4/8/0xC — инвариантны), r5<0xA: диффузия 0x1dd8c (4 группы: b_i ^ xtime(b_i ^ next) ^ parity-4), key-XOR src[r5*16..]; r5=0xA: только финальный XOR src[0xA0..]. ret=4. Рефмодель (2 случайных + нуль-кейс)..
+    Тест эмулятора @ 0x1a7ac: E2-b68: 0x1a7ac(grid, src) — 16B-блок-шифр in-place grid[0..15]: key0-XOR src[0..15]; 10 раундов (r5=1..0xA): S-box 0xA907, одновременная перестановка 12 байтов (1←5, 2←0xA, 3←0xF, 5←9, 6←0xE, 7←3, 9←0xD, 0xA←2, 0xB←7, 0xD←1, 0xE←6, 0xF←0xB; 0/4/8/0xC — инвариантны), r5<0xA: диффузия 0x1dd8c (4 группы: b_i ^ xtime(b_i ^ next) ^ parity-4), key-XOR src[r5*16..]; r5=0xA: только финальный XOR src[0xA0..]. ret=4. Рефмодель (2 случайных + нуль-кейс)..
+    """
     grid_off, src_off = 0x5000, 0x5100
     cases = [(bytes(256), bytes(256))]
     for _ in range(2):
@@ -136,6 +154,9 @@ def _(run, rng):
             '(0xFE → 0x1FF: два str |= 1 + |= 0x100); bit0=0 → без записи (tail 0x1e4b0: '
             'lsl-катена bpl). ret — мусор tail (0x40004800). fresh-emu, 2 кейса.')
 def _(run, rng):
+    """Emulator test @ 0x1e480: E2-b68: 0x1e480() — u32[0x4000483C] (SYSCFG/AFIO-объект 0x40004800, поле +0x3C): bit0 установлен (lsl #0x1f ≠ 0 → bne) → u32[0x40004840] |= 0x101 (0xFE → 0x1FF: два str |= 1 + |= 0x100); bit0=0 → без записи (tail 0x1e4b0: lsl-катена bpl). ret — мусор tail (0x40004800). fresh-emu, 2 кейса..
+    Тест эмулятора @ 0x1e480: E2-b68: 0x1e480() — u32[0x4000483C] (SYSCFG/AFIO-объект 0x40004800, поле +0x3C): bit0 установлен (lsl #0x1f ≠ 0 → bne) → u32[0x40004840] |= 0x101 (0xFE → 0x1FF: два str |= 1 + |= 0x100); bit0=0 → без записи (tail 0x1e4b0: lsl-катена bpl). ret — мусор tail (0x40004800). fresh-emu, 2 кейса..
+    """
     for val, exp in ((0x00000000, 0x000000FE), (0x00000001, 0x000001FF),
                      (0x00000003, 0x000001FF), (0x80000000, 0x000000FE)):
         uc, _emu, _lp = _fresh_probe(0x1E480,
@@ -154,6 +175,9 @@ def _(run, rng):
             'хвост: byte[obj+0xA] 0/1, u16[obj+0x14]=0x40, history-массив, '
             'u16[obj+0xC] сброс в 0 (strh r2=0). ret=obj. 2 кейса (инкремент/капы).')
 def _(run, rng):
+    """Emulator test @ 0x1bb1c: E2-b68: 0x1bb1c(obj) — tick-счётчики: c=u16[obj+0xC]: c<0x7D0 → c++ и byte[0x100]=1, иначе byte[0x100]=0; u16[0xAC+0x32=0xDE]: <0x1F40 → ++, иначе u16[0xDE]=u16[0xAC+0x34=0xE0]=0; byte[obj+0x14]≠byte[0x268] → u16[0xE0]++; хвост: byte[obj+0xA] 0/1, u16[obj+0x14]=0x40, history-массив, u16[obj+0xC] сброс в 0 (strh r2=0). ret=obj. 2 кейса (инкремент/капы)..
+    Тест эмулятора @ 0x1bb1c: E2-b68: 0x1bb1c(obj) — tick-счётчики: c=u16[obj+0xC]: c<0x7D0 → c++ и byte[0x100]=1, иначе byte[0x100]=0; u16[0xAC+0x32=0xDE]: <0x1F40 → ++, иначе u16[0xDE]=u16[0xAC+0x34=0xE0]=0; byte[obj+0x14]≠byte[0x268] → u16[0xE0]++; хвост: byte[obj+0xA] 0/1, u16[obj+0x14]=0x40, history-массив, u16[obj+0xC] сброс в 0 (strh r2=0). ret=obj. 2 кейса (инкремент/капы)..
+    """
     obj = RAM + 0x3000
     # кейс A: инкремент обоих счётчиков + mismatch-инкремент
     uc, _emu, _lp = _fresh_probe(0x1BB1C,
@@ -207,6 +231,9 @@ _7494_CASES = [
             'в финале u16[0x3004/0x3000/0x3006] обнуляются; ret=0x15E802 (константа). '
             '4 кейса (вкл. clamp-границы).')
 def _(run, rng):
+    """Emulator test @ 0x7494: E2-b68: 0x7494() — v1=0x8f04()=0x1068 (→u16[0x301F]); v2=clamp(u16[0xF9D], [0x3E8,0x1388]) → u16[0x135A]; v3=clamp(u16[0xF9B], ...) → u16[0x135C]; хвост: u16[0x3004]=max(v2,v3)-v3 (s16), u16[0x3000]=0x3E8-u16[0x3004], u16[0x3006]=v3-0xC80 (s16); cbnz u16[0x3000] → smulbb/sdiv → u32[0x2FEC]; в финале u16[0x3004/0x3000/0x3006] обнуляются; ret=0x15E802 (константа). 4 кейса (вкл. clamp-границы)..
+    Тест эмулятора @ 0x7494: E2-b68: 0x7494() — v1=0x8f04()=0x1068 (→u16[0x301F]); v2=clamp(u16[0xF9D], [0x3E8,0x1388]) → u16[0x135A]; v3=clamp(u16[0xF9B], ...) → u16[0x135C]; хвост: u16[0x3004]=max(v2,v3)-v3 (s16), u16[0x3000]=0x3E8-u16[0x3004], u16[0x3006]=v3-0xC80 (s16); cbnz u16[0x3000] → smulbb/sdiv → u32[0x2FEC]; в финале u16[0x3004/0x3000/0x3006] обнуляются; ret=0x15E802 (константа). 4 кейса (вкл. clamp-границы)..
+    """
     for v2, v3, e2a, e2b, e4, e0, e6, e32, eret in _7494_CASES:
         uc, _emu, _lp = _fresh_probe(0x7494,
                                      seeds=[(RAM + 0xF9D, struct.pack('<H', v2)),
@@ -235,6 +262,9 @@ def _(run, rng):
             'ret=buf1. Кейс: u32[+0x28]=0xABCD1278, u32[+0x30]=0x55555555, byte[buf2]=0x37, '
             'byte[buf2+8]=0x41 → 0xABCD1378 / 0x555555D6.')
 def _(run, rng):
+    """Emulator test @ 0x22d2c: E2-b68: 0x22d2c(buf1, buf2) — buffer-config: u32[buf1+0x30] = (u32 & ~3) | (byte[buf2+8] << 1); u32[buf1+0x28] = (u32 & ~0x73) | (byte[buf2] << 4) (5 проходов mask/copy: >>1<<1, &~0x70, >>2<<2, &~0x70, |byte<<4; затем &~2 | byte[+8]<<1); tail: 5-way cmp buf1 с pool-указателями (иначе — путь 0x22da0: byte[buf2+0xB/+0xC] ∈ {0,1} гейты, u32[buf1+4] = (u32 & ~0xFF) | byte[+0xB]<<8); ret=buf1. Кейс: u32[+0x28]=0xABCD1278, u32[+0x30]=0x55555555, byte[buf2]=0x37, byte[buf2+8]=0x41 → 0xABCD1378 / 0x555555D6..
+    Тест эмулятора @ 0x22d2c: E2-b68: 0x22d2c(buf1, buf2) — buffer-config: u32[buf1+0x30] = (u32 & ~3) | (byte[buf2+8] << 1); u32[buf1+0x28] = (u32 & ~0x73) | (byte[buf2] << 4) (5 проходов mask/copy: >>1<<1, &~0x70, >>2<<2, &~0x70, |byte<<4; затем &~2 | byte[+8]<<1); tail: 5-way cmp buf1 с pool-указателями (иначе — путь 0x22da0: byte[buf2+0xB/+0xC] ∈ {0,1} гейты, u32[buf1+4] = (u32 & ~0xFF) | byte[+0xB]<<8); ret=buf1. Кейс: u32[+0x28]=0xABCD1278, u32[+0x30]=0x55555555, byte[buf2]=0x37, byte[buf2+8]=0x41 → 0xABCD1378 / 0x555555D6..
+    """
     b1, b2 = RAM + 0x3000, RAM + 0x3040
     uc, _emu, _lp = _fresh_probe(0x22D2C,
                                  seeds=[(b1 + 0x28, 0xABCD1278),
@@ -261,6 +291,9 @@ def _(run, rng):
             'u32[u32[obj]+0xC] (для 0x40004400 с 0xFF-периферией: 0xC000) + byte[+0x70..72]; '
             'ret=0. 2 кейса (валидный golden / invalid hang).')
 def _(run, rng):
+    """Emulator test @ 0x23188: E2-b68: 0x23188(obj) — descriptor-валидатор: u32[obj] ∈ {0x40013800, 0x40004400, 0x40004800} (иначе cpsid i; b . — hang); u32[obj+4] < pool (иначе hang); byte[obj+8]∈{0..3}, [+9]∈{0,1}, [+0xA]∈{0,1,3}, [+0xB]∈{0..5}, [+0xC]∈{0,1} (иначе hang); валидный: bl 0x23314 + init u32[u32[obj]+0xC] (для 0x40004400 с 0xFF-периферией: 0xC000) + byte[+0x70..72]; ret=0. 2 кейса (валидный golden / invalid hang)..
+    Тест эмулятора @ 0x23188: E2-b68: 0x23188(obj) — descriptor-валидатор: u32[obj] ∈ {0x40013800, 0x40004400, 0x40004800} (иначе cpsid i; b . — hang); u32[obj+4] < pool (иначе hang); byte[obj+8]∈{0..3}, [+9]∈{0,1}, [+0xA]∈{0,1,3}, [+0xB]∈{0..5}, [+0xC]∈{0,1} (иначе hang); валидный: bl 0x23314 + init u32[u32[obj]+0xC] (для 0x40004400 с 0xFF-периферией: 0xC000) + byte[+0x70..72]; ret=0. 2 кейса (валидный golden / invalid hang)..
+    """
     obj = RAM + 0x3000
     uc, _emu, _lp = _fresh_probe(0x23188,
                                  seeds=[(obj, 0x40004400), (obj + 4, 5)],
@@ -283,6 +316,9 @@ def _(run, rng):
 @t(0x3B2A, 'E2-b68: 0x3b2a() — delegate: bl 0xc304 → bl 0x12aec → bl 0xa788 → bl 0x14924 '
            '→ pop; ret=0x10 (0x14924). fresh-emu.')
 def _(run, rng):
+    """Emulator test @ 0x3b2a: E2-b68: 0x3b2a() — delegate: bl 0xc304 → bl 0x12aec → bl 0xa788 → bl 0x14924 → pop; ret=0x10 (0x14924). fresh-emu..
+    Тест эмулятора @ 0x3b2a: E2-b68: 0x3b2a() — delegate: bl 0xc304 → bl 0x12aec → bl 0xa788 → bl 0x14924 → pop; ret=0x10 (0x14924). fresh-emu..
+    """
     uc, _emu, _lp = _fresh_probe(0x3B2A, max_insn=5000)
     assert uc.reg_read(UC_ARM_REG_R0) == 0x10, \
         f'0x3b2a ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0x10'
@@ -294,6 +330,9 @@ def _(run, rng):
             'pool2=0x200027E0, 0xFF)×2, затем u32[0x20001FD4+0x804=0x27D8] = 0x800; '
             'ret=0x800. fresh-emu.')
 def _(run, rng):
+    """Emulator test @ 0x15758: E2-b68: 0x15758() — init-парочка: 0x11d6(0x80C, pool1), 0x11c8(0x800, pool2=0x200027E0, 0xFF)×2, затем u32[0x20001FD4+0x804=0x27D8] = 0x800; ret=0x800. fresh-emu..
+    Тест эмулятора @ 0x15758: E2-b68: 0x15758() — init-парочка: 0x11d6(0x80C, pool1), 0x11c8(0x800, pool2=0x200027E0, 0xFF)×2, затем u32[0x20001FD4+0x804=0x27D8] = 0x800; ret=0x800. fresh-emu..
+    """
     uc, _emu, _lp = _fresh_probe(0x15758)
     got = struct.unpack_from('<I', bytes(uc.mem_read(RAM + 0x27D8, 4)), 0)[0]
     assert got == 0x800, f'0x15758 u32[0x27D8]={got:#x} ждём 0x800'
@@ -306,6 +345,9 @@ def _(run, rng):
 @t(0x9F70, 'E2-b68: 0x9f70() — delegate: bl 0xa39c → ret=0x200014CE (RAM+0x14CE). '
            'fresh-emu.')
 def _(run, rng):
+    """Emulator test @ 0x9f70: E2-b68: 0x9f70() — delegate: bl 0xa39c → ret=0x200014CE (RAM+0x14CE). fresh-emu..
+    Тест эмулятора @ 0x9f70: E2-b68: 0x9f70() — delegate: bl 0xa39c → ret=0x200014CE (RAM+0x14CE). fresh-emu..
+    """
     uc, _emu, _lp = _fresh_probe(0x9F70)
     assert uc.reg_read(UC_ARM_REG_R0) == 0x200014CE, \
         f'0x9f70 ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0x200014CE'
@@ -321,6 +363,9 @@ _1C838_S2 = bytes.fromhex('e96272160930303030302f30303030')
             'RAM+0x858 + overwrite 0x85D..0x861 = 0x30×5; ret=1. 5834 insn. '
             'fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x1c838: E2-b68: 0x1c838() — двойной строковый декодер: 0x19a68(20, adr 0x1CC06) → 20B в RAM+0x844 (UTF-8-строка), 0x19a68(20, adr 0x1CC1E) → 15B-строка в RAM+0x858 + overwrite 0x85D..0x861 = 0x30×5; ret=1. 5834 insn. fresh-emu golden..
+    Тест эмулятора @ 0x1c838: E2-b68: 0x1c838() — двойной строковый декодер: 0x19a68(20, adr 0x1CC06) → 20B в RAM+0x844 (UTF-8-строка), 0x19a68(20, adr 0x1CC1E) → 15B-строка в RAM+0x858 + overwrite 0x85D..0x861 = 0x30×5; ret=1. 5834 insn. fresh-emu golden..
+    """
     uc, _emu, _lp = _fresh_probe(0x1C838, max_insn=20000)
     ram = bytes(uc.mem_read(RAM, 0x20000))
     assert ram[0x844:0x858] == _1C838_S1, \
@@ -339,6 +384,9 @@ def _(run, rng):
             'в 0); иначе — быстрый выход. 3 кейса (gate=0 / sign / pos).')
 def _(run, rng):
     # (a) gate = 0
+    """Emulator test @ 0x21a08: E2-b68: 0x21a08() — gate-копира: gate=byte[0x170]; gate==1 и (u32[0x40012C40+0x14=0x40012C54] lsl #0x10) bit31==0 (т.е. bit15 исходного) → 7×0x221a4/0x221e6-копирование (SPI-пины, ~7.6K insn, byte[0x170] сбрасывается в 0); иначе — быстрый выход. 3 кейса (gate=0 / sign / pos)..
+    Тест эмулятора @ 0x21a08: E2-b68: 0x21a08() — gate-копира: gate=byte[0x170]; gate==1 и (u32[0x40012C40+0x14=0x40012C54] lsl #0x10) bit31==0 (т.е. bit15 исходного) → 7×0x221a4/0x221e6-копирование (SPI-пины, ~7.6K insn, byte[0x170] сбрасывается в 0); иначе — быстрый выход. 3 кейса (gate=0 / sign / pos)..
+    """
     uc, _emu, _lp = _fresh_probe(0x21A08)
     ram = bytes(uc.mem_read(RAM, 0x20000))
     assert ram[0x170] == 0 and uc.reg_read(UC_ARM_REG_R0) == 0, \
@@ -371,6 +419,9 @@ def _(run, rng):
             'u16[0x12AB/0x12AD]=0, byte[0x12B6]=0, flag 0x1384 сброс; ret=0. '
             '432 insn. fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x6fc0: E2-b68: 0x6fc0() — motor-расчёт: 0x10ff8(1) (flag 0x1384), 0x8e90 (не 0 → tail 0x7034), 0x8ecc/0x8ee8-копии (u16[0x135A/0x135C/0x135E]), 0xe3ec×2 (s16-стек), 0xe36c(сравнение), u16[0x1385]=0x4050, u32[0x128F..0x129B]=0, u16[0x12AB/0x12AD]=0, byte[0x12B6]=0, flag 0x1384 сброс; ret=0. 432 insn. fresh-emu golden..
+    Тест эмулятора @ 0x6fc0: E2-b68: 0x6fc0() — motor-расчёт: 0x10ff8(1) (flag 0x1384), 0x8e90 (не 0 → tail 0x7034), 0x8ecc/0x8ee8-копии (u16[0x135A/0x135C/0x135E]), 0xe3ec×2 (s16-стек), 0xe36c(сравнение), u16[0x1385]=0x4050, u32[0x128F..0x129B]=0, u16[0x12AB/0x12AD]=0, byte[0x12B6]=0, flag 0x1384 сброс; ret=0. 432 insn. fresh-emu golden..
+    """
     uc, _emu, _lp = _fresh_probe(0x6FC0)
     ram = bytes(uc.mem_read(RAM, 0x20000))
     assert ram[0x1384] == 0, '0x6fc0: flag 0x1384 финал ждём 0'
@@ -396,6 +447,9 @@ def _(run, rng):
             'u32[0x498/0x49C/0x4A0/0x4A4] = 0 (4 слова); ret=0. 53 insn. '
             'fresh-emu golden (seed: byte[0x3C8]=0xAB, byte[0x453]=0, u32[0x444]=0x1234).')
 def _(run, rng):
+    """Emulator test @ 0x1d3d0: E2-b68: 0x1d3d0() — flag-sync: A=0x200003C8, B=0x20000444: byte[A] ≠ byte[B+0xF=0x453] → byte[0x3D6] = 1, byte[0x31E] = 0, u32[0x498/0x49C/0x4A0/0x4A4] = 0 (4 слова); ret=0. 53 insn. fresh-emu golden (seed: byte[0x3C8]=0xAB, byte[0x453]=0, u32[0x444]=0x1234)..
+    Тест эмулятора @ 0x1d3d0: E2-b68: 0x1d3d0() — flag-sync: A=0x200003C8, B=0x20000444: byte[A] ≠ byte[B+0xF=0x453] → byte[0x3D6] = 1, byte[0x31E] = 0, u32[0x498/0x49C/0x4A0/0x4A4] = 0 (4 слова); ret=0. 53 insn. fresh-emu golden (seed: byte[0x3C8]=0xAB, byte[0x453]=0, u32[0x444]=0x1234)..
+    """
     uc, _emu, _lp = _fresh_probe(0x1D3D0,
                                  seeds=[(RAM + 0x3C8, 0xAB),
                                         (RAM + 0x453, 0),

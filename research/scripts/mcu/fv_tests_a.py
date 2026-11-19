@@ -7,6 +7,9 @@ from fv_core import _fresh_call, _intercept  # noqa: F401
 
 @t(0x161EA, 'фикс-деление: floor((r0/r1) × 2^r2)')
 def _(run, rng):
+    """Emulator test @ 0x161ea: фикс-деление: floor((r0/r1) × 2^r2).
+    Тест эмулятора @ 0x161ea: фикс-деление: floor((r0/r1) × 2^r2).
+    """
     num = rng.getrandbits(32)
     den = rng.getrandbits(32) or 1
     n = rng.choice([8, 15, 16, 20, 31])
@@ -16,6 +19,9 @@ def _(run, rng):
 
 @t(0x126C, 'u64 LSR (r1:r0) >> r2')
 def _(run, rng):
+    """Emulator test @ 0x126c: u64 LSR (r1:r0) >> r2.
+    Тест эмулятора @ 0x126c: u64 LSR (r1:r0) >> r2.
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([0, 1, 7, 15, 31, 32, 33, 40, 63])
     r0, r1 = run.call(0x126C, (lo, hi, n))
@@ -25,6 +31,9 @@ def _(run, rng):
 
 @t(0x1A0A0, 'u64 LSR — копия 0x126c')
 def _(run, rng):
+    """Emulator test @ 0x1a0a0: u64 LSR — копия 0x126c.
+    Тест эмулятора @ 0x1a0a0: u64 LSR — копия 0x126c.
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([0, 1, 31, 32, 63])
     r0, r1 = run.call(0x1A0A0, (lo, hi, n))
@@ -34,6 +43,9 @@ def _(run, rng):
 
 @t(0x1A080, 'u64 LSL (r1:r0) << r2')
 def _(run, rng):
+    """Emulator test @ 0x1a080: u64 LSL (r1:r0) << r2.
+    Тест эмулятора @ 0x1a080: u64 LSL (r1:r0) << r2.
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([0, 1, 7, 15, 31, 32, 33, 40, 63])
     r0, r1 = run.call(0x1A080, (lo, hi, n))
@@ -43,6 +55,9 @@ def _(run, rng):
 
 @t(0x1A0C2, 'u64 ASR (r1:r0) >>s r2')
 def _(run, rng):
+    """Emulator test @ 0x1a0c2: u64 ASR (r1:r0) >>s r2.
+    Тест эмулятора @ 0x1a0c2: u64 ASR (r1:r0) >>s r2.
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([0, 1, 7, 15, 31, 32, 33, 40, 63])
     r0, r1 = run.call(0x1A0C2, (lo, hi, n))
@@ -54,6 +69,9 @@ def _(run, rng):
 
 @t(0x123E, 'u64 масштаб 2^(r2-0x433), окно [0x3FF..]')
 def _(run, rng):
+    """Emulator test @ 0x123e: u64 масштаб 2^(r2-0x433), окно [0x3FF..].
+    Тест эмулятора @ 0x123e: u64 масштаб 2^(r2-0x433), окно [0x3FF..].
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     r2 = rng.choice([0x300, 0x3FE, 0x3FF, 0x400, 0x432, 0x433, 0x434, 0x450, 0x500])
     r0, r1 = run.call(0x123E, (lo, hi, r2))
@@ -63,6 +81,9 @@ def _(run, rng):
 
 @t(0x1A052, 'u64 масштаб 2^(n-0x433), n = r2>>21, floor r3')
 def _(run, rng):
+    """Emulator test @ 0x1a052: u64 масштаб 2^(n-0x433), n = r2>>21, floor r3.
+    Тест эмулятора @ 0x1a052: u64 масштаб 2^(n-0x433), n = r2>>21, floor r3.
+    """
     lo, hi = rng.getrandbits(32), rng.getrandbits(32)
     # безопасные n: сырой сдвиг в u64lsr = (0x433-n)-32 должен быть < 256
     # или ((s&0xFF)>28) — иначе баг Unicorn со сдвигами по регистру (см. §50.7)
@@ -78,6 +99,9 @@ def _(run, rng):
 
 @t(0x172B8, 'u32×u32 → u64: [r2]=HIGH, [r3]=LOW (указатели перепутаны!)')
 def _(run, rng):
+    """Emulator test @ 0x172b8: u32×u32 → u64: [r2]=HIGH, [r3]=LOW (указатели перепутаны!).
+    Тест эмулятора @ 0x172b8: u32×u32 → u64: [r2]=HIGH, [r3]=LOW (указатели перепутаны!).
+    """
     a, b = rng.getrandbits(32), rng.getrandbits(32)
     p_lo, p_hi = RAM + 0x19000, RAM + 0x19004
     run.call(0x172B8, (a, b, p_lo, p_hi))
@@ -89,6 +113,9 @@ def _(run, rng):
 
 @t(0x1712C, 'урезанное умножение: верх/низ (32-n) бит P')
 def _(run, rng):
+    """Emulator test @ 0x1712c: урезанное умножение: верх/низ (32-n) бит P.
+    Тест эмулятора @ 0x1712c: урезанное умножение: верх/низ (32-n) бит P.
+    """
     a, b = rng.getrandbits(32), rng.getrandbits(32)
     n = rng.choice([1, 4, 8, 16, 24, 31])
     r0, _ = run.call(0x1712C, (a, b, n))
@@ -98,6 +125,9 @@ def _(run, rng):
 @t(0x17150, 'проверка произведения: (P_hi==0)? P_lo : -1')
 def _(run, rng):
     # микс: большие (переполнение) и малые (умещается)
+    """Emulator test @ 0x17150: проверка произведения: (P_hi==0)? P_lo : -1.
+    Тест эмулятора @ 0x17150: проверка произведения: (P_hi==0)? P_lo : -1.
+    """
     a = rng.choice([rng.getrandbits(32), rng.getrandbits(12)])
     b = rng.choice([rng.getrandbits(32), rng.getrandbits(12)])
     r0, _ = run.call(0x17150, (a, b))
@@ -108,15 +138,24 @@ def _(run, rng):
 
 @t(0x1494, 'cmp g(a) vs g(b): g(x)=x if x≥2^63 else 2^63-x (float 0x16040: bhs ⇔ a≤b)')
 def _(run, rng):
+    """Emulator test @ 0x1494: cmp g(a) vs g(b): g(x)=x if x≥2^63 else 2^63-x (float 0x16040: bhs ⇔ a≤b).
+    Тест эмулятора @ 0x1494: cmp g(a) vs g(b): g(x)=x if x≥2^63 else 2^63-x (float 0x16040: bhs ⇔ a≤b).
+    """
     a = rng.getrandbits(64)
     b = rng.getrandbits(64)
     run.call(0x1494, (a & M32, a >> 32, b & M32, b >> 32))
     n, z, c, v = run.flags()
     def g(x):
         # отрицательные (bit63=1) — без изменения; неотрицательные — 2^63-x
+        """The g function of the script.
+        Функция g скрипта.
+        """
         return x if x >= (1 << 63) else ((1 << 63) - x) & M64
     ga, gb = g(a), g(b)
     def cmpf(x, y):
+        """The cmpf function of the script.
+        Функция cmpf скрипта.
+        """
         d = (x - y) & M32
         return ((d >> 31) & 1, d == 0, x >= y,
                 (((x >> 31) ^ (y >> 31)) & ((x >> 31) ^ (d >> 31))))
@@ -131,6 +170,9 @@ def _(run, rng):
 
 @t(0x128C, 'u64 add-round (B<0: A+=1, B<<=1; B==0: A&=~1)')
 def _(run, rng):
+    """Emulator test @ 0x128c: u64 add-round (B<0: A+=1, B<<=1; B==0: A&=~1).
+    Тест эмулятора @ 0x128c: u64 add-round (B<0: A+=1, B<<=1; B==0: A&=~1).
+    """
     alo, ahi, blo, bhi = (rng.getrandbits(32) for _ in range(4))
     r0, r1 = run.call(0x128C, (alo, ahi, blo, bhi))
     assert (r0, r1) == ref_u64add_round(alo, ahi, blo, bhi), \
@@ -139,6 +181,9 @@ def _(run, rng):
 
 @t(0x1A16A, 'u64 add-round — копия 0x128c')
 def _(run, rng):
+    """Emulator test @ 0x1a16a: u64 add-round — копия 0x128c.
+    Тест эмулятора @ 0x1a16a: u64 add-round — копия 0x128c.
+    """
     alo, ahi, blo, bhi = (rng.getrandbits(32) for _ in range(4))
     r0, r1 = run.call(0x1A16A, (alo, ahi, blo, bhi))
     assert (r0, r1) == ref_u64add_round(alo, ahi, blo, bhi), \
@@ -149,6 +194,9 @@ def _(run, rng):
 
 @t(0x16222, 'sdiv u32, округление до ближайшего (ties up)')
 def _(run, rng):
+    """Emulator test @ 0x16222: sdiv u32, округление до ближайшего (ties up).
+    Тест эмулятора @ 0x16222: sdiv u32, округление до ближайшего (ties up).
+    """
     a = rng.randint(-(1 << 31), (1 << 31) - 1)
     b = rng.choice([1, -1, 2, -2, 3, 7, -7])
     r0, _ = run.call(0x16222, (a & M32, b & M32))
@@ -158,6 +206,9 @@ def _(run, rng):
 
 @t(0x19A1C, 'sdiv u64 → (q {r1:r0}, rem {r3:r2}), trunc к нулю')
 def _(run, rng):
+    """Emulator test @ 0x19a1c: sdiv u64 → (q {r1:r0}, rem {r3:r2}), trunc к нулю.
+    Тест эмулятора @ 0x19a1c: sdiv u64 → (q {r1:r0}, rem {r3:r2}), trunc к нулю.
+    """
     d = rng.randint(-(1 << 63), (1 << 63) - 1)
     s = rng.choice([1, -1, 2, -2, 3, 5, -5, 1000, -1000])
     r0, r1 = run.call(0x19A1C, (d & M32, d >> 32, s & M32, s >> 32))
@@ -171,6 +222,9 @@ def _(run, rng):
 
 @t(0x5044, 'среднее u16-массива (целое)')
 def _(run, rng):
+    """Emulator test @ 0x5044: среднее u16-массива (целое).
+    Тест эмулятора @ 0x5044: среднее u16-массива (целое).
+    """
     start = rng.randint(0, 8)
     cnt = rng.randint(1, 16)
     buf = struct.pack('<%dH' % (start + cnt), *([0] * start +
@@ -185,6 +239,9 @@ def _(run, rng):
 
 @t(0xDD2C, 'clamp + снап на сетку min+step*q')
 def _(run, rng):
+    """Emulator test @ 0xdd2c: clamp + снап на сетку min+step*q.
+    Тест эмулятора @ 0xdd2c: clamp + снап на сетку min+step*q.
+    """
     minv = rng.getrandbits(20)
     step = rng.randint(1, 0xFFF)
     maxq = rng.randint(0, 0xFFFF)
@@ -198,6 +255,9 @@ def _(run, rng):
 
 @t(0x1A838, 'CRC-32 byte-step: (state<<24)^byte, MSB-first, poly 0x04C11DB7')
 def _(run, rng):
+    """Emulator test @ 0x1a838: CRC-32 byte-step: (state<<24)^byte, MSB-first, poly 0x04C11DB7.
+    Тест эмулятора @ 0x1a838: CRC-32 byte-step: (state<<24)^byte, MSB-first, poly 0x04C11DB7.
+    """
     byte = rng.getrandbits(8)
     state = rng.getrandbits(32)
     r0, _ = run.call(0x1A838, (byte, state))
@@ -207,6 +267,9 @@ def _(run, rng):
 
 @t(0xAAD0, 'CRC-16/CCITT-FALSE буфер (poly 0x1021, init 0)')
 def _(run, rng):
+    """Emulator test @ 0xaad0: CRC-16/CCITT-FALSE буфер (poly 0x1021, init 0).
+    Тест эмулятора @ 0xaad0: CRC-16/CCITT-FALSE буфер (poly 0x1021, init 0).
+    """
     buf = bytes(rng.getrandbits(8) for _ in range(rng.randint(1, 32)))
     run.ram_write(0x19200, buf)
     r0, _ = run.call(0xAAD0, (RAM + 0x19200, len(buf)))
@@ -216,6 +279,9 @@ def _(run, rng):
 
 @t(0x87F8, 'CRC-8 буфер: poly 0x2F, MSB-first, init 0')
 def _(run, rng):
+    """Emulator test @ 0x87f8: CRC-8 буфер: poly 0x2F, MSB-first, init 0.
+    Тест эмулятора @ 0x87f8: CRC-8 буфер: poly 0x2F, MSB-first, init 0.
+    """
     buf = bytes(rng.getrandbits(8) for _ in range(rng.randint(1, 32)))
     run.ram_write(0x19200, buf)
     r0, _ = run.call(0x87F8, (RAM + 0x19200, len(buf)))
@@ -225,6 +291,9 @@ def _(run, rng):
 
 @t(0x3C7C, 'CRC-7 byte-step (порт ассемблера; сверка с poly 0x09)')
 def _(run, rng):
+    """Emulator test @ 0x3c7c: CRC-7 byte-step (порт ассемблера; сверка с poly 0x09).
+    Тест эмулятора @ 0x3c7c: CRC-7 byte-step (порт ассемблера; сверка с poly 0x09).
+    """
     byte = rng.getrandbits(8)
     state = rng.getrandbits(8)
     r0, _ = run.call(0x3C7C, (byte, state))
@@ -236,6 +305,9 @@ def _(run, rng):
 
 @t(0xC9A8, 'BCD→binary (один байт: hi*5+lo)')
 def _(run, rng):
+    """Emulator test @ 0xc9a8: BCD→binary (один байт: hi*5+lo).
+    Тест эмулятора @ 0xc9a8: BCD→binary (один байт: hi*5+lo).
+    """
     b = rng.getrandbits(8)
     r0, _ = run.call(0xC9A8, (b,))
     assert r0 == ref_bcd2bin(b), f'({b:#x}) → {r0}, ждали {ref_bcd2bin(b)}'
@@ -243,6 +315,9 @@ def _(run, rng):
 
 @t(0xC9BE, 'binary→BCD (0..99 → BCD-байт)')
 def _(run, rng):
+    """Emulator test @ 0xc9be: binary→BCD (0..99 → BCD-байт).
+    Тест эмулятора @ 0xc9be: binary→BCD (0..99 → BCD-байт).
+    """
     v = rng.randint(0, 99)
     r0, _ = run.call(0xC9BE, (v,))
     assert r0 == ref_bin2bcd(v), f'({v}) → {r0:#x}, ждали {ref_bin2bcd(v):#x}'
@@ -259,6 +334,9 @@ FLASH = 0x40022000    # база FLASH (CTLR=+0, SR=+0xC, SCBR=+0x10)
 
 @t(0x7FD4, 'getter byte: r0 = u8@r0')
 def _(run, rng):
+    """Emulator test @ 0x7fd4: getter byte: r0 = u8@r0.
+    Тест эмулятора @ 0x7fd4: getter byte: r0 = u8@r0.
+    """
     b = rng.getrandbits(8)
     run.ram_write(0x19400, bytes([b]))
     r0, _ = run.call(0x7FD4, (RAM + 0x19400,))
@@ -267,6 +345,9 @@ def _(run, rng):
 
 @t(0xE3E4, 'setter u16 = 0: *(u16@r0) = 0')
 def _(run, rng):
+    """Emulator test @ 0xe3e4: setter u16 = 0: *(u16@r0) = 0.
+    Тест эмулятора @ 0xe3e4: setter u16 = 0: *(u16@r0) = 0.
+    """
     run.ram_write(0x19410, struct.pack('<H', 0xABCD))
     run.call(0xE3E4, (RAM + 0x19410,))
     assert run.ram_read(0x19410, 2) == b'\x00\x00'
@@ -274,6 +355,9 @@ def _(run, rng):
 
 @t(0x4F50, 'getter u16 @+4: r0 = u16*(base+4)')
 def _(run, rng):
+    """Emulator test @ 0x4f50: getter u16 @+4: r0 = u16*(base+4).
+    Тест эмулятора @ 0x4f50: getter u16 @+4: r0 = u16*(base+4).
+    """
     v = rng.getrandbits(16)
     run.ram_write(0x19420, struct.pack('<II', 0xDEADBEEF, v))
     r0, _ = run.call(0x4F50, (RAM + 0x19420,))
@@ -282,6 +366,9 @@ def _(run, rng):
 
 @t(0x99B4, 'getter byte из u16@+0x10')
 def _(run, rng):
+    """Emulator test @ 0x99b4: getter byte из u16@+0x10.
+    Тест эмулятора @ 0x99b4: getter byte из u16@+0x10.
+    """
     v = rng.getrandbits(16)
     buf = bytearray(0x12)
     struct.pack_into('<H', buf, 0x10, v)
@@ -292,6 +379,9 @@ def _(run, rng):
 
 @t(0x4E38, 'setter +4: *(u32*[r1+4]) = r0')
 def _(run, rng):
+    """Emulator test @ 0x4e38: setter +4: *(u32*[r1+4]) = r0.
+    Тест эмулятора @ 0x4e38: setter +4: *(u32*[r1+4]) = r0.
+    """
     v = rng.getrandbits(32)
     run.ram_write(0x19440, b'\x00' * 8)
     run.call(0x4E38, (v, RAM + 0x19440))
@@ -300,6 +390,9 @@ def _(run, rng):
 
 @t(0x4FBA, 'setter +4: *(u32*[r0+4]) = r1')
 def _(run, rng):
+    """Emulator test @ 0x4fba: setter +4: *(u32*[r0+4]) = r1.
+    Тест эмулятора @ 0x4fba: setter +4: *(u32*[r0+4]) = r1.
+    """
     v = rng.getrandbits(32)
     run.ram_write(0x19450, b'\x00' * 8)
     run.call(0x4FBA, (RAM + 0x19450, v))
@@ -308,6 +401,9 @@ def _(run, rng):
 
 @t(0x87E2, 'cond setter: r2 ? *[r0+0x18] : *[r0+0x28] = r1')
 def _(run, rng):
+    """Emulator test @ 0x87e2: cond setter: r2 ? *[r0+0x18] : *[r0+0x28] = r1.
+    Тест эмулятора @ 0x87e2: cond setter: r2 ? *[r0+0x18] : *[r0+0x28] = r1.
+    """
     v = rng.getrandbits(32)
     mode = rng.getrandbits(1)
     run.ram_write(0x19460, b'\x00' * 0x30)
@@ -318,6 +414,9 @@ def _(run, rng):
 
 @t(0x4FAC, 'cond setter: *[r2+0x10] = (r3 ? r0 : 0)')
 def _(run, rng):
+    """Emulator test @ 0x4fac: cond setter: *[r2+0x10] = (r3 ? r0 : 0).
+    Тест эмулятора @ 0x4fac: cond setter: *[r2+0x10] = (r3 ? r0 : 0).
+    """
     v = rng.getrandbits(32)
     mode = rng.getrandbits(1)
     run.ram_write(0x19470, b'\x00' * 0x20)
@@ -329,6 +428,9 @@ def _(run, rng):
 
 @t(0x87C8, 'mask check: (*(u32*[r0+0x10]) & r1) != 0')
 def _(run, rng):
+    """Emulator test @ 0x87c8: mask check: (*(u32*[r0+0x10]) & r1) != 0.
+    Тест эмулятора @ 0x87c8: mask check: (*(u32*[r0+0x10]) & r1) != 0.
+    """
     val = rng.getrandbits(32)
     mask = rng.getrandbits(32)
     run.ram_write(0x19480, b'\x00' * 0x10 + struct.pack('<I', val))
@@ -338,6 +440,9 @@ def _(run, rng):
 
 @t(0x4F58, 'mask check: (*(u32*r1) & r0) != 0')
 def _(run, rng):
+    """Emulator test @ 0x4f58: mask check: (*(u32*r1) & r0) != 0.
+    Тест эмулятора @ 0x4f58: mask check: (*(u32*r1) & r0) != 0.
+    """
     val = rng.getrandbits(32)
     mask = rng.getrandbits(32)
     run.ram_write(0x19490, struct.pack('<I', val))
@@ -356,7 +461,13 @@ _SETCLR = {
 }
 
 def _mk_setclear(off, mask):
+    """The helper function (_mk_setclear).
+    Вспомогательная функция (_mk_setclear).
+    """
     def _(run, rng):
+        """The helper function (_).
+        Вспомогательная функция (_).
+        """
         init = rng.getrandbits(16)
         mode = rng.getrandbits(1)
         run.ram_write(0x194A0, struct.pack('<H', init))
@@ -372,6 +483,9 @@ for _off, _mask in _SETCLR.items():
 
 @t(0x97E2, 'set/clear mask в u16@+4 (mask=r1, mode=r2)')
 def _(run, rng):
+    """Emulator test @ 0x97e2: set/clear mask в u16@+4 (mask=r1, mode=r2).
+    Тест эмулятора @ 0x97e2: set/clear mask в u16@+4 (mask=r1, mode=r2).
+    """
     init = rng.getrandbits(16)
     mask = rng.getrandbits(16)
     mode = rng.getrandbits(1)
@@ -384,6 +498,9 @@ def _(run, rng):
 
 @t(0x99BC, 'u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = ВХОДНОЕ значение!')
 def _(run, rng):
+    """Emulator test @ 0x99bc: u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = ВХОДНОЕ значение!.
+    Тест эмулятора @ 0x99bc: u16@+0x10 = (r1|1) if r2 else (r1&~1) — r1 = ВХОДНОЕ значение!.
+    """
     val = rng.getrandbits(16)
     mode = rng.getrandbits(1)
     run.ram_write(0x194C0, b'\x00' * 0x12)
@@ -395,6 +512,9 @@ def _(run, rng):
 
 @t(0x4F38, 'set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (ТРУНКИРОВАНИЕ до u16!)')
 def _(run, rng):
+    """Emulator test @ 0x4f38: set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (ТРУНКИРОВАНИЕ до u16!).
+    Тест эмулятора @ 0x4f38: set: u32@r0 |= 1; clear: u32@r0 &= 0xFFFE (ТРУНКИРОВАНИЕ до u16!).
+    """
     init = rng.getrandbits(32)
     mode = rng.getrandbits(1)
     run.ram_write(0x194D0, struct.pack('<I', init))
@@ -409,6 +529,9 @@ def _(run, rng):
 
 @t(0xC464, 'struct write {u32=r1,+4=0,+5=0,+6=r2,+7=r3} → 1')
 def _(run, rng):
+    """Emulator test @ 0xc464: struct write {u32=r1,+4=0,+5=0,+6=r2,+7=r3} → 1.
+    Тест эмулятора @ 0xc464: struct write {u32=r1,+4=0,+5=0,+6=r2,+7=r3} → 1.
+    """
     a = rng.getrandbits(32)
     b = rng.getrandbits(8)
     c = rng.getrandbits(8)
@@ -422,6 +545,9 @@ def _(run, rng):
 
 @t(0x87B0, 'struct init {u16=0xFFFF,+2=0,+3=0,+4=0,+8=0(u32),+0xC=0xF(u32)}')
 def _(run, rng):
+    """Emulator test @ 0x87b0: struct init {u16=0xFFFF,+2=0,+3=0,+4=0,+8=0(u32),+0xC=0xF(u32)}.
+    Тест эмулятора @ 0x87b0: struct init {u16=0xFFFF,+2=0,+3=0,+4=0,+8=0(u32),+0xC=0xF(u32)}.
+    """
     run.ram_write(0x194F0, b'\xAA' * 16)
     run.call(0x87B0, (RAM + 0x194F0,))
     buf = run.ram_read(0x194F0, 16)
@@ -435,6 +561,9 @@ def _(run, rng):
 
 @t(0x19A8C, 'memset(dst=r0, count=r1, val=r2)')
 def _(run, rng):
+    """Emulator test @ 0x19a8c: memset(dst=r0, count=r1, val=r2).
+    Тест эмулятора @ 0x19a8c: memset(dst=r0, count=r1, val=r2).
+    """
     n = rng.randint(0, 40)
     v = rng.getrandbits(8)
     run.ram_write(0x19500, b'\x00' * 48)
@@ -446,6 +575,9 @@ def _(run, rng):
 
 @t(0x19A9E, 'memset swap (dst=r0, val=r1, count=r2) → dst')
 def _(run, rng):
+    """Emulator test @ 0x19a9e: memset swap (dst=r0, val=r1, count=r2) → dst.
+    Тест эмулятора @ 0x19a9e: memset swap (dst=r0, val=r1, count=r2) → dst.
+    """
     n = rng.randint(0, 40)
     v = rng.getrandbits(8)
     run.ram_write(0x19520, b'\x00' * 48)
@@ -459,6 +591,9 @@ def _(run, rng):
 
 @t(0x6304, 'fast path: (r0&3)!=0 → 9')
 def _(run, rng):
+    """Emulator test @ 0x6304: fast path: (r0&3)!=0 → 9.
+    Тест эмулятора @ 0x6304: fast path: (r0&3)!=0 → 9.
+    """
     base = rng.getrandbits(28) << 2
     v = base + rng.choice([1, 2, 3])
     r0, _ = run.call(0x6304, (v, 0))
@@ -467,6 +602,9 @@ def _(run, rng):
 
 @t(0x2E0C, 'arg0==0 или arg1==0 → 1')
 def _(run, rng):
+    """Emulator test @ 0x2e0c: arg0==0 или arg1==0 → 1.
+    Тест эмулятора @ 0x2e0c: arg0==0 или arg1==0 → 1.
+    """
     r0, _ = run.call(0x2E0C, (0, rng.getrandbits(32)))
     assert r0 == 1, f'(0, *) → {r0}'
     r0, _ = run.call(0x2E0C, (rng.getrandbits(31) + 1, 0))
@@ -477,6 +615,9 @@ def _(run, rng):
 
 @t(0xC894, 'RCC_CFGR0 & 0xC (AHB-прескалер)')
 def _(run, rng):
+    """Emulator test @ 0xc894: RCC_CFGR0 & 0xC (AHB-прескалер).
+    Тест эмулятора @ 0xc894: RCC_CFGR0 & 0xC (AHB-прескалер).
+    """
     v = rng.getrandbits(32)
     run.periph_write(RCC + 4, v)
     r0, _ = run.call(0xC894, ())
@@ -485,6 +626,9 @@ def _(run, rng):
 
 @t(0xC4B4, 'RCC_CFGR0[7:4] = r0 (HPRE)')
 def _(run, rng):
+    """Emulator test @ 0xc4b4: RCC_CFGR0[7:4] = r0 (HPRE).
+    Тест эмулятора @ 0xc4b4: RCC_CFGR0[7:4] = r0 (HPRE).
+    """
     init = rng.getrandbits(32)
     new = rng.getrandbits(4) << 4
     run.periph_write(RCC + 4, init)
@@ -495,6 +639,9 @@ def _(run, rng):
 
 @t(0xC580, 'RCC_CFGR0[10:8] = r0 (PPRE1)')
 def _(run, rng):
+    """Emulator test @ 0xc580: RCC_CFGR0[10:8] = r0 (PPRE1).
+    Тест эмулятора @ 0xc580: RCC_CFGR0[10:8] = r0 (PPRE1).
+    """
     init = rng.getrandbits(32)
     new = rng.getrandbits(3) << 8
     run.periph_write(RCC + 4, init)
@@ -505,6 +652,9 @@ def _(run, rng):
 
 @t(0xC60C, 'RCC_CFGR0[1:0] = r0 (SW)')
 def _(run, rng):
+    """Emulator test @ 0xc60c: RCC_CFGR0[1:0] = r0 (SW).
+    Тест эмулятора @ 0xc60c: RCC_CFGR0[1:0] = r0 (SW).
+    """
     init = rng.getrandbits(32)
     new = rng.getrandbits(2)
     run.periph_write(RCC + 4, init)
@@ -515,6 +665,9 @@ def _(run, rng):
 
 @t(0xC598, 'RCC_CFGR0[14:11] = r0<<3 (PPRE2)')
 def _(run, rng):
+    """Emulator test @ 0xc598: RCC_CFGR0[14:11] = r0<<3 (PPRE2).
+    Тест эмулятора @ 0xc598: RCC_CFGR0[14:11] = r0<<3 (PPRE2).
+    """
     init = rng.getrandbits(32)
     new = rng.getrandbits(4)
     run.periph_write(RCC + 4, init)
@@ -525,6 +678,9 @@ def _(run, rng):
 
 @t(0x225C4, 'set/clear mask в RCC_CTLR (mode=r1)')
 def _(run, rng):
+    """Emulator test @ 0x225c4: set/clear mask в RCC_CTLR (mode=r1).
+    Тест эмулятора @ 0x225c4: set/clear mask в RCC_CTLR (mode=r1).
+    """
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
     mode = rng.getrandbits(1)
@@ -536,6 +692,9 @@ def _(run, rng):
 
 @t(0x225DC, 'set/clear mask в RCC+0x60 (mode=r1)')
 def _(run, rng):
+    """Emulator test @ 0x225dc: set/clear mask в RCC+0x60 (mode=r1).
+    Тест эмулятора @ 0x225dc: set/clear mask в RCC+0x60 (mode=r1).
+    """
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
     mode = rng.getrandbits(1)
@@ -549,6 +708,9 @@ def _(run, rng):
 
 @t(0x62D4, 'FLASH_SCBR |= 0x80')
 def _(run, rng):
+    """Emulator test @ 0x62d4: FLASH_SCBR |= 0x80.
+    Тест эмулятора @ 0x62d4: FLASH_SCBR |= 0x80.
+    """
     init = rng.getrandbits(32)
     run.periph_write(FLASH + 0x10, init)
     run.call(0x62D4, ())
@@ -557,6 +719,9 @@ def _(run, rng):
 
 @t(0x6360, 'FLASH_CTLR: keep[6:3], [5:3]=r0, clear[2:0]')
 def _(run, rng):
+    """Emulator test @ 0x6360: FLASH_CTLR: keep[6:3], [5:3]=r0, clear[2:0].
+    Тест эмулятора @ 0x6360: FLASH_CTLR: keep[6:3], [5:3]=r0, clear[2:0].
+    """
     init = rng.getrandbits(32)
     new = rng.getrandbits(32)
     run.periph_write(FLASH + 0, init)
@@ -567,6 +732,9 @@ def _(run, rng):
 
 @t(0x61D4, 'FLASH_SR |= r0')
 def _(run, rng):
+    """Emulator test @ 0x61d4: FLASH_SR |= r0.
+    Тест эмулятора @ 0x61d4: FLASH_SR |= r0.
+    """
     init = rng.getrandbits(32)
     v = rng.getrandbits(32)
     run.periph_write(FLASH + 0xC, init)
@@ -575,6 +743,9 @@ def _(run, rng):
 
 
 def ref_flash_sr_code(sr):
+    """The reference model (ref_flash_sr_code) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_flash_sr_code) — независимая Python-реализация задокументированного поведения.
+    """
     if sr & 1:
         return 1
     if sr & 4:
@@ -590,6 +761,9 @@ def ref_flash_sr_code(sr):
 
 @t(0x6284, 'FLASH_SR → status code (1/3/4/5/7/6)')
 def _(run, rng):
+    """Emulator test @ 0x6284: FLASH_SR → status code (1/3/4/5/7/6).
+    Тест эмулятора @ 0x6284: FLASH_SR → status code (1/3/4/5/7/6).
+    """
     sr = rng.getrandbits(32)
     run.periph_write(FLASH + 0xC, sr)
     r0, _ = run.call(0x6284, ())
@@ -607,6 +781,9 @@ AFIO_EXTI = 0x40010414  # AFIO-зона (0x5970)
 
 @t(0x8878, 'getter byte@RAM[0x128]')
 def _(run, rng):
+    """Emulator test @ 0x8878: getter byte@RAM[0x128].
+    Тест эмулятора @ 0x8878: getter byte@RAM[0x128].
+    """
     b = rng.getrandbits(8)
     run.ram_write(0x128, bytes([b]))
     r0, _ = run.call(0x8878, ())
@@ -615,6 +792,9 @@ def _(run, rng):
 
 @t(0x8AF0, 'getter byte@RAM[0xA73]')
 def _(run, rng):
+    """Emulator test @ 0x8af0: getter byte@RAM[0xA73].
+    Тест эмулятора @ 0x8af0: getter byte@RAM[0xA73].
+    """
     b = rng.getrandbits(8)
     run.ram_write(0xA73, bytes([b]))
     r0, _ = run.call(0x8AF0, ())
@@ -623,6 +803,9 @@ def _(run, rng):
 
 @t(0x8D90, 'getter u32@RAM[0x1344]')
 def _(run, rng):
+    """Emulator test @ 0x8d90: getter u32@RAM[0x1344].
+    Тест эмулятора @ 0x8d90: getter u32@RAM[0x1344].
+    """
     v = rng.getrandbits(32)
     run.ram_write(0x1344, struct.pack('<I', v))
     r0, _ = run.call(0x8D90, ())
@@ -631,6 +814,9 @@ def _(run, rng):
 
 @t(0x8E14, 'getter byte@RAM[0x1378] (пул 0x20001359 + 0x1F)')
 def _(run, rng):
+    """Emulator test @ 0x8e14: getter byte@RAM[0x1378] (пул 0x20001359 + 0x1F).
+    Тест эмулятора @ 0x8e14: getter byte@RAM[0x1378] (пул 0x20001359 + 0x1F).
+    """
     b = rng.getrandbits(8)
     run.ram_write(0x1378, bytes([b]))
     r0, _ = run.call(0x8E14, ())
@@ -639,6 +825,9 @@ def _(run, rng):
 
 @t(0xA6A4, 'getter byte@RAM[0x40]')
 def _(run, rng):
+    """Emulator test @ 0xa6a4: getter byte@RAM[0x40].
+    Тест эмулятора @ 0xa6a4: getter byte@RAM[0x40].
+    """
     b = rng.getrandbits(8)
     run.ram_write(0x40, bytes([b]))
     r0, _ = run.call(0xA6A4, ())
@@ -647,6 +836,9 @@ def _(run, rng):
 
 @t(0x833C, 'getter byte@RAM[0xC8D] (флаг 0x8xxx-драйвера)')
 def _(run, rng):
+    """Emulator test @ 0x833c: getter byte@RAM[0xC8D] (флаг 0x8xxx-драйвера).
+    Тест эмулятора @ 0x833c: getter byte@RAM[0xC8D] (флаг 0x8xxx-драйвера).
+    """
     b = rng.getrandbits(8)
     run.ram_write(0xC8D, bytes([b]))
     r0, _ = run.call(0x833C, ())
@@ -655,6 +847,9 @@ def _(run, rng):
 
 @t(0x21C0C, 'getter u32@RAM[0x2C] (пул 0x20000028 + 4; НЕ двойная индирекция!)')
 def _(run, rng):
+    """Emulator test @ 0x21c0c: getter u32@RAM[0x2C] (пул 0x20000028 + 4; НЕ двойная индирекция!).
+    Тест эмулятора @ 0x21c0c: getter u32@RAM[0x2C] (пул 0x20000028 + 4; НЕ двойная индирекция!).
+    """
     v = rng.getrandbits(32)
     run.ram_write(0x2C, struct.pack('<I', v))
     r0, _ = run.call(0x21C0C, ())
@@ -663,6 +858,9 @@ def _(run, rng):
 
 @t(0x8A44, 'getter u32@RAM[0xF6A] (пул 0x20000F64 + 6; НЕ *(u32)+6!)')
 def _(run, rng):
+    """Emulator test @ 0x8a44: getter u32@RAM[0xF6A] (пул 0x20000F64 + 6; НЕ *(u32)+6!).
+    Тест эмулятора @ 0x8a44: getter u32@RAM[0xF6A] (пул 0x20000F64 + 6; НЕ *(u32)+6!).
+    """
     v = rng.getrandbits(32)
     run.ram_write(0xF6A, struct.pack('<I', v))
     r0, _ = run.call(0x8A44, ())
@@ -673,6 +871,9 @@ def _(run, rng):
 
 @t(0x1072A, 'getter u16 @+0xC')
 def _(run, rng):
+    """Emulator test @ 0x1072a: getter u16 @+0xC.
+    Тест эмулятора @ 0x1072a: getter u16 @+0xC.
+    """
     v = rng.getrandbits(16)
     run.ram_write(0x19540, b'\x00' * 12 + struct.pack('<H', v))
     r0, _ = run.call(0x1072A, (RAM + 0x19540,))
@@ -681,6 +882,9 @@ def _(run, rng):
 
 @t(0x10730, 'setter u16 @+0xC: *(u16*[r0+0xC]) = r1')
 def _(run, rng):
+    """Emulator test @ 0x10730: setter u16 @+0xC: *(u16*[r0+0xC]) = r1.
+    Тест эмулятора @ 0x10730: setter u16 @+0xC: *(u16*[r0+0xC]) = r1.
+    """
     v = rng.getrandbits(16)
     run.ram_write(0x19550, b'\x00' * 0x10)
     run.call(0x10730, (RAM + 0x19550, v))
@@ -689,6 +893,9 @@ def _(run, rng):
 
 @t(0x99CE, 'setter u16 @+0x10: *(u16*[r0+0x10]) = r1')
 def _(run, rng):
+    """Emulator test @ 0x99ce: setter u16 @+0x10: *(u16*[r0+0x10]) = r1.
+    Тест эмулятора @ 0x99ce: setter u16 @+0x10: *(u16*[r0+0x10]) = r1.
+    """
     v = rng.getrandbits(16)
     run.ram_write(0x19560, b'\x00' * 0x14)
     run.call(0x99CE, (RAM + 0x19560, v))
@@ -698,7 +905,13 @@ def _(run, rng):
 # --- RCC set/clear (mask=r0, mode=r1) ---
 
 def _mk_rcc_setclear(off, reg_off):
+    """The helper function (_mk_rcc_setclear).
+    Вспомогательная функция (_mk_rcc_setclear).
+    """
     def _(run, rng):
+        """The helper function (_).
+        Вспомогательная функция (_).
+        """
         init = rng.getrandbits(32)
         mask = rng.getrandbits(32)
         mode = rng.getrandbits(1)
@@ -716,6 +929,9 @@ for _off, _ro in ((0xC6C4, 0xC), (0xC684, 0x10), (0xC624, 0x14), (0xC6A4, 0x18))
 
 @t(0xC518, 'RCC_CTLR bit0 (HSI/HSE-ON) := (r0==1) — сначала always-clear')
 def _(run, rng):
+    """Emulator test @ 0xc518: RCC_CTLR bit0 (HSI/HSE-ON) := (r0==1) — сначала always-clear.
+    Тест эмулятора @ 0xc518: RCC_CTLR bit0 (HSI/HSE-ON) := (r0==1) — сначала always-clear.
+    """
     init = rng.getrandbits(32)
     mode = rng.getrandbits(1)
     run.periph_write(RCC + 0, init)
@@ -728,6 +944,9 @@ def _(run, rng):
 
 @t(0xC858, 'RCC flag check: group/bit decode')
 def _(run, rng):
+    """Emulator test @ 0xc858: RCC flag check: group/bit decode.
+    Тест эмулятора @ 0xc858: RCC flag check: group/bit decode.
+    """
     regs = {0: rng.getrandbits(32), 0x20: rng.getrandbits(32), 0x24: rng.getrandbits(32)}
     run.periph_write(RCC + 0, regs[0])
     run.periph_write(RCC + 0x20, regs[0x20])
@@ -750,6 +969,9 @@ def _(run, rng):
 
 @t(0xC8A4, 'wait CTLR bit17 (arg 0x31), timeout 0x2000 → 0/1')
 def _(run, rng):
+    """Emulator test @ 0xc8a4: wait CTLR bit17 (arg 0x31), timeout 0x2000 → 0/1.
+    Тест эмулятора @ 0xc8a4: wait CTLR bit17 (arg 0x31), timeout 0x2000 → 0/1.
+    """
     flag = rng.getrandbits(1)
     run.periph_write(RCC + 0, (rng.getrandbits(32) & ~0x20000) | (flag << 17))
     # таймаут-ветка: 8192 итерации × ~29 инстр ≈ 240K — нужен большой бюджет
@@ -759,6 +981,9 @@ def _(run, rng):
 
 @t(0xC8DC, 'wait CTLR bit1 (HSERDY!) (arg 0x21: group=1), timeout 0x500 → 0/1')
 def _(run, rng):
+    """Emulator test @ 0xc8dc: wait CTLR bit1 (HSERDY!) (arg 0x21: group=1), timeout 0x500 → 0/1.
+    Тест эмулятора @ 0xc8dc: wait CTLR bit1 (HSERDY!) (arg 0x21: group=1), timeout 0x500 → 0/1.
+    """
     flag = rng.getrandbits(1)
     run.periph_write(RCC + 0, (rng.getrandbits(32) & ~2) | (flag << 1))
     r0, _ = run.call(0xC8DC, (), max_insn=100000)
@@ -767,6 +992,9 @@ def _(run, rng):
 
 @t(0xC914, 'wait RCC+0x24 bit3 (arg 0x63: group3→+0x24!), timeout 0x500 → 0/1')
 def _(run, rng):
+    """Emulator test @ 0xc914: wait RCC+0x24 bit3 (arg 0x63: group3→+0x24!), timeout 0x500 → 0/1.
+    Тест эмулятора @ 0xc914: wait RCC+0x24 bit3 (arg 0x63: group3→+0x24!), timeout 0x500 → 0/1.
+    """
     flag = rng.getrandbits(1)
     run.periph_write(RCC + 0x24, (rng.getrandbits(32) & ~8) | (flag << 3))
     r0, _ = run.call(0xC914, (), max_insn=100000)
@@ -777,6 +1005,9 @@ def _(run, rng):
 
 @t(0x10ABC, 'HSE on + wait; timeout → fallback 0x003D0900 в RAM[0xB88], return константа')
 def _(run, rng):
+    """Emulator test @ 0x10abc: HSE on + wait; timeout → fallback 0x003D0900 в RAM[0xB88], return константа.
+    Тест эмулятора @ 0x10abc: HSE on + wait; timeout → fallback 0x003D0900 в RAM[0xB88], return константа.
+    """
     run.periph_write(RCC + 0, rng.getrandbits(32) & ~2)  # без HSERDY (bit1)
     run.ram_write(0xB88, struct.pack('<I', 0))
     r0, _ = run.call(0x10ABC, ())
@@ -790,6 +1021,9 @@ def _(run, rng):
 
 @t(0xC5B0, 'combined setter: CFGR0=(CFGR0&0xF7C0FFFF)|X; +0x40=((+0x40)&~3)|Y')
 def _(run, rng):
+    """Emulator test @ 0xc5b0: combined setter: CFGR0=(CFGR0&0xF7C0FFFF)|X; +0x40=((+0x40)&~3)|Y.
+    Тест эмулятора @ 0xc5b0: combined setter: CFGR0=(CFGR0&0xF7C0FFFF)|X; +0x40=((+0x40)&~3)|Y.
+    """
     a1 = rng.getrandbits(32)
     a2 = rng.getrandbits(32)
     mode = rng.choice([0, 1, 2])
@@ -810,6 +1044,9 @@ def _(run, rng):
 
 @t(0xC540, 'RCC+0x24: clear[6:4], |= r1; mode==0 → clear bit2, mode==4 → set bit2')
 def _(run, rng):
+    """Emulator test @ 0xc540: RCC+0x24: clear[6:4], |= r1; mode==0 → clear bit2, mode==4 → set bit2.
+    Тест эмулятора @ 0xc540: RCC+0x24: clear[6:4], |= r1; mode==0 → clear bit2, mode==4 → set bit2.
+    """
     init = rng.getrandbits(32)
     a1 = rng.getrandbits(32)
     mode = rng.choice([0, 1, 4])
@@ -827,6 +1064,9 @@ def _(run, rng):
 
 @t(0x99F0, 'запись 0xAAAA в @0x40003000')
 def _(run, rng):
+    """Emulator test @ 0x99f0: запись 0xAAAA в @0x40003000.
+    Тест эмулятора @ 0x99f0: запись 0xAAAA в @0x40003000.
+    """
     run.periph_write(DRV + 0, 0)
     run.call(0x99F0, ())
     assert run.periph_read(DRV + 0) == 0xAAAA
@@ -834,6 +1074,9 @@ def _(run, rng):
 
 @t(0x99E0, 'запись 0xCCCC в @0x40003000')
 def _(run, rng):
+    """Emulator test @ 0x99e0: запись 0xCCCC в @0x40003000.
+    Тест эмулятора @ 0x99e0: запись 0xCCCC в @0x40003000.
+    """
     run.periph_write(DRV + 0, 0)
     run.call(0x99E0, ())
     assert run.periph_read(DRV + 0) == 0xCCCC
@@ -841,6 +1084,9 @@ def _(run, rng):
 
 @t(0x9A0C, 'запись r0 в @0x40003000')
 def _(run, rng):
+    """Emulator test @ 0x9a0c: запись r0 в @0x40003000.
+    Тест эмулятора @ 0x9a0c: запись r0 в @0x40003000.
+    """
     v = rng.getrandbits(32)
     run.periph_write(DRV + 0, 0)
     run.call(0x9A0C, (v,))
@@ -849,6 +1095,9 @@ def _(run, rng):
 
 @t(0x9A00, 'запись r0 в @0x40003000+4')
 def _(run, rng):
+    """Emulator test @ 0x9a00: запись r0 в @0x40003000+4.
+    Тест эмулятора @ 0x9a00: запись r0 в @0x40003000+4.
+    """
     v = rng.getrandbits(32)
     run.periph_write(DRV + 4, 0)
     run.call(0x9A00, (v,))
@@ -857,6 +1106,9 @@ def _(run, rng):
 
 @t(0x99D4, 'запись r0 в @0x40003000+8')
 def _(run, rng):
+    """Emulator test @ 0x99d4: запись r0 в @0x40003000+8.
+    Тест эмулятора @ 0x99d4: запись r0 в @0x40003000+8.
+    """
     v = rng.getrandbits(32)
     run.periph_write(DRV + 8, 0)
     run.call(0x99D4, (v,))
@@ -867,6 +1119,9 @@ def _(run, rng):
 
 @t(0x5970, 'запись r0 в @0x40010414 (AFIO/EXTI-зона)')
 def _(run, rng):
+    """Emulator test @ 0x5970: запись r0 в @0x40010414 (AFIO/EXTI-зона).
+    Тест эмулятора @ 0x5970: запись r0 в @0x40010414 (AFIO/EXTI-зона).
+    """
     v = rng.getrandbits(32)
     run.periph_write(AFIO_EXTI, 0)
     run.call(0x5970, (v,))
@@ -875,6 +1130,9 @@ def _(run, rng):
 
 @t(0xB854, '*(u32*[r0+0x108]) = 0x10000')
 def _(run, rng):
+    """Emulator test @ 0xb854: *(u32*[r0+0x108]) = 0x10000.
+    Тест эмулятора @ 0xb854: *(u32*[r0+0x108]) = 0x10000.
+    """
     run.ram_write(0x19570, b'\x00' * 0x110)
     run.call(0xB854, (RAM + 0x19570,))
     assert struct.unpack_from('<I', run.ram_read(0x19570, 0x110), 0x108)[0] == 0x10000
@@ -891,6 +1149,9 @@ AFIO_MAPR = 0x40010004  # AFIO_MAPR (таблица remap)
 
 @t(0x6378, 'FLASH unlock: KEYR=0x45670123 → KEYR=0xCDEF89AB')
 def _(run, rng):
+    """Emulator test @ 0x6378: FLASH unlock: KEYR=0x45670123 → KEYR=0xCDEF89AB.
+    Тест эмулятора @ 0x6378: FLASH unlock: KEYR=0x45670123 → KEYR=0xCDEF89AB.
+    """
     run.periph_write(FLASH + 4, 0)
     run.call(0x6378, ())
     assert run.periph_read(FLASH + 4) == 0xCDEF89AB, \
@@ -900,6 +1161,9 @@ def _(run, rng):
 @t(0x6390, 'wait не-BSY (code!=1); timeout → 0xA')
 def _(run, rng):
     # A: SR без bit0 → сразу возвращает code
+    """Emulator test @ 0x6390: wait не-BSY (code!=1); timeout → 0xA.
+    Тест эмулятора @ 0x6390: wait не-BSY (code!=1); timeout → 0xA.
+    """
     sr = rng.getrandbits(32) & ~1
     run.periph_write(FLASH + 0xC, sr)
     r0, _ = run.call(0x6390, (rng.randint(1, 5),))
@@ -917,6 +1181,9 @@ def _(run, rng):
 
 @t(0x97F4, 'I2C clock OFF: base==I2C1 → RCC+0x10 &= ~(1<<21); иначе &= ~(1<<22)')
 def _(run, rng):
+    """Emulator test @ 0x97f4: I2C clock OFF: base==I2C1 → RCC+0x10 &= ~(1<<21); иначе &= ~(1<<22).
+    Тест эмулятора @ 0x97f4: I2C clock OFF: base==I2C1 → RCC+0x10 &= ~(1<<21); иначе &= ~(1<<22).
+    """
     init = rng.getrandbits(32)
     base = rng.choice([0x40005400, 0x40005800, rng.getrandbits(32)])
     run.periph_write(RCC + 0x10, init)
@@ -928,6 +1195,9 @@ def _(run, rng):
 
 @t(0x17F4, 'DMA clock OFF: base==0x40020800 → RCC+0x28 &= ~0x1000 (base>>18 = бит12); иначе нетто')
 def _(run, rng):
+    """Emulator test @ 0x17f4: DMA clock OFF: base==0x40020800 → RCC+0x28 &= ~0x1000 (base>>18 = бит12); иначе нетто.
+    Тест эмулятора @ 0x17f4: DMA clock OFF: base==0x40020800 → RCC+0x28 &= ~0x1000 (base>>18 = бит12); иначе нетто.
+    """
     init = rng.getrandbits(32)
     base = rng.choice([0x40020800, rng.getrandbits(32)])
     run.periph_write(RCC + 0x28, init)
@@ -939,6 +1209,9 @@ def _(run, rng):
 
 @t(0xC644, 'set/clear mask в RCC+0x28 (mode=r1)')
 def _(run, rng):
+    """Emulator test @ 0xc644: set/clear mask в RCC+0x28 (mode=r1).
+    Тест эмулятора @ 0xc644: set/clear mask в RCC+0x28 (mode=r1).
+    """
     init = rng.getrandbits(32)
     mask = rng.getrandbits(32)
     mode = rng.getrandbits(1)
@@ -952,6 +1225,9 @@ def _(run, rng):
 
 @t(0x35EC, 'SysTick_CTRL &= ~2 (TICKINT off)')
 def _(run, rng):
+    """Emulator test @ 0x35ec: SysTick_CTRL &= ~2 (TICKINT off).
+    Тест эмулятора @ 0x35ec: SysTick_CTRL &= ~2 (TICKINT off).
+    """
     init = rng.getrandbits(32)
     run.periph_write(SYS + 0xE010, init)
     run.call(0x35EC, ())
@@ -959,6 +1235,9 @@ def _(run, rng):
 
 
 def ref_sign_ext8(v):
+    """The reference model (ref_sign_ext8) — the independent Python implementation of the documented behavior.
+    Модель-референс (ref_sign_ext8) — независимая Python-реализация задокументированного поведения.
+    """
     v &= 0xFF
     return v - 0x100 if v & 0x80 else v
 
@@ -973,6 +1252,9 @@ def ref_sign_ext8(v):
 @t(0x21B84, 'NVIC/SCB: поле [7:6] байта (r0>>2): r0>=0 → 0xE000E400+(r0&~3); r0<0 → 0xE000ED00+(s32&~3)+0x24;'
             ' reg = (v & ~(0xFF<<(8*(r0&3)))) | ((r1&3) << (6+8*(r0&3)))')
 def _(run, rng):
+    """Emulator test @ 0x21b84: NVIC/SCB: поле [7:6] байта (r0>>2): r0>=0 → 0xE000E400+(r0&~3); r0<0 → 0xE000ED00+(s32&~3)+0x24; reg = (v & ~(0xFF<<(8*(r0&3)))) | ((r1&3) << (6+8*(r0&3))).
+    Тест эмулятора @ 0x21b84: NVIC/SCB: поле [7:6] байта (r0>>2): r0>=0 → 0xE000E400+(r0&~3); r0<0 → 0xE000ED00+(s32&~3)+0x24; reg = (v & ~(0xFF<<(8*(r0&3)))) | ((r1&3) << (6+8*(r0&3))).
+    """
     from unicorn import UC_HOOK_MEM_WRITE
     zone = rng.choice(['NVIC', 'SCB'])
     if zone == 'NVIC':
@@ -987,6 +1269,9 @@ def _(run, rng):
     r1 = rng.getrandbits(32)
     writes = []
     def hw(uc, access, address, size, value, user):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if address >= SYS:
             writes.append((address, value & M32))
     h = run.uc.hook_add(UC_HOOK_MEM_WRITE, hw)
@@ -1009,6 +1294,9 @@ def _(run, rng):
 
 @t(0x22A0C, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF')
 def _(run, rng):
+    """Emulator test @ 0x22a0c: busy-delay: порог = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF.
+    Тест эмулятора @ 0x22a0c: busy-delay: порог = 0x1000000 - *(u32@RAM[0x10])*N; CVR |= 0xFFFFFF.
+    """
     from unicorn import UC_HOOK_CODE
     coeff = rng.randint(1, 1000)
     n = rng.randint(1, 50)
@@ -1017,6 +1305,9 @@ def _(run, rng):
     run.periph_write(SYS + 0xE018, rng.getrandbits(24))
     captured = {}
     def hc(uc, address, size, user):
+        """The hc function of the script.
+        Функция hc скрипта.
+        """
         if (address & ~1) == 0x22A2C:   # cmp r4, r2
             captured['thr'] = uc.reg_read(UC_ARM_REG_R2) & M32
     h = run.uc.hook_add(UC_HOOK_CODE, hc)
@@ -1030,6 +1321,9 @@ def _(run, rng):
 
 @t(0x229D4, 'busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF')
 def _(run, rng):
+    """Emulator test @ 0x229d4: busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF.
+    Тест эмулятора @ 0x229d4: busy-delay: порог = 0x1000000 - *(u32@RAM[0x24])*N; CVR := 0xFFFFFF.
+    """
     from unicorn import UC_HOOK_CODE
     coeff = rng.randint(1, 1000)
     n = rng.randint(1, 50)
@@ -1038,6 +1332,9 @@ def _(run, rng):
     run.periph_write(SYS + 0xE018, rng.getrandbits(32))
     captured = {}
     def hc(uc, address, size, user):
+        """The hc function of the script.
+        Функция hc скрипта.
+        """
         if (address & ~1) == 0x229F0:   # cmp r3, r2
             captured['thr'] = uc.reg_read(UC_ARM_REG_R2) & M32
     h = run.uc.hook_add(UC_HOOK_CODE, hc)
@@ -1057,6 +1354,9 @@ def _(run, rng):
 
 @t(0x8588, 'AFIO remap: поле [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2')
 def _(run, rng):
+    """Emulator test @ 0x8588: AFIO remap: поле [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2.
+    Тест эмулятора @ 0x8588: AFIO remap: поле [4p+1:4p] = (MAPR & ~(3<<4p)) | val<<4p, p=arg1&3, idx=arg1>>2.
+    """
     val = rng.getrandbits(8)
     arg1_s = rng.randint(-127, 63) if rng.getrandbits(1) else rng.randint(0, 63)
     idx = arg1_s >> 2
@@ -1075,12 +1375,18 @@ def _(run, rng):
 
 @t(0x2BBC, 'порт по GPIO-базе: A=0,B=1,C=2,D=3 (проверка точки детекции)')
 def _(run, rng):
+    """Emulator test @ 0x2bbc: порт по GPIO-базе: A=0,B=1,C=2,D=3 (проверка точки детекции).
+    Тест эмулятора @ 0x2bbc: порт по GPIO-базе: A=0,B=1,C=2,D=3 (проверка точки детекции).
+    """
     from unicorn import UC_HOOK_CODE
     cases = [(0x40010800, 0x2BCC), (0x40010C00, 0x2BD6),
              (0x40011000, 0x2BE0), (0x40011400, 0x2BEA)]
     base, expect_pc = cases[rng.randint(0, 3)]
     hits = []
     def hc(uc, address, size, user):
+        """The hc function of the script.
+        Функция hc скрипта.
+        """
         a = address & ~1
         if a in (0x2BCC, 0x2BD6, 0x2BE0, 0x2BEA, 0x2BEE):
             hits.append(a)
@@ -1096,6 +1402,9 @@ def _(run, rng):
 
 @t(0x1E3A4, 'soft reset: [0x40021400] &= ~0xC; &= ~0x1F0; |= 1; AIRCR=0x5FA0004; b .')
 def _(run, rng):
+    """Emulator test @ 0x1e3a4: soft reset: [0x40021400] &= ~0xC; &= ~0x1F0; |= 1; AIRCR=0x5FA0004; b ..
+    Тест эмулятора @ 0x1e3a4: soft reset: [0x40021400] &= ~0xC; &= ~0x1F0; |= 1; AIRCR=0x5FA0004; b ..
+    """
     init = rng.getrandbits(32)
     run.periph_write(0x40021400, init)
     run.periph_write(0xE000ED0C, 0)
@@ -1116,6 +1425,9 @@ def _(run, rng):
 
 @t(0x21B24, 'MSB-normalization: x==0 → 0x20; иначе 0x1F − msb_pos(x)')
 def _(run, rng):
+    """Emulator test @ 0x21b24: MSB-normalization: x==0 → 0x20; иначе 0x1F − msb_pos(x).
+    Тест эмулятора @ 0x21b24: MSB-normalization: x==0 → 0x20; иначе 0x1F − msb_pos(x).
+    """
     for _ in range(30):
         if rng.getrandbits(2) == 0:
             x = rng.choice([0, 1, 2, 3, 0x8000, 0x80000000, 0xFFFFFFFF])
@@ -1130,6 +1442,9 @@ def _(run, rng):
 
 @t(0x17170, 'i16×i16→u64 (sign-extended): *out_hi = 0/0xFFFFFFFF, *out_lo = a*b')
 def _(run, rng):
+    """Emulator test @ 0x17170: i16×i16→u64 (sign-extended): *out_hi = 0/0xFFFFFFFF, *out_lo = a*b.
+    Тест эмулятора @ 0x17170: i16×i16→u64 (sign-extended): *out_hi = 0/0xFFFFFFFF, *out_lo = a*b.
+    """
     a = rng.randint(-32768, 32767)
     b = rng.randint(-32768, 32767)
     run.ram_write(0x100, struct.pack('<II', 0xDEAD, 0xBEEF))
@@ -1142,6 +1457,9 @@ def _(run, rng):
 
 @t(0x17214, 'i16×i16→u64 #2 (twin 0x17170)')
 def _(run, rng):
+    """Emulator test @ 0x17214: i16×i16→u64 #2 (twin 0x17170).
+    Тест эмулятора @ 0x17214: i16×i16→u64 #2 (twin 0x17170).
+    """
     a = rng.randint(-32768, 32767)
     b = rng.randint(-32768, 32767)
     run.ram_write(0x100, struct.pack('<II', 0xDEAD, 0xBEEF))
@@ -1156,6 +1474,9 @@ def _(run, rng):
 
 @t(0x5134, 'u16 статистика: s16≤0 → 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based)')
 def _(run, rng):
+    """Emulator test @ 0x5134: u16 статистика: s16≤0 → 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based).
+    Тест эмулятора @ 0x5134: u16 статистика: s16≤0 → 300 (in-place); out={sum,avg,min,max,idx_min,idx_max} (1-based).
+    """
     n = rng.randint(1, 24)
     vals = []
     for _ in range(n):
@@ -1192,6 +1513,9 @@ def _(run, rng):
 
 @t(0x16880, 'Q31-интерполяция: args (v, xtab_u16, ytab_u32, last_idx=n−1); slope=((v−x0)<<16)/dx через 0x161ea(…,15); y=y0+(y1−y0)*slope>>31; v≥xs[last] → mid-экстраполяция с последнего сегмента')
 def _(run, rng):
+    """Emulator test @ 0x16880: Q31-интерполяция: args (v, xtab_u16, ytab_u32, last_idx=n−1); slope=((v−x0)<<16)/dx через 0x161ea(…,15); y=y0+(y1−y0)*slope>>31; v≥xs[last] → mid-экстраполяция с последнего сегмента.
+    Тест эмулятора @ 0x16880: Q31-интерполяция: args (v, xtab_u16, ytab_u32, last_idx=n−1); slope=((v−x0)<<16)/dx через 0x161ea(…,15); y=y0+(y1−y0)*slope>>31; v≥xs[last] → mid-экстраполяция с последнего сегмента.
+    """
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
     ys = [rng.getrandbits(32) for _ in range(n)]     # без доп. слота
@@ -1225,6 +1549,9 @@ def _(run, rng):
 
 @t(0x167B6, 'Q8-интерполяция: args (v, xtab_u16, ytab_u8, last_idx=n−1); slope=((v−x0)<<8)/dx (udiv); y=(y0 ± dy*slope>>8)&0xFF; v≥xs[last] → slope=1.0 с последнего сегмента')
 def _(run, rng):
+    """Emulator test @ 0x167b6: Q8-интерполяция: args (v, xtab_u16, ytab_u8, last_idx=n−1); slope=((v−x0)<<8)/dx (udiv); y=(y0 ± dy*slope>>8)&0xFF; v≥xs[last] → slope=1.0 с последнего сегмента.
+    Тест эмулятора @ 0x167b6: Q8-интерполяция: args (v, xtab_u16, ytab_u8, last_idx=n−1); slope=((v−x0)<<8)/dx (udiv); y=(y0 ± dy*slope>>8)&0xFF; v≥xs[last] → slope=1.0 с последнего сегмента.
+    """
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
     ys = [rng.getrandbits(8) for _ in range(n)]      # без доп. слота
@@ -1257,6 +1584,9 @@ def _(run, rng):
 
 @t(0x16938, 'Q31-интерполяция #2: twin 0x16880, но ветка по UNSIGNED cmp (bhi)')
 def _(run, rng):
+    """Emulator test @ 0x16938: Q31-интерполяция #2: twin 0x16880, но ветка по UNSIGNED cmp (bhi).
+    Тест эмулятора @ 0x16938: Q31-интерполяция #2: twin 0x16880, но ветка по UNSIGNED cmp (bhi).
+    """
     n = rng.randint(2, 8)
     xs = sorted(rng.sample(range(-400, 400), n))
     # y: иногда с битом31 (разница signed/unsigned веток)
@@ -1290,6 +1620,9 @@ def _(run, rng):
 
 @t(0x16BD4, '2D-билинейная интерполяция u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride)')
 def _(run, rng):
+    """Emulator test @ 0x16bd4: 2D-билинейная интерполяция u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride).
+    Тест эмулятора @ 0x16bd4: 2D-билинейная интерполяция u16: (v1, v2, xtab1_u16, ystruct_u32, [STK]ygrid, [STK]{c1,c2}, [STK]stride).
+    """
     n1 = rng.randint(2, 6)
     n2 = rng.randint(2, 5)
     xtab1 = sorted(rng.sample(range(-300, 300), n1))
@@ -1327,6 +1660,9 @@ def _(run, rng):
         v2 = (ystruct[k2] + ystruct[k2 + 1]) // 2
     # референс
     def seg(u16_a, u16_b, slope):
+        """The seg function of the script.
+        Функция seg скрипта.
+        """
         if u16_a > u16_b:                       # unsigned bgt → descending
             return (u16_a - (((u16_a - u16_b) * slope) >> 16)) & 0xFFFF
         return (u16_a + (((u16_b - u16_a) * slope) >> 16)) & 0xFFFF
@@ -1403,6 +1739,9 @@ def ref_16588(ix, iy, iz, sx, sy, sz, grid, syy, szz):
 
 @t(0x16588, '3D-трилинейная интерполяция u16: (idx{3}, slope{3}Q16, grid_u16, stride{3})')
 def _(run, rng):
+    """Emulator test @ 0x16588: 3D-трилинейная интерполяция u16: (idx{3}, slope{3}Q16, grid_u16, stride{3}).
+    Тест эмулятора @ 0x16588: 3D-трилинейная интерполяция u16: (idx{3}, slope{3}Q16, grid_u16, stride{3}).
+    """
     nx, ny, nz = rng.randint(2, 4), rng.randint(2, 3), rng.randint(2, 3)
     syy, szz = rng.randint(1, nx + 1), rng.randint(ny, ny * nx + 1)
     ix, iy, iz = (rng.randint(0, n - 1) for n in (nx, ny, nz))
@@ -1426,6 +1765,9 @@ def _(run, rng):
 
 @t(0x1D330, 'duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4')
 def _(run, rng):
+    """Emulator test @ 0x1d330: duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4.
+    Тест эмулятора @ 0x1d330: duty shaping: v>580→flags|=2,st=0; v<196→flags|=4,st=0; [196,400): st=max(0,st−100), 0→flags|=4; >431: flags&=~4, st=min(0x7FF8,st+1000); clamp; byte[RAM+0x3C8+0x10]=4.
+    """
     v = rng.randint(-32768, 32767)
     flags = rng.getrandbits(16)
     state = rng.randint(-500, 32767)
@@ -1463,6 +1805,9 @@ def _(run, rng):
 
 @t(0xE740, 'drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]−s16[RAM+0x1302]|,0x7fff) (абсолютное!); devA≥500||devB>500 → flag + refs:=текущие')
 def _(run, rng):
+    """Emulator test @ 0xe740: drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]−s16[RAM+0x1302]|,0x7fff) (абсолютное!); devA≥500||devB>500 → flag + refs:=текущие.
+    Тест эмулятора @ 0xe740: drift detector: devA=|u16[RAM+0x13AB]−u16[RAM+0x130A]|; devB=min(|s16[RAM+0x13A4]−s16[RAM+0x1302]|,0x7fff) (абсолютное!); devA≥500||devB>500 → flag + refs:=текущие.
+    """
     A = rng.getrandbits(16)
     B = rng.randint(-32768, 32767)
     refA = rng.getrandbits(16)
@@ -1495,6 +1840,9 @@ def _(run, rng):
 
 @t(0xFDAC, 'PB15 latch #1: gate mode==0&&!bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]; flash @0x19E1C {lo=1,N=5264,hi=70,M=17936}')
 def _(run, rng):
+    """Emulator test @ 0xfdac: PB15 latch #1: gate mode==0&&!bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]; flash @0x19E1C {lo=1,N=5264,hi=70,M=17936}.
+    Тест эмулятора @ 0xfdac: PB15 latch #1: gate mode==0&&!bit0[RAM+0xFC7+6]; v=i8[RAM+0xFC7+2]; flash @0x19E1C {lo=1,N=5264,hi=70,M=17936}.
+    """
     mode = rng.getrandbits(2)
     bit0 = rng.getrandbits(1)
     v = rng.randint(-128, 127)
@@ -1531,6 +1879,9 @@ def _(run, rng):
 
 @t(0xFE74, 'PB15 latch #2: gate mode==0&&!bit1[RAM+0xFC7+6]; v=i8[RAM+0xFC7+1]; flash @0x19E1C+6 {lo=5,N=224,hi=32,M=17921}')
 def _(run, rng):
+    """Emulator test @ 0xfe74: PB15 latch #2: gate mode==0&&!bit1[RAM+0xFC7+6]; v=i8[RAM+0xFC7+1]; flash @0x19E1C+6 {lo=5,N=224,hi=32,M=17921}.
+    Тест эмулятора @ 0xfe74: PB15 latch #2: gate mode==0&&!bit1[RAM+0xFC7+6]; v=i8[RAM+0xFC7+1]; flash @0x19E1C+6 {lo=5,N=224,hi=32,M=17921}.
+    """
     mode = rng.getrandbits(2)
     bit1 = rng.getrandbits(1)
     v = rng.randint(-128, 127)
@@ -1568,6 +1919,9 @@ def _(run, rng):
 @t(0x19968, 'u32/u32 floor-деление (restore, 32 ит.): (num=r0, den=r1) → r0=num//den')
 def _(run, rng):
     # фиксированные краевые
+    """Emulator test @ 0x19968: u32/u32 floor-деление (restore, 32 ит.): (num=r0, den=r1) → r0=num//den.
+    Тест эмулятора @ 0x19968: u32/u32 floor-деление (restore, 32 ит.): (num=r0, den=r1) → r0=num//den.
+    """
     for n, d in [(10, 2), (5, 2), (7, 3), (0xFFFFFFFF, 2), (0xFFFFFFFF, 3), (1, 1), (0x12345678, 0x100)]:
         r0, _ = run.call(0x19968, [n, d])
         assert r0 == n // d, f'{n:#x}/{d}: {r0:#x} ≠ {n // d:#x}'
@@ -1581,6 +1935,9 @@ def _(run, rng):
 
 @t(0x19994, 'signed-деление C-style (truncation toward zero): (a=r0, b=r1) → r0')
 def _(run, rng):
+    """Emulator test @ 0x19994: signed-деление C-style (truncation toward zero): (a=r0, b=r1) → r0.
+    Тест эмулятора @ 0x19994: signed-деление C-style (truncation toward zero): (a=r0, b=r1) → r0.
+    """
     for a, b in [(10, 2), (-10, 2), (10, -2), (-10, -2), (-7, 3), (7, -3), (-1, 2), (-1 << 31, -3)]:
         a32 = a if a > -(1 << 31) else a  # уже в i32
         r0, _ = run.call(0x19994, [a & 0xFFFFFFFF, b & 0xFFFFFFFF])
@@ -1599,6 +1956,9 @@ def _(run, rng):
 @t(0x199BC, 'u64/u64 → u64 unsigned-деление (64 ит., 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) → r1:r0')
 def _(run, rng):
     # ВАЖНО: 4 аргумента — den_hi обязателен (иначе мусор в R3 из прошлого вызова)
+    """Emulator test @ 0x199bc: u64/u64 → u64 unsigned-деление (64 ит., 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) → r1:r0.
+    Тест эмулятора @ 0x199bc: u64/u64 → u64 unsigned-деление (64 ит., 0x1a080/0x1a0a0): (num_lo, num_hi, den_lo, den_hi) → r1:r0.
+    """
     for nlo, nhi, dlo, dhi in [(1000, 0, 3, 0), (0xFFFFFFFF, 1, 2, 0), (5, 0, 2, 0), (0, 1, 7, 0)]:
         r0, r1 = run.call(0x199BC, [nlo, nhi, dlo, dhi], max_insn=300000)
         num = (nhi << 32) | nlo
@@ -1625,6 +1985,9 @@ _OUT = 0x100  # RAM-относительный слот вывода
 
 
 def _gate(run, off, a, b):
+    """The helper function (_gate).
+    Вспомогательная функция (_gate).
+    """
     run.ram_write(_OUT, struct.pack('<H', 0))
     run.call(off, [a & M32, b & M32, RAM + _OUT])
     return struct.unpack('<H', run.ram_read(_OUT, 2))[0]
@@ -1632,6 +1995,9 @@ def _gate(run, off, a, b):
 
 @t(0xF010, 'window-gate «up» (motor 0x7494): a≥b→a; b<a+8→b; иначе→a (u32-cmp)')
 def _(run, rng):
+    """Emulator test @ 0xf010: window-gate «up» (motor 0x7494): a≥b→a; b<a+8→b; иначе→a (u32-cmp).
+    Тест эмулятора @ 0xf010: window-gate «up» (motor 0x7494): a≥b→a; b<a+8→b; иначе→a (u32-cmp).
+    """
     for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
         for b in range(0, 24):
             exp = a if (a >= b or b >= a + 8) else b
@@ -1648,6 +2014,9 @@ def _(run, rng):
 
 @t(0xF024, 'window-gate «down» (motor 0x7494): a≤b→a; a<b+8→b; иначе→a (u32-cmp)')
 def _(run, rng):
+    """Emulator test @ 0xf024: window-gate «down» (motor 0x7494): a≤b→a; a<b+8→b; иначе→a (u32-cmp).
+    Тест эмулятора @ 0xf024: window-gate «down» (motor 0x7494): a≤b→a; a<b+8→b; иначе→a (u32-cmp).
+    """
     for a in (0, 1, 7, 8, 15, 300, 2550, 0xFFFF):
         for b in range(0, 24):
             exp = a if (a <= b or a >= b + 8) else b
@@ -1665,6 +2034,9 @@ def _(run, rng):
 # cfg-байты @RAM+0xFC7: +1 → 0x8e70, +2 → 0x8e50; out-пул @RAM+0x300F (+0 / +2)
 @t(0x8E50, 'cfg×10 (motor): r1=s8[RAM+0xFC9] → u16[RAM+0x300F]=r1*10, return s16; аргумент игнорируется')
 def _(run, rng):
+    """Emulator test @ 0x8e50: cfg×10 (motor): r1=s8[RAM+0xFC9] → u16[RAM+0x300F]=r1*10, return s16; аргумент игнорируется.
+    Тест эмулятора @ 0x8e50: cfg×10 (motor): r1=s8[RAM+0xFC9] → u16[RAM+0x300F]=r1*10, return s16; аргумент игнорируется.
+    """
     for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
         run.ram_write(0xFC9, struct.pack('<B', v))
         r0, _ = run.call(0x8E50, [0xDEAD])  # аргумент не используется
@@ -1676,6 +2048,9 @@ def _(run, rng):
 
 @t(0x8E70, 'cfg×10 (motor): r1=s8[RAM+0xFC8] → u16[RAM+0x3011]=r1*10, return s16; аргумент игнорируется')
 def _(run, rng):
+    """Emulator test @ 0x8e70: cfg×10 (motor): r1=s8[RAM+0xFC8] → u16[RAM+0x3011]=r1*10, return s16; аргумент игнорируется.
+    Тест эмулятора @ 0x8e70: cfg×10 (motor): r1=s8[RAM+0xFC8] → u16[RAM+0x3011]=r1*10, return s16; аргумент игнорируется.
+    """
     for v in (0, 1, 5, 27, 30, 90, 128, 200, 255):
         run.ram_write(0xFC8, struct.pack('<B', v))
         r0, _ = run.call(0x8E70, [0xDEAD])  # аргумент не используется
@@ -1687,6 +2062,9 @@ def _(run, rng):
 
 @t(0xE658, '§57: round-robin диспетчер BLE-задач: гейты byte[0x35]≤2 && byte[0xA49]==1; bl 0x6618; dispatch по counter byte[0xA62] (mod 10) → 6 задач + 4 пустых')
 def _(run, rng):
+    """Emulator test @ 0xe658: §57: round-robin диспетчер BLE-задач: гейты byte[0x35]≤2 && byte[0xA49]==1; bl 0x6618; dispatch по counter byte[0xA62] (mod 10) → 6 задач + 4 пустых.
+    Тест эмулятора @ 0xe658: §57: round-robin диспетчер BLE-задач: гейты byte[0x35]≤2 && byte[0xA49]==1; bl 0x6618; dispatch по counter byte[0xA62] (mod 10) → 6 задач + 4 пустых.
+    """
     uc = run.uc
     tasks = {0: 0x6E50, 1: 0x63B8, 2: 0x799C, 3: 0x7A30, 4: 0x69E4, 5: 0x6838}
     # --- гейты закрыты → ранний возврат, counter не тронут
@@ -1709,6 +2087,9 @@ def _(run, rng):
         run.ram_write(0xA62, bytes([cnt]))
         hit = []
         def stopper(uc_, a, s, u_):
+            """The stopper function of the script.
+            Функция stopper скрипта.
+            """
             a &= ~1
             if any(t <= a < t + 0x40 for t in tasks.values()):
                 hit.append(a)
@@ -1741,6 +2122,9 @@ def _(run, rng):
 @t(0x16BD4, '§56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash)')
 def _(run, rng):
     # Фрейм: bl НЕ пушит lr → callee SP = caller SP; [SP]={ygrid, hdr, stride}
+    """Emulator test @ 0x16bd4: §56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash).
+    Тест эмулятора @ 0x16bd4: §56: hdr-аномалия — early-exit: v1≤xtab[0]=2002 → всегда константа grid[0]=0x3A08 (реальные таблицы flash).
+    """
     uc = run.uc
     F1 = 0x08000000
     C = STACK_TOP - 0x40
@@ -1758,6 +2142,9 @@ def _(run, rng):
             run.emu.insn = 0
             ret = []
             def h(u_, a, s, usr):
+                """The h function of the script.
+                Функция h скрипта.
+                """
                 if (a & ~1) == 0x16D8A:      # эпилог: r0 = результат
                     ret.append(u_.reg_read(UC_ARM_REG_R0))
                     u_.emu_stop()
@@ -1782,6 +2169,9 @@ def _adc_hook(run):
     writes = []
 
     def h(u_, access, addr, size, val, usr):
+        """The h function of the script.
+        Функция h скрипта.
+        """
         if ADC1 <= addr < ADC1 + 0x100:
             writes.append((addr - ADC1, size, val))
     return uc.hook_add(UC_HOOK_MEM_WRITE, h), writes
@@ -1809,6 +2199,9 @@ def _adc_struct(run, fields, slot=0):
 
 @t(0x21FB8, '§58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, блок +0x40..+0x64=0, state-байты struct+0x39/+0x3A=0')
 def _(run, rng):
+    """Emulator test @ 0x21fb8: §58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, блок +0x40..+0x64=0, state-байты struct+0x39/+0x3A=0.
+    Тест эмулятора @ 0x21fb8: §58: ADC1 reset-helper: CR2/SMPR1/+0x7C=0, +0x3C=0x0FFF0000, блок +0x40..+0x64=0, state-байты struct+0x39/+0x3A=0.
+    """
     from unicorn import UC_HOOK_CODE
     uc = run.uc
     _adc_zero(run)
@@ -1820,6 +2213,9 @@ def _(run, rng):
     stop_at = []
 
     def h(u_, a, s, usr):
+        """The h function of the script.
+        Функция h скрипта.
+        """
         if (a & ~1) == 0x21FFA:   # fall-through точка
             u_.emu_stop()
     hook2 = uc.hook_add(UC_HOOK_CODE, h)
@@ -1841,6 +2237,9 @@ def _(run, rng):
 @t(0x21CA8, '§58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) → cpsid i; нормальный путь: SMPR1/SMPR2/+0x40/+0x7C поля + ADON')
 def _(run, rng):
     # --- assert-пути: спин без записей в ADC
+    """Emulator test @ 0x21ca8: §58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) → cpsid i; нормальный путь: SMPR1/SMPR2/+0x40/+0x7C поля + ADON.
+    Тест эмулятора @ 0x21ca8: §58: ADC1 validated channel-configurator: asserts (base/variant/ch-fields) → cpsid i; нормальный путь: SMPR1/SMPR2/+0x40/+0x7C поля + ADON.
+    """
     bad = ({0: 0xDEADBEEF}, {4: 2}, {0xB: 5}, {0xC: 6}, {0xA: 4}, {6: 0x10}, {9: 8})
     for f in bad:
         d = {k: v for k, v in ((0, ADC1), (4, 0), (0xA, 0), (0xB, 0), (0xC, 0), (6, 0), (9, 0))}
@@ -1901,7 +2300,13 @@ def _(run, rng):
 @t(0x21E18, '§58: ADC1 validated channel-sequencer: asserts (chan≤18, rank≤4, sqr≤0xFFF, low≤3); sampling-поле по диапазонам каналов; SQR[rank]; SMPR1 bit25')
 def _(run, rng):
     # --- assert-пути
+    """Emulator test @ 0x21e18: §58: ADC1 validated channel-sequencer: asserts (chan≤18, rank≤4, sqr≤0xFFF, low≤3); sampling-поле по диапазонам каналов; SQR[rank]; SMPR1 bit25.
+    Тест эмулятора @ 0x21e18: §58: ADC1 validated channel-sequencer: asserts (chan≤18, rank≤4, sqr≤0xFFF, low≤3); sampling-поле по диапазонам каналов; SQR[rank]; SMPR1 bit25.
+    """
     def mkmain(mode=0):
+        """The mkmain function of the script.
+        Функция mkmain скрипта.
+        """
         return _adc_struct(run, {0: ADC1, 8: mode})
     m = mkmain()
     bad = ({0: 19}, {1: 5}, {8: 0x1000}, {0xC: 4})
@@ -1972,6 +2377,9 @@ def _(run, rng):
 
 @t(0x1C0B0, '§58: ADC1 sensor-init (caller): reset → 0x21CA8 → 4×0x21E18 (ch C/B/A/F, rank 1-4, smp=4) → финальные OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) → ADON')
 def _(run, rng):
+    """Emulator test @ 0x1c0b0: §58: ADC1 sensor-init (caller): reset → 0x21CA8 → 4×0x21E18 (ch C/B/A/F, rank 1-4, smp=4) → финальные OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) → ADON.
+    Тест эмулятора @ 0x1c0b0: §58: ADC1 sensor-init (caller): reset → 0x21CA8 → 4×0x21E18 (ch C/B/A/F, rank 1-4, smp=4) → финальные OR (+0x20|=0x04040403, +0x24/28/2C|=0x04040404, common +0x40|=0x0E1C6104/+0x44|=9/+0x54|=0x40) → ADON.
+    """
     _adc_zero(run)
     csp = _adc_struct(run, {0: ADC1})   # struct строит сам 0x1C0B0 (r0 не нужен)
     hook, writes = _adc_hook(run)

@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 """
+Emulator of the Dreame/Xiaomi Scooter 5 Pro device — the DEVICE side.
+
+It implements the protocol reverse-engineered in the project (see docs/FACTS.md):
+  - the security-chip login (ECDH P-256 + HKDF + AES-CCM, the pin via ltmk);
+  - the CTR/DATA/ACK channel transport (the login channels 3/5, the DFU channel 0);
+  - the BLE DFU (opcodes 2/3/4) and the MCU (opcodes 2/5/6): fragmentSize=512,
+    the frames, lastFragmentIndex, CRC32, the version-gated switchFirmware;
+  - the 0x001c info channel (opcodes 0/1/3/8);
+  - the 0x001a/0x001b spec channel (telemetry) — the basic response.
+
+The class is BLE-free: on_write(sid, data) -> a list of (sid, notify_bytes).
+The BLE wrapper is in fake_ble.py. This is NOT the firmware but a behavioral
+model for testing our own tools (dreame_auth.py / dreame_flasher.py) without
+hardware.
+
 Эмулятор устройства Dreame/Xiaomi Scooter 5 Pro — сторона УСТРОЙСТВА.
 
 Реализует протокол, реверснутый в проекте (см. docs/FACTS.md):
@@ -88,11 +103,15 @@ SUBSCRIBABLE = {
 
 
 def spec_counter_bytes(cnt):
+    """Encode the 32-bit spec counter into 4 bytes (2x u16 LE, little-endian within).
+    Закодировать 32-bit spec-счётчик в 4 байта (2x u16 LE, little-endian внутри)."""
     low, high = cnt & 0xFFFF, (cnt >> 16) & 0xFFFF
     return bytes([low & 0xFF, low >> 8, high & 0xFF, high >> 8])
 
 
 def spec_encode_value(tcode, val):
+    """Encode a spec value by its type code (0-10, see the TYPES in probes/spec_read.py).
+    Закодировать spec-значение по типу (0-10, см. TYPES в probes/spec_read.py)."""
     if tcode == 0 or tcode == 1 or tcode == 2:      # BOOL/UINT8/INT8
         return struct.pack("<b" if tcode == 2 else "<B", val)
     if tcode == 3:
@@ -123,38 +142,66 @@ def ver_tuple(v):
 
 
 class ChannelReassembler:
-    """Сборка канального сообщения: CTR(fc) -> DATA×fc -> готово."""
+    """Reassembling of a channel message: CTR(fc) -> DATA×fc -> ready.
+    Сборка канального сообщения: CTR(fc) -> DATA×fc -> готово."""
+
     def __init__(self):
+        """Create and reset the reassembler.
+        Создать и сбросить реассемблер."""
         self.reset()
 
     def reset(self):
+        """Clear the state (the channel, the frame count, the frames).
+        Сбросить состояние (канал, число кадров, кадры)."""
         self.channel = None
         self.fc = None
         self.frames = {}
 
     def start(self, channel, fc):
+        """Start the reassembling for the channel with the frame count fc.
+        Начать сборку для канала с числом кадров fc."""
         self.channel = channel
         self.fc = fc
         self.frames = {}
 
     def add(self, seq, chunk):
+        """Add the frame with the sequence number seq.
+        Добавить кадр с порядковым номером seq."""
         self.frames[seq] = chunk
 
     def complete(self):
+        """True if all the frames are received.
+        True если все кадры получены."""
         return self.fc is not None and len(self.frames) >= self.fc
 
     def missing(self):
+        """The list of the missing sequence numbers.
+        Список недостающих порядковых номеров."""
         if self.fc is None:
             return []
         return [i for i in range(1, self.fc + 1) if i not in self.frames]
 
     def assemble(self):
+        """Concatenate the frames in the sequence order.
+        Склейка кадров в порядке номеров."""
         return b"".join(self.frames[i] for i in sorted(self.frames))
 
 
 class ScooterDevice:
+    """The emulated Scooter 5 Pro device (the full protocol: login/DFU/info/spec +
+    the spontaneous pushes). See the module docstring.
+    Эмулированное устройство Scooter 5 Pro (полный протокол: login/DFU/info/spec +
+    спонтанные пуши). См. docstring модуля."""
+
     def __init__(self, ltmk, ble_version="2.5.3_0011", mcu_version="0006",
                  serial="60555/EMULATED0001", accept_limit=None, verbose=True):
+        """Create the device: the versions, the ECDH keypair, the reassemblers, the DFU
+        buffers (both the BLE and the MCU ones are kept in sync by the index), the spec
+        counters. accept_limit = how many fragments the device COUNTS (the 296 boundary
+        emulation; None = accept the whole image).
+        Создание устройства: версии, ECDH-ключ, реассемблеры, DFU-буферы (BLE и MCU
+        ведутся синхронно по индексу), spec-счётчики. accept_limit = сколько
+        фрагментов устройство засчитывает (эмуляция границы 296; None = весь образ)."""
         self.ltmk = ltmk
         self.ble_version = ble_version
         self.mcu_version = mcu_version
@@ -190,11 +237,15 @@ class ScooterDevice:
         self.log(f"[dev] создан: BLE {ble_version}, MCU {mcu_version}")
 
     def log(self, *a):
+        """Print if verbose.
+        Печать если verbose."""
         if self.verbose:
             print(*a)
 
-    # ---------- маршрутизация входящих записей ----------
+    # ---------- routing of the incoming writes ----------
     def on_write(self, s, data):
+        """The write to the channel sid: returns the list of (sid, notify_bytes).
+        Запись в канал sid: возвращает список (sid, notify_bytes)."""
         if s == CH_CONTROL:
             return self._on_control(data)
         if s == CH_LOGIN:
@@ -212,13 +263,17 @@ class ScooterDevice:
         return []
 
     def on_read(self, s):
+        """The read of the channel sid (the 0x0004 version returns the BLE version).
+        Чтение канала sid (0x0004-версия возвращает BLE-версию)."""
         if s == CH_VERSION:
             return self.ble_version.encode()
         return b""
 
     # ---------- 0x0010 CONTROL ----------
     def _on_control(self, data):
-        if data == bytes([da.A4]):                      # A4 -> MNG на 0x0016
+        """The A4 -> the MNG on 0x0016; 0x20 -> the login start (the reassembler reset).
+        A4 -> MNG на 0x0016; 0x20 -> старт login (сброс реассемблера)."""
+        if data == bytes([da.A4]):                      # A4 -> MNG on 0x0016
             mng = struct.pack("<HBB", 0, PKT_MNG, 0) + bytes([PKG_NUM, DMTU])
             return [(CH_LOGIN, mng)]
         if len(data) >= 1 and data[0] == 0x20:          # login-start
@@ -226,8 +281,12 @@ class ScooterDevice:
             return []
         return []
 
-    # ---------- 0x0016 login-канал ----------
+    # ---------- 0x0016 login channel ----------
     def _on_login_channel(self, data):
+        """The CTR (stage A pubkey / stage B confirmation) and the DATA frames; the
+        assembled message goes to the stage A/B handler.
+        CTR (pubkey stage A / confirmation stage B) и DATA-кадры; собранное сообщение
+        уходит в stage A/B обработчик."""
         if len(data) < 3:
             return []
         seq = struct.unpack_from("<H", data, 0)[0]
@@ -257,7 +316,8 @@ class ScooterDevice:
         return out
 
     def _login_stage_a(self, app_pub_raw):
-        """Получили pubkey приложения -> считаем sessionKey, шлём свой pubkey."""
+        """We received the app pubkey -> compute the sessionKey, send our pubkey.
+        Получили pubkey приложения -> считаем sessionKey, шлём свой pubkey."""
         try:
             _, sk = da.derive_session_key(self.dev_priv, app_pub_raw, self.ltmk)
             self.session_key = sk
@@ -269,7 +329,8 @@ class ScooterDevice:
         return [(CH_LOGIN, single)]
 
     def _login_stage_b(self, enc):
-        """Проверяем app-confirmation, отвечаем 0x21/0x22 на 0x0010."""
+        """Check the app confirmation and answer 0x21/0x22 on 0x0010.
+        Проверяем app-confirmation, отвечаем 0x21/0x22 на 0x0010."""
         if not self.session_key:
             return [(CH_CONTROL, b"\x22\x00\x00\x00")]
         aes_key = self.session_key[16:32]
@@ -288,10 +349,17 @@ class ScooterDevice:
 
     # ---------- 0x0017 DFU-команды ----------
     def _cmd_resp(self, opcode, status, data=b""):
+        """Build a DFU command response (the 0x0017 frame).
+        Собрать ответ на DFU-команду (кадр 0x0017)."""
         body = struct.pack("<H", opcode) + bytes([status]) + data
         return [(CH_DFU_CMD, bytes([0x01, len(body)]) + body)]
 
     def _on_dfu_cmd(self, data):
+        """The DFU commands: 2/3 (BLE fragmentSize/lastFragmentIndex), 5 (MCU
+        lastFragmentIndex), 4/6 (the BLE/MCU switchFirmware); the unknown ones ->
+        status 2.
+        DFU-команды: 2/3 (BLE fragmentSize/lastFragmentIndex), 5 (MCU lastFragmentIndex),
+        4/6 (switchFirmware BLE/MCU); неизвестные -> status 2."""
         if len(data) < 3:
             return []
         opcode = struct.unpack_from("<H", data, 0)[0]
@@ -310,6 +378,12 @@ class ScooterDevice:
         return self._cmd_resp(opcode, 2)                 # неизвестный опкод
 
     def _switch(self, target):
+        """The version-gated switchFirmware: apply the image if the offered version is
+        newer and the buffer is complete; otherwise reject (BLE status 6 / MCU 5) and
+        RESET the buffer (as on the real device).
+        switchFirmware с версионным гейтом: применить образ если предложенная версия
+        новее и буфер полон; иначе отказ (BLE status 6 / MCU 5) + СБРОС буфера (как на
+        реальном устройстве)."""
         installed = self.ble_version if target == "ble" else self.mcu_version
         offered = (self.offered_ble_version if target == "ble"
                    else self.offered_mcu_version) or installed
@@ -340,8 +414,12 @@ class ScooterDevice:
         self.log(f"[dev] switchFirmware {target}: ОТКАЗ status={reject_status} ({why}), буфер сброшен")
         return self._cmd_resp(opcode, reject_status)
 
-    # ---------- 0x0018 DFU-данные ----------
+    # ---------- 0x0018 DFU data ----------
     def _on_dfu_data(self, data):
+        """The CTR (frame count) and the DATA frames; a missing frame -> the pull ACK
+        with the number; a complete message -> _accept_fragment.
+        CTR (число кадров) и DATA-кадры; недостающий кадр -> pull-ACK с номером;
+        полное сообщение -> _accept_fragment."""
         if len(data) < 3:
             return []
         seq = struct.unpack_from("<H", data, 0)[0]
@@ -363,11 +441,17 @@ class ScooterDevice:
         return self._accept_fragment(msg)
 
     def _accept_fragment(self, msg):
-        """msg = [index u16][fragmentData]. Определяем BLE/MCU по контексту нельзя,
-        поэтому эмулятор ведёт ОБА буфера синхронно по индексу текущей заливки.
-        Для простоты решаем по тому, какой буфер сейчас «в игре» — трекаем через
-        last-команду. Здесь используем эвристику: тот буфер, чей ожидаемый индекс
-        совпадает. Практически заливка идёт по одному target за прогон."""
+        """msg = [index u16][fragmentData]. The BLE/MCU target cannot be determined from
+        the fragment itself, so the emulator keeps BOTH buffers in sync by the index of
+        the current flashing (the heuristic: the buffer whose expected index matches).
+        In practice a run flashes one target at a time. The transport always ACKs
+        (status 0); the accept_limit cap stops the counter from growing but does not
+        change the transport status.
+        msg = [index u16][fragmentData]. BLE/MCU по контексту определить нельзя, поэтому
+        эмулятор ведёт ОБА буфера синхронно по индексу текущей заливки (эвристика: тот
+        буфер, чей ожидаемый индекс совпадает). На практике заливка идёт по одному
+        target за прогон. Транспорт всегда ACK (status 0); accept_limit останавливает
+        рост счётчика, но транспортный status не меняет."""
         index = struct.unpack_from("<H", msg, 0)[0]
         frag = msg[2:]
         out_ack = [(CH_DFU_DATA, struct.pack("<HBB", 0, PKT_ACK, 0))]      # транспорт принял
@@ -400,12 +484,18 @@ class ScooterDevice:
         event = (CH_DFU_CMD, bytes([0x02, 0x03, status]) + struct.pack("<H", index))
         return out_ack + [event]
 
-    # ---------- 0x001c инфо-канал ----------
+    # ---------- 0x001c info channel ----------
     def _on_info(self, data):
+        """The info operations: 0 (the spec marker), 1 (the MCU version), 3 (the
+        hardware), 8 (the serial chunk by the offset); the unknown ones -> 0xFF error.
+        Инфо-операции: 0 (spec-маркер), 1 (MCU-версия), 3 (железо), 8 (чанк серийника
+        по offset); неизвестные -> ошибка 0xFF."""
         if len(data) < 1:
             return []
         op = data[0]
         def frame(op, val):
+            """The 0x001c response frame (op + len + value).
+            Кадры ответа 0x001c (op + len + значение)."""
             return [(CH_INFO, bytes([op, len(val)]) + val)]
         if op == 0:
             return frame(0, b"\x01\x03")
@@ -421,8 +511,14 @@ class ScooterDevice:
             return frame(8, chunk)
         return [(CH_INFO, bytes([0xFF, 2, op, 2]))]       # нет такого опкода
 
-    # ---------- 0x001a spec write (запрос телеметрии от приложения) ----------
+    # ---------- 0x001a spec write (the telemetry request from the app) ----------
     def _on_spec(self, data):
+        """The CTR/DATA of the telemetry request: decrypt (app->dev AES-CCM), parse the
+        objects, build the response (the first object only), encrypt, send the CTR with
+        the frame count; the DATA frames go through the ready-ack loop.
+        CTR/DATA запроса телеметрии: расшифровать (app->dev AES-CCM), разобрать
+        объекты, собрать ответ (только первый объект), зашифровать, отправить CTR с
+        числом кадров; DATA-кадры — через ready-ack цикл."""
         if len(data) < 3:
             return []
         seq = struct.unpack_from("<H", data, 0)[0]
@@ -461,7 +557,10 @@ class ScooterDevice:
         return out
 
     def _parse_spec_request(self, pt):
-        """[u16 len|flag][u16 tid][u8 op][u8 count] + [u8 siid][u16 piid][u16 typeLen]..."""
+        """[u16 len|flag][u16 tid][u8 op][u8 count] + [u8 siid][u16 piid][u16 typeLen]... ->
+        the list of (siid, piid).
+        [u16 len|flag][u16 tid][u8 op][u8 count] + [u8 siid][u16 piid][u16 typeLen]...
+        -> список (siid, piid)."""
         if len(pt) < 6:
             return None
         _lenflag, _tid, _op, count = struct.unpack_from("<HHBB", pt, 0)
@@ -476,7 +575,10 @@ class ScooterDevice:
         return objects
 
     def _build_spec_response(self, objects):
-        """Устройство обслуживает ТОЛЬКО первый объект в запросе (подтверждено снупом,
+        """The device serves ONLY the first object in the request (confirmed by the
+        snoop, see docs/FACTS.md) — for the rest, as for the unknown siid/piid, it sets
+        status=-4003 (multi-object/no data) and an empty value.
+        Устройство обслуживает ТОЛЬКО первый объект в запросе (подтверждено снупом,
         см. docs/FACTS.md) — остальным, как и неизвестным siid/piid, ставит
         status=-4003 (multi-object/нет данных) и пустое значение."""
         body = b""
@@ -496,13 +598,21 @@ class ScooterDevice:
         return struct.pack("<HHBB", (total | 0x2000) & 0xFFFF, 1, 3, len(objects)) + body
 
     def _encrypt_spec_response(self, pt):
+        """Encrypt the response plaintext (dev->app AES-CCM, the device counter) and
+        prepend the counter (u16 LE).
+        Зашифровать ответ (dev->app AES-CCM, счётчик устройства) + дописать счётчик
+        (u16 LE) в начало."""
         self.spec_dev_cnt = (self.spec_dev_cnt + 1) & 0xFFFFFFFF
         nonce = self.session_key[32:36] + b"\x00\x00\x00\x00" + spec_counter_bytes(self.spec_dev_cnt)
         ct = AESCCM(self.session_key[0:16], tag_length=4).encrypt(nonce, pt, None)
         return struct.pack("<H", self.spec_dev_cnt & 0xFFFF) + ct
 
-    # ---------- 0x001b spec notify (ack'и приложения на CTR/DATA устройства) ----------
+    # ---------- 0x001b spec notify (the app acks for the device CTR/DATA) ----------
     def _on_spec_notify_ack(self, data):
+        """The app's ready-ack (0x01) -> send all the DATA frames; the done-ack (0x00)
+        -> clear the pending frames.
+        ready-ack приложения (0x01) -> отправить все DATA-кадры; done-ack (0x00) ->
+        очистить ожидающие кадры."""
         if len(data) < 4 or not (data[0] == 0 and data[1] == 0 and data[2] == PKT_ACK):
             return []
         status = data[3]
@@ -515,16 +625,24 @@ class ScooterDevice:
             self.spec_pending_frames = []
         return []
 
-    # ---------- пуш при изменении свойства (parseNotifyData) ----------
+    # ---------- the push on a property change (parseNotifyData) ----------
     def push_property(self, siid, piid, value):
-        """Эмуляция спонтанного пуша: устройство САМО отправляет изменившееся
-        свойство на 0x001b, без предшествующего запроса на 0x001a (см.
-        docs/FACTS.md «Устройство умеет ПУШИТЬ», probes/spec_listen.py).
-        Пуш идёт только по свойствам из SUBSCRIBABLE — иначе тихо игнорируется
-        (как и на живом устройстве, которое не подписывает остальные siid/piid).
-        Возвращает [] или [(CH_SPEC_NOTIFY, ctr_bytes)] — CTR той же формы, что
-        и ответ на чтение; дальше цикл ready-ack/DATA/done-ack идёт через уже
-        существующий _on_spec_notify_ack, независимо от того, что его начало."""
+        """Emulation of a spontaneous push: the device ITSELF sends the changed property
+        on 0x001b, without a preceding 0x001a request (see docs/FACTS.md "The device
+        can PUSH", probes/spec_listen.py). The push goes only for the SUBSCRIBABLE
+        properties — otherwise it is silently ignored (as on the live device, which
+        does not subscribe to the rest). Returns [] or [(CH_SPEC_NOTIFY, ctr_bytes)] —
+        the CTR in the same shape as the read response; the rest of the ready-ack/
+        DATA/done-ack loop goes through the existing _on_spec_notify_ack regardless of
+        what started it.
+        Эмуляция спонтанного пуша: устройство САМО отправляет изменившееся свойство на
+        0x001b, без предшествующего запроса на 0x001a (см. docs/FACTS.md «Устройство
+        умеет ПУШИТЬ», probes/spec_listen.py). Пуш идёт только по свойствам из
+        SUBSCRIBABLE — иначе тихо игнорируется (как и на живом устройстве, которое не
+        подписывает остальные siid/piid). Возвращает [] или [(CH_SPEC_NOTIFY, ctr_bytes)]
+        — CTR той же формы, что и ответ на чтение; дальше цикл ready-ack/DATA/done-ack
+        идёт через уже существующий _on_spec_notify_ack, независимо от того, что его
+        начало."""
         if (siid, piid) not in SUBSCRIBABLE:
             return []
         if not self.session_key:

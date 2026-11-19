@@ -1,7 +1,25 @@
 #!/usr/bin/env python3
 """
-READ-ONLY live-телеметрия MCU по USART3 push-потoku (0x61…chk 9E), 19200 8N1.
-================================================================================
+The READ-ONLY live telemetry of the MCU via the USART3 push stream (0x61...chk 9E),
+19200 8N1.
+
+It sends NOTHING — it only listens to the spontaneous push stream and decodes the 'a0'
+(sub=0x30) and the 'a1' (sub=0x31) frames. The field mapping per the RE of the
+aggregator 0x211f8 + the section 47.
+
+The goal: to take the TEMPORARY dynamics in the stationary mode (without the BLE,
+without the movement):
+  - the battery % (the u16@0x306) — the drift/the discharge;
+  - the u16@0x308 — the counter (the increment frequency -> the tick period);
+  - the temperature in degrees C;
+  - the u16@0x236 (%) — the speed percent (the 0 in place);
+  - the status byte of the 'a0' (the multi-flag, the codes 0x10/0x11/0x18/0x24/0x27/
+    0x28/0x29/0x45).
+
+Usage:  python probes/mcu_live_telem.py [--port COM3] [--listen 30.0]
+
+READ-ONLY live-телеметрия MCU по USART3 push-потоку (0x61…chk 9E), 19200 8N1.
+
 НИЧЕГО не отправляем — только слушаем спонтанный push-поток и декодируем кадры
 'a0' (sub=0x30) и 'a1' (sub=0x31). Поле-маппинг по RE сборщика 0x211f8 + §47.
 
@@ -21,7 +39,8 @@ import serial
 
 
 def collect_frames(s, secs):
-    """Собираем полные валидные push-кадры [(t_sec, frame), …]."""
+    """Collect the full valid push frames [(t_sec, frame), ...].
+    Собираем полные валидные push-кадры [(t_sec, frame), ...]."""
     buf = bytearray()
     frames = []
     t0 = time.time()
@@ -56,6 +75,10 @@ def collect_frames(s, secs):
 
 
 def dec_biased(raw):
+    """The signed byte decoding (the biased representation of the scooter firmware):
+    the raw < 128 -> the value, otherwise 128 - raw (the negative).
+    Декодирование знакового байта (biased-представление прошивки самоката): raw < 128
+    -> значение, иначе 128 - raw (отрицательное)."""
     return raw if raw < 128 else 128 - raw
 
 
@@ -66,6 +89,8 @@ STATUS_NAMES = {
 
 
 def main():
+    """The read-only telemetry run (the --port/--listen options).
+    READ-ONLY прогон телеметрии (опции --port/--listen)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--listen", type=float, default=30.0)

@@ -36,6 +36,9 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=60000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -47,10 +50,16 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=60000):
 
 
 def _r(uc, off, size=1):
+    """The helper function (_r).
+    Вспомогательная функция (_r).
+    """
     return int.from_bytes(bytes(uc.mem_read(RAM + off, size)), 'little')
 
 
 def _p(uc, addr, size=4):
+    """The helper function (_p).
+    Вспомогательная функция (_p).
+    """
     return int.from_bytes(bytes(uc.mem_read(addr, size)), 'little')
 
 
@@ -99,6 +108,9 @@ def _spi_spin_check(off, head, exp_ret, tag):
 @t(0x8884, 'E2-b82: 0x8884() — чистый спин (insn>=50000, ret=stack-адрес или '
            'малое значение по фазе): без периферийных/RAM-побочных эффектов.')
 def _(run, rng):
+    """Emulator test @ 0x8884: E2-b82: 0x8884() — чистый спин (insn>=50000, ret=stack-адрес или малое значение по фазе): без периферийных/RAM-побочных эффектов..
+    Тест эмулятора @ 0x8884: E2-b82: 0x8884() — чистый спин (insn>=50000, ret=stack-адрес или малое значение по фазе): без периферийных/RAM-побочных эффектов..
+    """
     uc, emu, lp = _fresh_probe(0x8884)
     assert emu.insn >= 50000, f'0x8884: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \
@@ -111,6 +123,9 @@ def _(run, rng):
 @t(0xB4CE, 'E2-b82: 0xb4ce() — чистый спин (insn>=50000, ret=0/2 по фазе): без '
            'побочных эффектов. smoke+spin golden.')
 def _(run, rng):
+    """Emulator test @ 0xb4ce: E2-b82: 0xb4ce() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    Тест эмулятора @ 0xb4ce: E2-b82: 0xb4ce() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    """
     uc, emu, lp = _fresh_probe(0xB4CE)
     assert emu.insn >= 50000, f'0xb4ce: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \
@@ -122,6 +137,9 @@ def _(run, rng):
 @t(0xB53A, 'E2-b82: 0xb53a() — чистый спин (insn>=50000, ret=0/2 по фазе): без '
            'побочных эффектов. smoke+spin golden.')
 def _(run, rng):
+    """Emulator test @ 0xb53a: E2-b82: 0xb53a() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    Тест эмулятора @ 0xb53a: E2-b82: 0xb53a() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    """
     uc, emu, lp = _fresh_probe(0xB53A)
     assert emu.insn >= 50000, f'0xb53a: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \
@@ -133,6 +151,9 @@ def _(run, rng):
 @t(0xB8DC, 'E2-b82: 0xb8dc() — чистый спин (insn>=50000, ret=малое значение по фазе, '
            'напр. 0xFF/0xEAB3): без побочных эффектов. smoke+spin golden.')
 def _(run, rng):
+    """Emulator test @ 0xb8dc: E2-b82: 0xb8dc() — чистый спин (insn>=50000, ret=малое значение по фазе, напр. 0xFF/0xEAB3): без побочных эффектов. smoke+spin golden..
+    Тест эмулятора @ 0xb8dc: E2-b82: 0xb8dc() — чистый спин (insn>=50000, ret=малое значение по фазе, напр. 0xFF/0xEAB3): без побочных эффектов. smoke+spin golden..
+    """
     uc, emu, lp = _fresh_probe(0xB8DC)
     assert emu.insn >= 50000, f'0xb8dc: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \
@@ -145,6 +166,9 @@ def _(run, rng):
 @t(0x22274, 'E2-b82: 0x22274() — чистый спин (insn>=50000, ret=0/2 по фазе): без '
             'побочных эффектов. smoke+spin golden.')
 def _(run, rng):
+    """Emulator test @ 0x22274: E2-b82: 0x22274() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    Тест эмулятора @ 0x22274: E2-b82: 0x22274() — чистый спин (insn>=50000, ret=0/2 по фазе): без побочных эффектов. smoke+spin golden..
+    """
     uc, emu, lp = _fresh_probe(0x22274)
     assert emu.insn >= 50000, f'0x22274: insn={emu.insn} ждём спин (>=50000)'
     assert len(emu.periph_writes) == 0, \
@@ -156,100 +180,151 @@ def _(run, rng):
 @t(0xD39C, 'E2-b82: 0xd39c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
            'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xd39c: E2-b82: 0xd39c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0xd39c: E2-b82: 0xd39c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0xD39C, (1, 6), '0xd39c')
 
 
 @t(0xD46C, 'E2-b82: 0xd46c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
            'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xd46c: E2-b82: 0xd46c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0xd46c: E2-b82: 0xd46c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0xD46C, (1, 6), '0xd46c')
 
 
 @t(0xD534, 'E2-b82: 0xd534() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
            'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xd534: E2-b82: 0xd534() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0xd534: E2-b82: 0xd534() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0xD534, (1, 6), '0xd534')
 
 
 @t(0xD5D4, 'E2-b82: 0xd5d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
            'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xd5d4: E2-b82: 0xd5d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0xd5d4: E2-b82: 0xd5d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0xD5D4, (1, 6), '0xd5d4')
 
 
 @t(0xF14C, 'E2-b82: 0xf14c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
            'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xf14c: E2-b82: 0xf14c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0xf14c: E2-b82: 0xf14c() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0xF14C, (1, 6), '0xf14c')
 
 
 @t(0x11724, 'E2-b82: 0x11724() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
             'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x11724: E2-b82: 0x11724() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0x11724: E2-b82: 0x11724() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0x11724, (1, 6), '0x11724')
 
 
 @t(0x117D4, 'E2-b82: 0x117d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
             'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x117d4: E2-b82: 0x117d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0x117d4: E2-b82: 0x117d4() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0x117D4, (1, 6), '0x117d4')
 
 
 @t(0x156AC, 'E2-b82: 0x156ac() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, '
             'ret=1/6. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x156ac: E2-b82: 0x156ac() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    Тест эмулятора @ 0x156ac: E2-b82: 0x156ac() — I2C-magic-спин: 0x40022004 magic, 0x4002200C=FF, ret=1/6. семейство-контракт..
+    """
     _i2c_spin_check(0x156AC, (1, 6), '0x156ac')
 
 
 @t(0xEDDC, 'E2-b82: 0xeddc() — GPIOB/DR-цикл (insn>1000): DR head=(3,2,0,0) + '
            'повторяющиеся блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0xeddc: E2-b82: 0xeddc() — GPIOB/DR-цикл (insn>1000): DR head=(3,2,0,0) + повторяющиеся блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0xeddc: E2-b82: 0xeddc() — GPIOB/DR-цикл (insn>1000): DR head=(3,2,0,0) + повторяющиеся блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0xEDDC, (3, 2, 0, 0), 0, '0xeddc')
 
 
 @t(0x13B60, 'E2-b82: 0x13b60() — GPIOB/DR-цикл короткий (~2150 insn): '
             'DR head=(3,4,0,0) + блоки/FF, 0x40010818/28=0x10, ret по фазе.')
 def _(run, rng):
+    """Emulator test @ 0x13b60: E2-b82: 0x13b60() — GPIOB/DR-цикл короткий (~2150 insn): DR head=(3,4,0,0) + блоки/FF, 0x40010818/28=0x10, ret по фазе..
+    Тест эмулятора @ 0x13b60: E2-b82: 0x13b60() — GPIOB/DR-цикл короткий (~2150 insn): DR head=(3,4,0,0) + блоки/FF, 0x40010818/28=0x10, ret по фазе..
+    """
     _spi_spin_check(0x13B60, (3, 4, 0, 0), 0, '0x13b60')
 
 
 @t(0x13C78, 'E2-b82: 0x13c78() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x13c78: E2-b82: 0x13c78() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x13c78: E2-b82: 0x13c78() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x13C78, (6, 5), 0, '0x13c78')
 
 
 @t(0x14368, 'E2-b82: 0x14368() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x14368: E2-b82: 0x14368() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x14368: E2-b82: 0x14368() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x14368, (6, 5), 0xFF, '0x14368')
 
 
 @t(0x147AC, 'E2-b82: 0x147ac() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x147ac: E2-b82: 0x147ac() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x147ac: E2-b82: 0x147ac() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x147AC, (6, 5), 9, '0x147ac')
 
 
 @t(0x14802, 'E2-b82: 0x14802() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x14802: E2-b82: 0x14802() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x14802: E2-b82: 0x14802() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x14802, (6, 5), 1, '0x14802')
 
 
 @t(0x1570C, 'E2-b82: 0x1570c() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x1570c: E2-b82: 0x1570c() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x1570c: E2-b82: 0x1570c() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x1570C, (6, 5), 9, '0x1570c')
 
 
 @t(0x15790, 'E2-b82: 0x15790() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x15790: E2-b82: 0x15790() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x15790: E2-b82: 0x15790() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x15790, (6, 5), 9, '0x15790')
 
 
 @t(0x157E0, 'E2-b82: 0x157e0() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + '
             'блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт.')
 def _(run, rng):
+    """Emulator test @ 0x157e0: E2-b82: 0x157e0() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    Тест эмулятора @ 0x157e0: E2-b82: 0x157e0() — GPIOB/DR-цикл (insn>1000): DR head=(6,5) + блоки/FF, 0x40010818/28=0x10, ret по фазе. семейство-контракт..
+    """
     _spi_spin_check(0x157E0, (6, 5), 1, '0x157e0')

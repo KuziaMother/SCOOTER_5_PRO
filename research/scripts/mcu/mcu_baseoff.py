@@ -36,6 +36,9 @@ TARGETS = [
 
 
 def target_of(off):
+    """The target_of function of the script.
+    Функция target_of скрипта.
+    """
     for name, lo, hi in TARGETS:
         if lo <= off < hi:
             return name
@@ -46,6 +49,9 @@ REGS = {f"r{i}" for i in range(8)} | {"r0", "ip", "lr", "pc", "sl", "fp", "sb"}
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(FW, "rb").read()
     import importlib.util
     spec = importlib.util.spec_from_file_location("gen_fm", os.path.join(os.path.dirname(HERE), "gen_functions_mcu.py"))

@@ -17,6 +17,9 @@ from emulator.mcu_emu import MainLoopHarness, SCHED_PERIOD  # noqa: E402
 
 @t(0x1F600, 'Phase② §94: MainLoopHarness — контракт планировщика: 432 тика → 0 dispatch (elapsed<=432 → idle); 433 тика → 1 dispatch (t=433, tail 0→1, last→433); head=2/870 тиков → 2 dispatch (t=433 slot→1, t=866 slot→2, tail==head→стоп). Период = 432 тика (межслотовый)')
 def _(run, rng):
+    """Emulator test @ 0x1f600: Phase② §94: MainLoopHarness — контракт планировщика: 432 тика → 0 dispatch (elapsed<=432 → idle); 433 тика → 1 dispatch (t=433, tail 0→1, last→433); head=2/870 тиков → 2 dispatch (t=433 slot→1, t=866 slot→2, tail==head→стоп). Период = 432 тика (межслотовый).
+    Тест эмулятора @ 0x1f600: Phase② §94: MainLoopHarness — контракт планировщика: 432 тика → 0 dispatch (elapsed<=432 → idle); 433 тика → 1 dispatch (t=433, tail 0→1, last→433); head=2/870 тиков → 2 dispatch (t=433 slot→1, t=866 slot→2, tail==head→стоп). Период = 432 тика (межслотовый).
+    """
     assert SCHED_PERIOD == 432
     # 432 тика → нет dispatch
     h = MainLoopHarness(cap=1, run_comm=False)
@@ -46,6 +49,9 @@ def _(run, rng):
 
 @t(0x1DFD8, 'Phase② §94: MainLoopHarness + комм-тик 0x1dfd8 — run_comm=True: harness на 1200 тиков (comm_period=1000 → комм-тик при t=1000) не падает, comm_ticks инкрементится, планировщик диспатчит (t=433). Автономный прогон main-loop (scheduler + комм-тик) на виртуальном времени')
 def _(run, rng):
+    """Emulator test @ 0x1dfd8: Phase② §94: MainLoopHarness + комм-тик 0x1dfd8 — run_comm=True: harness на 1200 тиков (comm_period=1000 → комм-тик при t=1000) не падает, comm_ticks инкрементится, планировщик диспатчит (t=433). Автономный прогон main-loop (scheduler + комм-тик) на виртуальном времени.
+    Тест эмулятора @ 0x1dfd8: Phase② §94: MainLoopHarness + комм-тик 0x1dfd8 — run_comm=True: harness на 1200 тиков (comm_period=1000 → комм-тик при t=1000) не падает, comm_ticks инкрементится, планировщик диспатчит (t=433). Автономный прогон main-loop (scheduler + комм-тик) на виртуальном времени.
+    """
     h = MainLoopHarness(cap=1, run_comm=True, comm_period=1000)
     h.reset(now=0, head=1)
     states = h.run(1200)
@@ -60,6 +66,9 @@ def _(run, rng):
 @t(0x1A2A4, 'Phase② §94: FOC-ISR по timer-update — MainLoopHarness.run_foc: 0x1a2a4 (реальный TIM1-IRQ) на каждый timer-update. Контракт: bit7 [TIM1+0x1C]=update-событие (lsls #0x18=<<24 тестит bit7); bit7 set → handler-путь (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → быстрый return (6 insn). harness: foc_period=10/100 тиков → foc_runs=10, foc_handler=10. **Коррекция:** 0x7875 НЕ ISR-entry в образе (нет полной векторной таблицы, OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный TIM1-IRQ = 0x1a2a4')
 def _(run, rng):
     # FOC-ISR через harness: foc_period=10 → 10 runs за 100 тиков
+    """Emulator test @ 0x1a2a4: Phase② §94: FOC-ISR по timer-update — MainLoopHarness.run_foc: 0x1a2a4 (реальный TIM1-IRQ) на каждый timer-update. Контракт: bit7 [TIM1+0x1C]=update-событие (lsls #0x18=<<24 тестит bit7); bit7 set → handler-путь (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → быстрый return (6 insn). harness: foc_period=10/100 тиков → foc_runs=10, foc_handler=10. **Коррекция:** 0x7875 НЕ ISR-entry в образе (нет полной векторной таблицы, OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный TIM1-IRQ = 0x1a2a4.
+    Тест эмулятора @ 0x1a2a4: Phase② §94: FOC-ISR по timer-update — MainLoopHarness.run_foc: 0x1a2a4 (реальный TIM1-IRQ) на каждый timer-update. Контракт: bit7 [TIM1+0x1C]=update-событие (lsls #0x18=<<24 тестит bit7); bit7 set → handler-путь (~39 insn: clear flag, set bit7 [base+0x20]); bit7 clr → быстрый return (6 insn). harness: foc_period=10/100 тиков → foc_runs=10, foc_handler=10. **Коррекция:** 0x7875 НЕ ISR-entry в образе (нет полной векторной таблицы, OTA; 0x7875 = середина state-machine блока, изоляция уходит в 0x7992); реальный TIM1-IRQ = 0x1a2a4.
+    """
     h = MainLoopHarness(cap=1, run_comm=False, run_foc=True, foc_period=10)
     h.reset(now=0, head=1)
     h.run(100)

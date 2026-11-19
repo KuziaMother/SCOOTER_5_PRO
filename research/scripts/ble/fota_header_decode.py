@@ -18,6 +18,9 @@ FLASH_BASE = 0x01800000
 
 
 def ctrl_flag_bits(v):
+    """The ctrl_flag_bits function of the script.
+    Функция ctrl_flag_bits скрипта.
+    """
     return dict(
         xip=(v >> 0) & 1, enc=(v >> 1) & 1, load_when_boot=(v >> 2) & 1,
         enc_load=(v >> 3) & 1, enc_key_select=(v >> 4) & 7, not_ready=(v >> 7) & 1,
@@ -62,6 +65,9 @@ def find_headers(img):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_IMG
     with open(path, 'rb') as f:
         img = f.read()

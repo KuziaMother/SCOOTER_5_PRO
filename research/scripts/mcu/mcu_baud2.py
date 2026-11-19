@@ -26,6 +26,9 @@ CANDIDATES = [0x1e2f8, 0x11cb4, 0x016d4, 0x05bc4, 0x110fc, 0x0175c,
 
 
 def run_one(addr):
+    """The run_one function of the script.
+    Функция run_one скрипта.
+    """
     emu = McuEmu(trace=False, max_insn=50000)
     emu.uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)   # все ready-биты = 1
     emu.uc.mem_write(SYS, bytes(SYS_SIZE))
@@ -33,6 +36,9 @@ def run_one(addr):
     last_read = None
 
     def on_w(uc, access, address, size, value, user):
+        """The on_w function of the script.
+        Функция on_w скрипта.
+        """
         for lo, nm in REGIONS:
             if lo <= address < lo + 0x40:
                 pc = uc.reg_read(UC_ARM_REG_PC)
@@ -40,6 +46,9 @@ def run_one(addr):
                 break
 
     def on_r(uc, access, address, size, value, user):
+        """The on_r function of the script.
+        Функция on_r скрипта.
+        """
         nonlocal last_read
         for lo, nm in REGIONS:
             if lo <= address < lo + 0x40:

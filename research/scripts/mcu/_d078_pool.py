@@ -9,6 +9,9 @@ FLASH = 0x08000000
 
 
 def pool_word(off):
+    """The pool_word function of the script.
+    Функция pool_word скрипта.
+    """
     return int.from_bytes(D[off:off + 4], 'little')
 
 

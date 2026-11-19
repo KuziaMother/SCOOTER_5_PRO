@@ -56,10 +56,16 @@ RESET_WAIT = 150.0   # ожидание транзиента после switchFi
 
 
 def log(msg=""):
+    """The log function of the script.
+    Функция log скрипта.
+    """
     print(msg, flush=True)
 
 
 async def fresh_session(label):
+    """The fresh_session function of the script.
+    Функция fresh_session скрипта.
+    """
     t = Transport(MAC_DEFAULT)
     await login(t, LTMK)
     log(f"[+] сессия «{label}»")
@@ -67,6 +73,9 @@ async def fresh_session(label):
 
 
 async def _cmd_value_retry(t, op, what, total=120.0):
+    """The helper function (_cmd_value_retry).
+    Вспомогательная функция (_cmd_value_retry).
+    """
     deadline = time.time() + total
     attempt = 0
     while time.time() < deadline:
@@ -79,6 +88,9 @@ async def _cmd_value_retry(t, op, what, total=120.0):
 
 
 async def read_frag_size(t, op, total=300.0):
+    """The read_frag_size function of the script.
+    Функция read_frag_size скрипта.
+    """
     v = await _cmd_value_retry(t, op["frag"], "getFragmentSize", total=total)
     if v is None or len(v) < 2:
         return None
@@ -86,6 +98,9 @@ async def read_frag_size(t, op, total=300.0):
 
 
 async def read_last(t, op, what="lastFragmentIndex", total=60.0):
+    """The read_last function of the script.
+    Функция read_last скрипта.
+    """
     v = await _cmd_value_retry(t, op["last"], what, total=total)
     if v is None or len(v) < 2:
         return None, None
@@ -153,6 +168,9 @@ async def commit_mcu(t, label):
 
 
 async def finish_upload(t, patched, frag, start, N, label):
+    """The finish_upload function of the script.
+    Функция finish_upload скрипта.
+    """
     if not await upload_range(t, patched, frag, start, N, label):
         return False
     await commit_mcu(t, "патченный образ")
@@ -161,6 +179,9 @@ async def finish_upload(t, patched, frag, start, N, label):
 
 
 async def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     patched = open(PATCHED, "rb").read()
     official_ble = open(OFFICIAL_BLE, "rb").read()
     log(f"патченный: {len(patched)} Б crc32={zlib.crc32(patched) & 0xFFFFFFFF:08x}")

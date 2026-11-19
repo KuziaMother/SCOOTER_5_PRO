@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 """
+Run the project's REAL tools against the device emulator (no BLE).
+
+It swaps dreame_auth.BleakClient for FakeBleakClient and launches:
+  1) login (dreame_auth stage A+B) — the crypto round-trip check;
+  2) a BLE DFU of the SAME version -> switchFirmware is rejected (status 6), as on
+     hardware;
+  3) a BLE DFU of a NEW version -> switchFirmware is APPLIED, the version went up
+     (what a live scooter does not allow — that same version is already installed);
+  4) the 0x001c info channel: the versions/hardware/serial.
+
+Usage:  python emulator/run_emulator.py
+
 Прогон настоящих инструментов проекта против эмулятора устройства (без BLE).
 
 Подменяет dreame_auth.BleakClient на FakeBleakClient и запускает:
@@ -41,16 +53,27 @@ _TEST_LTMK = bytes(range(32))
 
 
 def _load_ltmk():
+    """Load the device ltmk from secrets/ltmk.hex or fall back to a fixed test value
+    (the emulator does not need a real key: both ends see the same value, and a real
+    ECDH round-trip works with any 32-byte ltmk). secrets/ltmk.hex is the live
+    scooter's secret key — git-ignored, absent in CI/a clean checkout.
+    Загрузить ltmk устройства из secrets/ltmk.hex или взять фиксированное тестовое
+    значение (эмулятору не нужен настоящий ключ: оба конца видят одно и то же,
+    ECDH round-trip работает с любым 32-байтным ltmk; secrets/ltmk.hex — гитигнорится)."""
     if os.path.exists(da.LTMK_HEX):
         return bytes.fromhex(open(da.LTMK_HEX).read().strip())
     return _TEST_LTMK
 
 
 def make_device():
+    """The shared emulated device instance (one for the whole run).
+    Общий эмулируемый экземпляр устройства (один на прогон)."""
     return DEVICE["obj"]
 
 
 def install_fake():
+    """Swap BleakClient for FakeBleakClient in the core + bind the device factory.
+    Подменить BleakClient на FakeBleakClient в ядре + привязать фабрику устройства."""
     fake_ble.FakeBleakClient._device_factory = make_device
     da.BleakClient = fake_ble.FakeBleakClient       # подмена в ядре
 
@@ -66,6 +89,8 @@ def make_fake_image(size, tag=b"EMUIMG"):
 
 
 async def scenario_login():
+    """Scenario 1: a login (the crypto round-trip) through the emulator.
+    Сценарий 1: login (крипто round-trip) через эмулятор."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 1: login (крипто round-trip)")
     print("=" * 60)
@@ -81,6 +106,8 @@ async def scenario_login():
 
 
 async def flash_via_tools(target, image_path, commit):
+    """A real dreame_flasher.flash run (login + flash) via the emulated transport.
+    Настоящий прогон dreame_flasher.flash (login + flash) через эмулированный transport."""
     import dreame_flasher as df
     ltmk = _load_ltmk()
     t = da.Transport(da.MAC_DEFAULT)
@@ -92,6 +119,8 @@ async def flash_via_tools(target, image_path, commit):
 
 
 async def scenario_same_version():
+    """Scenario 2: a BLE DFU of the same version -> expect the rejection (status 6).
+    Сценарий 2: DFU BLE той же версии -> ожидаем отказ (status 6)."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 2: DFU BLE ТОЙ ЖЕ версии -> ожидаем ОТКАЗ (status 6)")
     print("=" * 60)
@@ -107,6 +136,16 @@ async def scenario_same_version():
 
 
 async def scenario_296_boundary():
+    """Scenario 2.5: the accept_limit boundary (the 296/301 model) on the same version.
+    The real anomaly — the device itself keeps the counter at 296/301 (see
+    docs/FACTS.md), independent of the buffer/file length. The same mechanism in
+    accept_limit; to keep the run short it is checked on a proportionally small image
+    (limit=10 of 15), not the realistic 296/301 — the mechanism (the counter stops
+    growing past the limit) is identical.
+    Сценарий 2.5: граница accept_limit (модель 296/301) на той же версии.
+    Реальная аномалия — устройство само держит счётчик на 296/301 (см. docs/FACTS.md),
+    не зависит от буфера/длины файла. Проверяем на пропорционально малом образе
+    (limit=10 из 15); механизм (счётчик не растёт после limit) идентичен."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 2.5: граница accept_limit (модель 296/301) на ТОЙ ЖЕ версии")
     print("=" * 60)
@@ -139,6 +178,8 @@ async def scenario_296_boundary():
 
 
 async def scenario_upgrade():
+    """Scenario 3: a BLE DFU of a new version -> expect success (switchFirmware).
+    Сценарий 3: DFU BLE новой версии -> ожидаем успех (switchFirmware)."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 3: DFU BLE НОВОЙ версии -> ожидаем УСПЕХ (switchFirmware)")
     print("=" * 60)
@@ -155,6 +196,8 @@ async def scenario_upgrade():
 
 
 async def scenario_info():
+    """Scenario 4: the 0x001c info channel (the versions/hardware).
+    Сценарий 4: инфо-канал 0x001c (версии/железо)."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 4: инфо-канал 0x001c")
     print("=" * 60)
@@ -173,6 +216,11 @@ async def scenario_info():
 
 
 async def scenario_telemetry():
+    """Scenario 5: the telemetry of the spec channel (0x001a/0x001b) with the real
+    probes/spec_read.py (one property per request — the device serves only the first
+    object; the multi-object check reproduces the hardware behavior).
+    Сценарий 5: телеметрия spec-канала (0x001a/0x001b), настоящий probes/spec_read.py
+    (по одному свойству на запрос — устройство обслуживает только первый объект)."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 5: телеметрия spec-канала (0x001a/0x001b), настоящий probes/spec_read.py")
     print("=" * 60)
@@ -209,6 +257,12 @@ async def scenario_telemetry():
 
 
 async def scenario_push():
+    """Scenario 6: a spontaneous push on a property change (0x001b), without a request
+    (IS_RIDING 0->2, the device sends the CTR by itself; the push is decrypted by the
+    real spec_read.dec_dev).
+    Сценарий 6: спонтанный пуш при изменении свойства (0x001b), без запроса
+    (IS_RIDING 0->2, устройство само присылает CTR; пуш расшифровывается настоящим
+    spec_read.dec_dev)."""
     print("\n" + "=" * 60)
     print("СЦЕНАРИЙ 6: спонтанный пуш при изменении свойства (0x001b), без запроса")
     print("=" * 60)
@@ -258,6 +312,8 @@ async def scenario_push():
 
 
 async def main():
+    """Run all the scenarios against the emulated device.
+    Прогнать все сценарии против эмулированного устройства."""
     install_fake()
     # устройство на СТАРОЙ версии, чтобы можно было показать апгрейд
     ltmk = _load_ltmk()

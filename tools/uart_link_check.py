@@ -55,6 +55,9 @@ def open_port(port, baud):
 
 
 def main():
+    """The CLI entry point (--port/--baud): the link check loop with the auto
+    reconnection.
+    CLI-вход (--port/--baud): цикл проверки связи с авто-переподключением."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--baud", type=int, default=19200)
@@ -88,6 +91,10 @@ def main():
 
 
 def run_cycle(s, n):
+    """One cycle: the 1.5s RX listening, the 61-frame parse, the TX probe (the nvm_write
+    echo check).
+    Один цикл: 1.5 с RX-слушания, разбор 61-кадров, TX-проба (echo-проверка
+    nvm_write)."""
     # --- RX-фаза: 1.5 с чистого слушания ---
     s.reset_input_buffer()
     rx_buf = bytearray()

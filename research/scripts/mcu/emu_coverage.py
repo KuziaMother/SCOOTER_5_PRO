@@ -28,6 +28,9 @@ ROW = re.compile(r'^\|\s*\[\`?0x([0-9a-fA-F]+)\`?\]\([^)]*\)\s*\|\s*(\d+)\s*\|')
 
 
 def load_funcs():
+    """The load_funcs function of the script.
+    Функция load_funcs скрипта.
+    """
     out = []
     for line in open(README, encoding='utf-8'):
         m = ROW.match(line.strip())
@@ -37,6 +40,9 @@ def load_funcs():
 
 
 def load_tested():
+    """The load_tested function of the script.
+    Функция load_tested скрипта.
+    """
     src = open(FV, encoding='utf-8').read()
     return sorted(set(int(x, 16) for x in re.findall(r'@t\(0x([0-9a-fA-F]+)', src)))
 
@@ -52,10 +58,16 @@ def run_func(off, size, max_insn=8000):
     periph = set()
 
     def _rd(uc_, acc, a, s, v, u):
+        """The helper function (_rd).
+        Вспомогательная функция (_rd).
+        """
         if RAM <= a < RAM + 0x20000:
             rds[0] += 1
 
     def _wr(uc_, acc, a, s, v, u):
+        """The helper function (_wr).
+        Вспомогательная функция (_wr).
+        """
         if RAM <= a < RAM + 0x20000:
             wrs[0] += 1
         elif (0x40000000 <= a < 0x40080000) or (PERIPH2 <= a < PERIPH2 + 0x20000):
@@ -66,6 +78,9 @@ def run_func(off, size, max_insn=8000):
     clean = [False]
 
     def _st(uc_, a, s, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + 0x23680 or FLASH1 <= aa < FLASH1 + 0x23680):
             clean[0] = True  # вышли во внешний адрес = возврат в LR-sentinel
@@ -93,6 +108,9 @@ def run_func(off, size, max_insn=8000):
 
 
 def disposition(res):
+    """The disposition function of the script.
+    Функция disposition скрипта.
+    """
     if not res['clean']:
         return 'dirty'
     if res['periph'] or res['wrs'] > 32:
@@ -101,6 +119,9 @@ def disposition(res):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument('--max-size', type=int, default=0)
     ap.add_argument('--min-size', type=int, default=0)

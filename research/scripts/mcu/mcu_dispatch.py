@@ -28,7 +28,13 @@ PROD = 0x200002BF      # продюсер (слот ISR)
 
 
 class Dispatcher:
+    """The Dispatcher class (the research helper).
+    Класс Dispatcher (исследовательский вспомогатель).
+    """
     def __init__(self):
+        """The helper function (__init__).
+        Вспомогательная функция (__init__).
+        """
         self.emu = McuEmu(trace=False, max_insn=200000)
         e = self.emu.uc
         e.mem_write(PERIPH, bytes(PERIPH_SIZE))
@@ -37,9 +43,15 @@ class Dispatcher:
         self.stopped = None
 
     def _h_write(self, uc, access, address, size, value, user):
+        """The helper function (_h_write).
+        Вспомогательная функция (_h_write).
+        """
         self.writes.append((address, size, value & ((1 << (8 * size)) - 1)))
 
     def seed(self, frame):
+        """The seed function of the script.
+        Функция seed скрипта.
+        """
         e = self.emu.uc
         e.mem_write(RX_DESC_BASE, frame + bytes(150 - len(frame)))
         e.mem_write(PROD, bytes([1]))          # один кадр в очереди
@@ -65,6 +77,9 @@ class Dispatcher:
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--frame", default="74 42 05 aa bb cc dd ee 9c 0d")
     a = ap.parse_args()

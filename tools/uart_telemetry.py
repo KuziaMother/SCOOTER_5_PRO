@@ -40,6 +40,10 @@ def parse_frames(buf):
 
 
 def decode(sub, p):
+    """Decode the 61 push payload by the subcode (0x31 the battery/temperature, 0x30 the
+    status/mode; the rest — the raw hex).
+    Декодировать payload 61 push по subcode (0x31 батарея/температура, 0x30
+    статус/режим; остальные — raw hex)."""
     if sub == 0x31 and len(p) >= 9:
         return {
             "soc_pct": p[1],
@@ -56,6 +60,8 @@ def decode(sub, p):
 
 
 def main():
+    """The CLI entry point (--port/--baud/--jsonl): the live telemetry loop.
+    CLI-вход (--port/--baud/--jsonl): цикл живой телеметрии."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--baud", type=int, default=19200)

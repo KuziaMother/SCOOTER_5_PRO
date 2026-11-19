@@ -6,6 +6,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "em
 from mcu_emu import McuEmu
 
 def run_and_dump(entry, label):
+    """The run_and_dump function of the script.
+    Функция run_and_dump скрипта.
+    """
     emu = McuEmu(max_insn=500_000)
     emu.run_func(entry)
     print(f"\n===== {label} (0x{entry:05x}) — записи в 0x48000xxx =====")

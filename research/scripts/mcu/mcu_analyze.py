@@ -8,8 +8,14 @@ u32 = lambda o: struct.unpack_from("<I", d, o)[0]
 
 # --- поиск векторной таблицы: word0=SP (RAM), word1..=reset+handlers (odd, флеш) ---
 def looks_sp(v):   # SRAM Cortex-M: 0x20000000.. (или 0x10000000 CCM)
+    """The looks_sp function of the script.
+    Функция looks_sp скрипта.
+    """
     return 0x20000000 <= v <= 0x20040000 or 0x10000000 <= v <= 0x10010000
 def looks_code(v): # Thumb-адрес во флеше: нечётный, старший байт 0x08(STM/GD)/0x00/0x01
+    """The looks_code function of the script.
+    Функция looks_code скрипта.
+    """
     return (v & 1) and ((v & 0xFF000000) in (0x08000000, 0x00000000, 0x01000000, 0x02000000))
 
 print("=== поиск векторной таблицы ===")
@@ -39,6 +45,9 @@ FLASH_BASE = reset & 0xFF000000
 # offset в файле, соответствующий FLASH_BASE, = VT (таблица в начале прошиваемой области)
 FILE_OF_FLASHBASE = VT
 def to_off(vaddr):
+    """The to_off function of the script.
+    Функция to_off скрипта.
+    """
     o = vaddr - FLASH_BASE + FILE_OF_FLASHBASE
     return o if 0 <= o < N else None
 print(f"\n[i] VT@0x{VT:x}  SP=0x{SP:08x}  reset=0x{reset:08x}  FLASH_BASE=0x{FLASH_BASE:08x}")

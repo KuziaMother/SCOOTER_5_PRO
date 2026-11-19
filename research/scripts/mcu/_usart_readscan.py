@@ -20,6 +20,9 @@ for a, b in CODE:
             starts.append(o)
 
 def func_of(off):
+    """The func_of function of the script.
+    Функция func_of скрипта.
+    """
     best = None
     for s in starts:
         if s <= off:

@@ -64,6 +64,8 @@ VER_RE = re.compile(rb"^[0-9]+([._][0-9A-Za-z]+)*$")
 
 
 def crc16_xmodem(data):
+    """CRC-16/XMODEM (poly 0x1021, init 0x0000, non-reflected).
+    CRC-16/XMODEM (полином 0x1021, init 0x0000, non-reflected)."""
     crc = 0
     for b in data:
         crc ^= b << 8
@@ -73,12 +75,29 @@ def crc16_xmodem(data):
 
 
 def log(msg):
+    """The log line with the timestamp (ASCII-safe: the checkmark/ellipsis are replaced).
+    Строка лога с меткой времени (ASCII-безопасно: галочка/многоточие заменяются)."""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}"
           .replace("✓", "OK").replace("…", "..."), flush=True)
 
 
 class Reader:
-    """Порт с постоянной синхронизацией и вырезанием push-кадров `61 SUB LEN DATA CHK 9E`.
+    """The port with the constant synchronization and the cutting out of the push frames
+    `61 SUB LEN DATA CHK 9E`.
+
+    Two buffers: the raw (the unclassified bytes) and the clean (the console bytes, not
+    yet consumed by the caller). The full push frames are cut out ONLY when the CHK is
+    valid (the sum of all the preceding frame bytes & 0xFF) and the trailer is 0x9E; the
+    incomplete tail frame is held in the raw until enough data arrives to confirm/
+    disprove it.
+
+    The known limitation: if a console byte (the ACK 0x06/0x15) physically fits IN THE
+    MIDDLE of a torn push frame, the frame validation fails and all these bytes
+    (including the ACK) fall into the clean as data. In the live captures no such
+    interleaving was observed (the push stream was silent in the write phase, see
+    logs/bw_flasher_log.txt); the bw-flasher reference is more vulnerable to the same.
+
+    Порт с постоянной синхронизацией и вырезанием push-кадров `61 SUB LEN DATA CHK 9E`.
 
     Два буфера: raw (не классифицированные байты) и clean (консольные байты,
     ещё не consumed вызывающим). Полные push-кадры выбрасываются ТОЛЬКО при
@@ -94,18 +113,23 @@ class Reader:
     """
 
     def __init__(self, s):
+        """Wrap the serial port s.
+        Обёртка над последовательным портом s."""
         self.s = s
         self.raw = bytearray()
         self.clean = bytearray()
 
     def _pump(self):
+        """Read a chunk into the raw + classify.
+        Прочитать чанк в raw + классифицировать."""
         d = self.s.read(256)
         if d:
             self.raw += d
         self._classify()
 
     def _classify(self):
-        """Разделить raw на (выбросить валидные push-кадры) + clean; хвост удержать."""
+        """Split the raw into (cut the valid push frames) + the clean; hold the tail.
+        Разделить raw на (выбросить валидные push-кадры) + clean; хвост удержать."""
         out = bytearray()
         i, n = 0, len(self.raw)
         while i < n:
@@ -128,7 +152,8 @@ class Reader:
         self.clean += out
 
     def read_until(self, term, timeout=3.0):
-        """Байты до `term` включительно; на таймауте — всё, что есть."""
+        """The bytes up to the term (inclusive); on the timeout — everything there is.
+        Байты до `term` включительно; на таймауте — всё, что есть."""
         end = time.time() + timeout
         while True:
             j = self.clean.find(term)
@@ -143,12 +168,15 @@ class Reader:
             self._pump()
 
     def drain(self):
+        """Take everything from the clean and return it.
+        Забрать всё из clean и вернуть."""
         d = bytes(self.clean)
         del self.clean[:]
         return d
 
     def read_exact(self, n, timeout=3.0):
-        """Ровно n байтов (бинарный ответ); на таймауте — сколько накопилось."""
+        """Exactly n bytes (the binary reply); on the timeout — as much as accumulated.
+        Ровно n байтов (бинарный ответ); на таймауте — сколько накопилось."""
         end = time.time() + timeout
         while len(self.clean) < n and time.time() < end:
             self._pump()
@@ -158,7 +186,9 @@ class Reader:
 
 
 def cmd(r, payload, label, timeout=3.0, fatal=True):
-    """Drain → отправить → ждать строку до \\r. Возвращает строку без \\r (или None)."""
+    """Drain -> send -> wait for the line up to the CR. Returns the line without the CR
+    (or None).
+    Drain → отправить → ждать строку до \\r. Возвращает строку без \\r (или None)."""
     r.drain()
     r.s.write(payload)
     r.s.flush()
@@ -179,7 +209,8 @@ def cmd(r, payload, label, timeout=3.0, fatal=True):
 
 
 def ok_cmd(r, payload, label, timeout=3.0):
-    """Команда, отвечающая `ok` (возможно с хвостом)."""
+    """The command answering the `ok` (possibly with the tail).
+    Команда, отвечающая `ok` (возможно с хвостом)."""
     line = cmd(r, payload, label, timeout)
     if not line.startswith(b"ok"):
         sys.exit(f"ABORT: {label}: неожиданный ответ {line[:24]!r}")
@@ -187,7 +218,12 @@ def ok_cmd(r, payload, label, timeout=3.0):
 
 
 def find_offsets(fw):
-    """Смещения крипто-таблиц в образе (как у bw-flasher).
+    """The offsets of the crypto tables in the image (as in the bw-flasher).
+
+    The S-box — the unique pattern `63 7C`; the GF(2^8) powers table — the first `01 02`
+    after it (off1 = hit - 1). If the patterns are ambiguous — the verified v0007
+    constants from docs/FACTS.md.
+    Смещения крипто-таблиц в образе (как у bw-flasher).
 
     S-box — уникальный паттерн `63 7C`; таблица степеней GF(2^8) — первый
     `01 02` после него (off1 = hit - 1). Если паттерны неоднозначны —
@@ -223,7 +259,10 @@ def find_offsets(fw):
 
 
 def get_uid(r):
-    """UID с warmup (живая находка 2026-08-21): `down get_ver\r`, пауза 0.4 с, потом hex-кадр."""
+    """The UID with the warmup (the live finding of 2026-08-21): the `down get_ver`,
+    the 0.4s pause, then the hex frame.
+    UID с warmup (живая находка 2026-08-21): `down get_ver\r`, пауза 0.4 с, потом
+    hex-кадр."""
     for attempt in range(1, 4):
         r.drain()
         r.s.write(b"down get_ver\r")
@@ -248,7 +287,9 @@ def get_uid(r):
 
 
 def get_ver(r, label="get_ver", timeout=3.0, tries=6, fatal=True):
-    """`down get_ver` → строка версии; мусорные (push-хвосты) строки переспрашиваются."""
+    """The `down get_ver` -> the version string; the junk (the push tails) lines are
+    re-requested.
+    `down get_ver` → строка версии; мусорные (push-хвосты) строки переспрашиваются."""
     for _ in range(tries):
         line = cmd(r, b"down get_ver\r", label, timeout, fatal=fatal)
         if line is None:
@@ -260,6 +301,8 @@ def get_ver(r, label="get_ver", timeout=3.0, tries=6, fatal=True):
 
 
 def main():
+    """The CLI entry point (--port/--fw/--md5): the flash run over the UART.
+    CLI-вход (--port/--fw/--md5): прогон прошивки по UART."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM3")
     ap.add_argument("--fw", required=True)

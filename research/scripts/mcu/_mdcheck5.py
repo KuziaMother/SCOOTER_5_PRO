@@ -16,6 +16,9 @@ NAMES = {UC_ARM_REG_R0: 'r0', UC_ARM_REG_R1: 'r1', UC_ARM_REG_R2: 'r2',
          UC_ARM_REG_R7: 'r7'}
 
 def run(hws, regs_before, readback=None):
+    """The run function of the script.
+    Функция run скрипта.
+    """
     uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     uc.mem_map(BASE, 0x18000)                  # 0x10000..0x28000: куда ни прыгнем — видно PC
     uc.mem_map(STACK, 0x4000)                  # 0x30000..0x34000
@@ -27,6 +30,9 @@ def run(hws, regs_before, readback=None):
     uc.reg_write(UC_ARM_REG_LR, 0xDEAD0001)     # sentinel: BL его перезапишет, B — нет
     stop = {'pc': None}
     def cb(u, kind, val, user):
+        """The cb function of the script.
+        Функция cb скрипта.
+        """
         pc = u.reg_read(UC_ARM_REG_PC)
         if not (BASE <= pc < BASE + len(blob)):
             stop['pc'] = pc | 1

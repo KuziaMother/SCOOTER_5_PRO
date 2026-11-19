@@ -69,6 +69,9 @@ REGIONS = [
 
 
 def fname_of(off):
+    """The fname_of function of the script.
+    Функция fname_of скрипта.
+    """
     return f"func_0x{off:05x}"
 
 
@@ -353,6 +356,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words):
     pending_movw = {}      # reg -> low16
 
     def note_lit(src, v):
+        """The note_lit function of the script.
+        Функция note_lit скрипта.
+        """
         if v in lit_map:
             return
         cls, extra = classify(v, d, strings, func_starts)
@@ -361,6 +367,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words):
             str_refs.append((src, v, strings[extra]))
 
     def lit_comment(v):
+        """The lit_comment function of the script.
+        Функция lit_comment скрипта.
+        """
         cls, extra = lit_map[v][1], lit_map[v][2]
         if cls == "string":
             return f'-> "{strings[extra]}"'
@@ -426,6 +435,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(FW, "rb").read()
     N = len(d)
     strings = load_strings(d)

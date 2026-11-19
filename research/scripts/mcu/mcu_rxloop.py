@@ -39,11 +39,17 @@ def build_class_a(cmd, length, data):
 
 
 def build_class_b(cmd):
+    """The build_class_b function of the script.
+    Функция build_class_b скрипта.
+    """
     chk1 = (0x74 + cmd + 0x4F + 0x4B) & 0xFF
     return bytes([0x74, cmd, 0x4F, 0x4B, chk1, 0x8B])
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--cmd", default="0x42")
     ap.add_argument("--len", type=lambda s: int(s, 0), default=7)
@@ -76,6 +82,9 @@ def main():
     writes = []
 
     def h_w(uc, access, address, size, value, user):
+        """The h_w function of the script.
+        Функция h_w скрипта.
+        """
         writes.append((address, size, value & ((1 << (8 * size)) - 1)))
 
     h = e.hook_add(UC_HOOK_MEM_WRITE, h_w)

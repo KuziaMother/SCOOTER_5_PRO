@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 """
+An instruction-level emulator of the BLE image (Realtek RTL8762C, Cortex-M33)
+— Unicorn.
+
+It executes the REAL code of the plain regions of ble_2.7.0_0015.bin (the
+bootloader + the flash/OTA driver). Like the MCU emulator: FUNCTIONAL emulation
+(calling a specific function with the state primed), not a boot from reset (there
+is no vector table in the plain image and the main app is encrypted). The
+peripherals are stubbed (chitae): the status registers read as 0xFFFFFFFF
+(everything ready), the writes are logged.
+
+The RTL8762C memory (per the firmware addresses + the SDK OpenOCD config):
+  FLASH @0x01800000 (the image), RAM @0x20000000, PERIPH @0x40000000, SYS @0xE0000000.
+
+Usage:  python -X utf8 emulator/ble_emu.py --func 0x7dea [--max 200000] [--trace]
+
 Инструкционный эмулятор BLE-образа (Realtek RTL8762C, Cortex-M33) — Unicorn.
 
 Исполняет РЕАЛЬНЫЙ код плейн-регионов ble_2.7.0_0015.bin (bootloader + flash/OTA-
@@ -38,11 +53,22 @@ STACK_TOP = RAM + RAM_SIZE   # 0x20080000
 
 
 def align(x, a=0x1000):
+    """Round x up to the alignment a.
+    Округлить x вверх по выравниванию a."""
     return (x + a - 1) & ~(a - 1)
 
 
 class BleEmu:
+    """A functional BLE image emulator (the plain regions: bootloader + flash/OTA
+    driver). The same approach as McuEmu: call the functions with the state
+    primed, the peripherals stubbed ready.
+    Функциональный эмулятор BLE-образа (плейн-регионы: bootloader + flash/OTA-драйвер).
+    Т же подход, что и McuEmu: вызов функций с поднятым состоянием, периферия —
+    ready-заглушки."""
+
     def __init__(self, trace=False, max_insn=300000):
+        """Create the emulator: map the memory (flash/RAM/periph/sys) + the hooks.
+        Создание эмулятора: маппинг памяти (flash/RAM/periph/sys) + хуки."""
         self.trace = trace
         self.max_insn = max_insn
         self.insn = 0
@@ -55,6 +81,8 @@ class BleEmu:
         self._hooks()
 
     def _map(self):
+        """Map and load the flash image + map RAM/PERIPH/SYS.
+        Замаппить и загрузить образ flash + замаппить RAM/PERIPH/SYS."""
         fw = open(FW, "rb").read()
         fsz = align(len(fw))
         self.uc.mem_map(FLASH, fsz)
@@ -65,11 +93,15 @@ class BleEmu:
         self.fw_len = len(fw)
 
     def _hooks(self):
+        """Add the code/write/unmapped hooks.
+        Добавить хуки code/write/unmapped."""
         self.uc.hook_add(UC_HOOK_CODE, self._h_code)
         self.uc.hook_add(UC_HOOK_MEM_WRITE, self._h_write)
         self.uc.hook_add(UC_HOOK_MEM_UNMAPPED, self._h_unmapped)
 
     def _h_code(self, uc, address, size, user):
+        """Count the instructions, stop on the limit, trace the first 80.
+        Считать инструкции, остановиться на лимите, трейсить первые 80."""
         self.insn += 1
         if self.insn > self.max_insn:
             self.stopped = f"лимит инструкций {self.max_insn}"
@@ -79,6 +111,8 @@ class BleEmu:
             print(f"    [{self.insn:>5}] pc=0x{address:06x}")
 
     def _h_write(self, uc, access, address, size, value, user):
+        """Log the writes to flash/RAM/peripherals (the flash writes = the OTA install!).
+        Логировать записи в flash/RAM/периферию (записи в flash = OTA-установка!)."""
         pc = uc.reg_read(UC_ARM_REG_PC)
         if FLASH <= address < FLASH + self.fw_len:
             self.flash_writes.append((pc, address - FLASH, size, value))
@@ -88,6 +122,8 @@ class BleEmu:
             self.periph_writes.append((pc, address, size, value))
 
     def _h_unmapped(self, uc, access, address, size, value, user):
+        """On demand, map a zero page (for accesses beyond the mapped region).
+        По требованию маппим нулевую страницу (для обращений за пределы карты)."""
         # по требованию маппим нулевую страницу (для обращений за пределы карты)
         page = address & ~0xFFF
         try:
@@ -99,14 +135,18 @@ class BleEmu:
             return False
 
     def periph_ready(self):
-        """Чтение периферии как 0xFFFFFFFF (все ready-биты) — poll-циклы не виснут."""
+        """Read the peripherals as 0xFFFFFFFF (all the ready bits) — the poll loops do
+        not hang.
+        Чтение периферии как 0xFFFFFFFF (все ready-биты) — poll-циклы не виснут."""
         def h(uc, access, addr, size, value, user):
+            """The read hook: return all-ones for the read width."""
             uc.mem_write(addr, struct.pack('<' + {1: 'B', 2: 'H', 4: 'I'}[size], (1 << (8 * size)) - 1))
             return True
         self.uc.hook_add(UC_HOOK_MEM_READ, h, None, PERIPH, PERIPH + PERIPH_SIZE)
 
     def run_func(self, addr, args=(), sp=None, max_insn=None):
-        """Вызвать функцию addr с аргументами в R0-R3; вернуть (r0, stopped)."""
+        """Call the function at addr with the arguments in R0-R3; return (r0, stopped).
+        Вызвать функцию addr с аргументами в R0-R3; вернуть (r0, stopped)."""
         if max_insn:
             self.max_insn = max_insn
         self.insn = 0
@@ -119,6 +159,8 @@ class BleEmu:
             uc.reg_write([UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3][i], a)
 
         def stop(uc_, a, size, u):
+            """Stop on a bx lr back to the sentinel (0x0BADF000/1).
+            Остановиться на bx lr к sentinel (0x0BADF000/1)."""
             a &= ~1
             if a == 0x0BADF000 or a == 0x0BADF001:   # bx lr к sentinel
                 uc_.emu_stop()
@@ -134,6 +176,8 @@ class BleEmu:
 
 
 def main():
+    """CLI: run a function of the BLE image and report the writes.
+    CLI: прогнать функцию BLE-образа и отчитать записи."""
     ap = argparse.ArgumentParser()
     ap.add_argument('--func', required=True, help='оффсет функции в файле (0x7dea)')
     ap.add_argument('--args', default='', help='через запятую: 0x20001000,0x100,4')

@@ -18,6 +18,15 @@
 # - Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
 # - NonCommercial — You may not use the material for commercial purposes.
 # - ShareAlike — If you remix, transform, or build upon the material, you must distribute your contributions under the same or compatible license.
+"""
+The BW Flasher keygen (vendored): generates the session key from the device UID and
+the lookup tables extracted from the firmware, and signs the challenge with it.
+(See the license header above.)
+
+BW Flasher keygen (вендор): генерация ключа из UID устройства и lookup-таблиц,
+извлечённых из прошивки, и подписание challenge этим ключом.
+(Лицензия — в шапке выше.)
+"""
 
 
 def gen_key(dst, src, lookup_table_0, lookup_table_1):
@@ -56,9 +65,13 @@ def xor_byte_blocks(dst, src, block_index):
 def manipulate_bytes(dst_src, c=-0x1b):
     """ Irreversible byte mutation (in-place). """
     def to_char(byte):
+        """The byte as a signed char (int8).
+        Байт как signed char (int8)."""
         return byte if byte < 128 else byte - 256
 
     def get_sign(byte):
+        """The sign of the signed char: -1 if negative, else 0.
+        Знак signed char: -1 если отрицательный, иначе 0."""
         return byte >> 7  # return -1 if to_char(byte) < 0 else 0
 
     local = [0, 0, 0, 0, 0]
@@ -76,6 +89,8 @@ def manipulate_bytes(dst_src, c=-0x1b):
 
 
 def roll_bytes(bytearr, indices):
+    """Rotate the values at the given indices (each moves to the next index).
+    Повернуть значения по заданным индексам (каждое уходит на следующий индекс)."""
     # Extract the values at the given indices
     values = [bytearr[i] for i in indices]
 

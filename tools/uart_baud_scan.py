@@ -81,6 +81,8 @@ def sanity(buf: bytes) -> float:
 
 
 def capture(port: str, baud: int, seconds: float) -> bytes:
+    """Capture the port bytes for the given seconds.
+    Захватить байты порта заданное число секунд."""
     with serial.Serial(port, baud, timeout=1) as s:
         end = time.time() + seconds
         out = bytearray()
@@ -90,6 +92,8 @@ def capture(port: str, baud: int, seconds: float) -> bytes:
 
 
 def main():
+    """The CLI entry point (--port/--seconds/--bauds/--baud/--sniff).
+    CLI-вход (--port/--seconds/--bauds/--baud/--sniff)."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", help="COM-порт USB-TTL (иначе список доступных)")
     ap.add_argument("--seconds", type=float, default=3.0,

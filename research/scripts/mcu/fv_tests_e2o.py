@@ -33,6 +33,9 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -44,10 +47,16 @@ def _fresh_probe(off, seeds=(), args=(), max_insn=50000):
 
 
 def _r(uc, off, size=1):
+    """The helper function (_r).
+    Вспомогательная функция (_r).
+    """
     return int.from_bytes(bytes(uc.mem_read(RAM + off, size)), 'little')
 
 
 def _p(uc, addr, size=4):
+    """The helper function (_p).
+    Вспомогательная функция (_p).
+    """
     return int.from_bytes(bytes(uc.mem_read(addr, size)), 'little')
 
 
@@ -65,6 +74,9 @@ def _run_sys(off, args=(), seeds=(), max_insn=60000):
     emu.sys_writes = []
 
     def _hw(uc_, access, address, size, value, user):
+        """The helper function (_hw).
+        Вспомогательная функция (_hw).
+        """
         emu.sys_writes.append((address, value))
 
     uc.hook_add(UC_HOOK_MEM_WRITE, _hw, None, SYS, SYS + 0x100000)
@@ -96,6 +108,9 @@ def _(run, rng):
     # NOTE: в этом Unicorn бьилде bics rX,#imm несёт нестабильный imm (контекст-
     # зависимая декодировка: 0x4382 даёт маску r0 или r0>>7). Тесты утверждают
     # только контекстно-стабильные инварианты.
+    """Emulator test @ 0x106d8: E2-b70: 0x106d8(base) — SPI reset-ключ: base==0x40013000 (SPI1): 0xc6c4(0x1000,1)+0xc6c4(0x1000,0) → u32[0x4002100C] clr bit12/bit4 (bics-квирк: 0xffffefff/0xFFFFFFEF), ret=0x1000. base==0x40013C00 (SPI2): 0xc6c4(0x80000,1)+0xc6c4(0x80000,0) → clr bit15 (0xFFF7FFFF), ret=0x80000. другой base: без записей, ret ∈ {base, 0x40013C00}..
+    Тест эмулятора @ 0x106d8: E2-b70: 0x106d8(base) — SPI reset-ключ: base==0x40013000 (SPI1): 0xc6c4(0x1000,1)+0xc6c4(0x1000,0) → u32[0x4002100C] clr bit12/bit4 (bics-квирк: 0xffffefff/0xFFFFFFEF), ret=0x1000. base==0x40013C00 (SPI2): 0xc6c4(0x80000,1)+0xc6c4(0x80000,0) → clr bit15 (0xFFF7FFFF), ret=0x80000. другой base: без записей, ret ∈ {base, 0x40013C00}..
+    """
     uc, emu, lp = _fresh_probe(0x106D8, args=(0x40013000,))
     v = _p(uc, 0x4002100C)
     assert v in (0xffffefff, 0xFFFFFFEF), \
@@ -121,6 +136,9 @@ def _(run, rng):
            '(0xFFBF); 0x106d8(0x40013000) → RCC clr bit12/bit4 (bics-квирк); '
            '0xc6a4(0x1000, 0) → RCC BDCR 0x40021018 clr. ret=0x1000. fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x106b8: E2-b70: 0x106b8() — SPI1-init: 0x106a0(0x40013000, 0) → u16[SPI1_CTLR]&=~0x40 (0xFFBF); 0x106d8(0x40013000) → RCC clr bit12/bit4 (bics-квирк); 0xc6a4(0x1000, 0) → RCC BDCR 0x40021018 clr. ret=0x1000. fresh-emu golden..
+    Тест эмулятора @ 0x106b8: E2-b70: 0x106b8() — SPI1-init: 0x106a0(0x40013000, 0) → u16[SPI1_CTLR]&=~0x40 (0xFFBF); 0x106d8(0x40013000) → RCC clr bit12/bit4 (bics-квирк); 0xc6a4(0x1000, 0) → RCC BDCR 0x40021018 clr. ret=0x1000. fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x106B8)
     assert _p(uc, 0x40013000, 2) == 0xFFBF, \
         f"0x106b8: u16[40013000]={_p(uc, 0x40013000, 2):#x} ждём 0xFFBF"
@@ -141,6 +159,9 @@ def _(run, rng):
            '0x40011000(GPIOC)→|=0x10; 0x40011400(GPIOD)→|=0x20; любой case + общий |=1; '
            'неизвестный порт → только |=1. ret=1. Биты по портам = 2<<index.')
 def _(run, rng):
+    """Emulator test @ 0x163b4: E2-b70: 0x163b4(port) — RCC BDCR-ключ: 0x40010800(GPIOA)→|=4; 0x40010C00(GPIOB)→|=8; 0x40011000(GPIOC)→|=0x10; 0x40011400(GPIOD)→|=0x20; любой case + общий |=1; неизвестный порт → только |=1. ret=1. Биты по портам = 2<<index..
+    Тест эмулятора @ 0x163b4: E2-b70: 0x163b4(port) — RCC BDCR-ключ: 0x40010800(GPIOA)→|=4; 0x40010C00(GPIOB)→|=8; 0x40011000(GPIOC)→|=0x10; 0x40011400(GPIOD)→|=0x20; любой case + общий |=1; неизвестный порт → только |=1. ret=1. Биты по портам = 2<<index..
+    """
     for base, expect in ((0x40010800, 0x5), (0x40010C00, 0x9),
                          (0x40011000, 0x11), (0x40011400, 0x21),
                          (0x40011800, 0x1), (0x40010400, 0x1)):
@@ -157,6 +178,9 @@ def _(run, rng):
            'u32[0x40002824]: последовательность 0xCA→0x53→0xFF (3 записи); ret=1, insn=42. '
            'fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0xcb40: E2-b70: 0xcb40() — WWDG magic: u32[0x40002808]&=~0x300 (0xFFFFFBFF); u32[0x40002824]: последовательность 0xCA→0x53→0xFF (3 записи); ret=1, insn=42. fresh-emu golden..
+    Тест эмулятора @ 0xcb40: E2-b70: 0xcb40() — WWDG magic: u32[0x40002808]&=~0x300 (0xFFFFFBFF); u32[0x40002824]: последовательность 0xCA→0x53→0xFF (3 записи); ret=1, insn=42. fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0xCB40)
     assert _p(uc, 0x40002808) == 0xFFFFFBFF, \
         f"0xcb40: 40002808={_p(uc, 0x40002808):#x} ждём 0xFFFFFBFF"
@@ -174,6 +198,9 @@ def _(run, rng):
            'F8/F9/FA/FB/FC/FE); u32[0x40002824]: magic CA→53→FF; '
            'ret = mode-1 (1..5) / 6 (mode=6 special).')
 def _(run, rng):
+    """Emulator test @ 0x14958: E2-b70: 0x14958(mode) — WWDG mode: mode=0 → без записей, ret=0. mode 1..6: u32[0x40002808]: clr bit3 + по-режимно (финал {0,1,2,3,4,5,6} → F8/F9/FA/FB/FC/FE); u32[0x40002824]: magic CA→53→FF; ret = mode-1 (1..5) / 6 (mode=6 special)..
+    Тест эмулятора @ 0x14958: E2-b70: 0x14958(mode) — WWDG mode: mode=0 → без записей, ret=0. mode 1..6: u32[0x40002808]: clr bit3 + по-режимно (финал {0,1,2,3,4,5,6} → F8/F9/FA/FB/FC/FE); u32[0x40002824]: magic CA→53→FF; ret = mode-1 (1..5) / 6 (mode=6 special)..
+    """
     uc, emu, lp = _fresh_probe(0x14958, args=(0,))
     assert _p(uc, 0x40002808) == 0xFFFFFFFF and _pw(emu, 0x40002824) == [], \
         f'0x14958(0): 40002808={_p(uc, 0x40002808):#x} ждём без изменений'
@@ -197,6 +224,9 @@ def _(run, rng):
            'CTRL(0xE000E010)=4 (en!=0) или 0 (en==0), две записи; ret=0xE000E000, '
            'insn≈838 (lookup-хвост).')
 def _(run, rng):
+    """Emulator test @ 0x22934: E2-b70: 0x22934(&struct) — SysTick-init: struct {u32 reload@0, byte en@+8}; SysTick RELOAD(0xE000E014)=u32[+0]; VALUE(0xE000E018)=0; CTRL(0xE000E010)=4 (en!=0) или 0 (en==0), две записи; ret=0xE000E000, insn≈838 (lookup-хвост)..
+    Тест эмулятора @ 0x22934: E2-b70: 0x22934(&struct) — SysTick-init: struct {u32 reload@0, byte en@+8}; SysTick RELOAD(0xE000E014)=u32[+0]; VALUE(0xE000E018)=0; CTRL(0xE000E010)=4 (en!=0) или 0 (en==0), две записи; ret=0xE000E000, insn≈838 (lookup-хвост)..
+    """
     for val, en, ctrl in ((0x1234, 1, 4), (0x1234, 0, 0), (0, 1, 4)):
         uc, emu = _run_sys(0x22934, args=(RAM + 0x1000,),
                            seeds=[(RAM + 0x1000, val), (RAM + 0x1008, bytes([en]))])
@@ -221,6 +251,9 @@ def _(run, rng):
            '+0x2C: 0x100→0x1100; SYS: 0xE000E41C=0x800000, ISER0(0xE000E100)=0x40000000 '
            '(bit30). ret=0xFFFFFFFF, insn=968.')
 def _(run, rng):
+    """Emulator test @ 0x21804: E2-b70: 0x21804() — UART4-init golden: UART4(0x40004C00): BRR=0×2; CTLR1: 0×6→0x4000→0xC000; CTLR2/3/FLP/… zero; 0x40004C2C=0xFFFFFFFF; 0x40004C30=0xFFF; GPIO@0x48000800: +0x10: 0x200000→0xA00000, +0x14..+0x24: 0, +0x2C: 0x100→0x1100; SYS: 0xE000E41C=0x800000, ISER0(0xE000E100)=0x40000000 (bit30). ret=0xFFFFFFFF, insn=968..
+    Тест эмулятора @ 0x21804: E2-b70: 0x21804() — UART4-init golden: UART4(0x40004C00): BRR=0×2; CTLR1: 0×6→0x4000→0xC000; CTLR2/3/FLP/… zero; 0x40004C2C=0xFFFFFFFF; 0x40004C30=0xFFF; GPIO@0x48000800: +0x10: 0x200000→0xA00000, +0x14..+0x24: 0, +0x2C: 0x100→0x1100; SYS: 0xE000E41C=0x800000, ISER0(0xE000E100)=0x40000000 (bit30). ret=0xFFFFFFFF, insn=968..
+    """
     uc, emu = _run_sys(0x21804)
     exp = {
         0x40004C08: [0x0, 0x0],
@@ -253,6 +286,9 @@ def _(run, rng):
            '0x40/0x80/0xFF) → записи 0 в 48000410..4800042C (8 адресов); byte@r4+0x14=7. '
            'ret=7, insn=683. fresh-emu golden.')
 def _(run, rng):
+    """Emulator test @ 0x1bedc: E2-b70: 0x1bedc(&buf) — GPIO init @0x48000400: zero-буфер; 0x22000(пины 0x40/0x80/0xFF) → записи 0 в 48000410..4800042C (8 адресов); byte@r4+0x14=7. ret=7, insn=683. fresh-emu golden..
+    Тест эмулятора @ 0x1bedc: E2-b70: 0x1bedc(&buf) — GPIO init @0x48000400: zero-буфер; 0x22000(пины 0x40/0x80/0xFF) → записи 0 в 48000410..4800042C (8 адресов); byte@r4+0x14=7. ret=7, insn=683. fresh-emu golden..
+    """
     uc, emu, lp = _fresh_probe(0x1BEDC, args=(RAM + 0x1000,))
     for off in (0x10, 0x14, 0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C):
         addr = 0x48000400 + off
@@ -272,6 +308,9 @@ def _(run, rng):
            'AFIO 40010820: FF0FFFFF→F0FFFFF→FFFFF; 4001082C: FFF3FF→33FF→30FF; '
            'RCC 40021018: FF→FF. ret=0x10, insn=755.')
 def _(run, rng):
+    """Emulator test @ 0x107ec: E2-b70: 0x107ec(&local) — GPIOA EXTI-init golden: GPIOA CTLR1/2 40010800: FFFBFF→FFBBFF→FF8BFF→FF89FF; 40010804: FFFFFFDF→5F→4F; 40010808: FFFFFFDF→5F→1F→0F; 4001080C: FFF3FF→33FF→03FF→00FF; AFIO 40010820: FF0FFFFF→F0FFFFF→FFFFF; 4001082C: FFF3FF→33FF→30FF; RCC 40021018: FF→FF. ret=0x10, insn=755..
+    Тест эмулятора @ 0x107ec: E2-b70: 0x107ec(&local) — GPIOA EXTI-init golden: GPIOA CTLR1/2 40010800: FFFBFF→FFBBFF→FF8BFF→FF89FF; 40010804: FFFFFFDF→5F→4F; 40010808: FFFFFFDF→5F→1F→0F; 4001080C: FFF3FF→33FF→03FF→00FF; AFIO 40010820: FF0FFFFF→F0FFFFF→FFFFF; 4001082C: FFF3FF→33FF→30FF; RCC 40021018: FF→FF. ret=0x10, insn=755..
+    """
     uc, emu, lp = _fresh_probe(0x107EC, args=(RAM + 0x1000,))
     exp = {
         0x40010800: [0xFFFFFBFF, 0xFFFFBBFF, 0xFFFF8BFF, 0xFFFF89FF],
@@ -300,6 +339,9 @@ def _(run, rng):
            'bit ch=desc[2..5]; CR2/CR1 (base+0x14/+0x10) 2-bit поле=desc[1]/desc[0]. '
            'ret=base. 4 кейса (valid + 3 assert-спина).')
 def _(run, rng):
+    """Emulator test @ 0x22000: E2-b70: 0x22000(base, ch_mask, &desc) — timer channel config с assert-спинами: base ∈ {0x48000000(=9<<27), 0x48000800, 0x48000400, 0x48000C00} и ch_mask ∈ {1..0x80, 0x100, 0x17A, 0x400..0x8000} иначе cpsid i-спин; desc[0..1]∈{0..3}, desc[2..5]∈{0,1}, desc[6]∈{0..9}; для каждого ch из mask: CCMR (base+0x28/+0x2C) 4-bit поле=desc[6]; CCER1..4 (base+0x18..0x24) bit ch=desc[2..5]; CR2/CR1 (base+0x14/+0x10) 2-bit поле=desc[1]/desc[0]. ret=base. 4 кейса (valid + 3 assert-спина)..
+    Тест эмулятора @ 0x22000: E2-b70: 0x22000(base, ch_mask, &desc) — timer channel config с assert-спинами: base ∈ {0x48000000(=9<<27), 0x48000800, 0x48000400, 0x48000C00} и ch_mask ∈ {1..0x80, 0x100, 0x17A, 0x400..0x8000} иначе cpsid i-спин; desc[0..1]∈{0..3}, desc[2..5]∈{0,1}, desc[6]∈{0..9}; для каждого ch из mask: CCMR (base+0x28/+0x2C) 4-bit поле=desc[6]; CCER1..4 (base+0x18..0x24) bit ch=desc[2..5]; CR2/CR1 (base+0x14/+0x10) 2-bit поле=desc[1]/desc[0]. ret=base. 4 кейса (valid + 3 assert-спина)..
+    """
     desc = bytes([1, 1, 1, 0, 1, 0, 2]) + bytes(26)
     uc, emu, lp = _fresh_probe(0x22000,
                                args=(0x48000000, 1, RAM + 0x1200),
@@ -332,6 +374,9 @@ def _(run, rng):
            'byte[r1+0xB] ≤ 1: u32[r0+4] = (v & ~0x100) | byte<<0xE; '
            'u32[r0+0x50] = u32[r1+4]; ret=r0. 2 кейса (gate on/off, v=0).')
 def _(run, rng):
+    """Emulator test @ 0x22fac: E2-b70: 0x22fac(&struct, &cfg) — timer channel field-config: u32[r0+0x30] = (v & ~mask) | byte[r1+8]<<13; u32[r0+0x2C] = (v & ~mask) | byte[r1]<<12 (mask — bics-квирк, при v=0 поле = byte<<shift); если r0 ∈ {0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00} и byte[r1+0xB] ≤ 1: u32[r0+4] = (v & ~0x100) | byte<<0xE; u32[r0+0x50] = u32[r1+4]; ret=r0. 2 кейса (gate on/off, v=0)..
+    Тест эмулятора @ 0x22fac: E2-b70: 0x22fac(&struct, &cfg) — timer channel field-config: u32[r0+0x30] = (v & ~mask) | byte[r1+8]<<13; u32[r0+0x2C] = (v & ~mask) | byte[r1]<<12 (mask — bics-квирк, при v=0 поле = byte<<shift); если r0 ∈ {0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00} и byte[r1+0xB] ≤ 1: u32[r0+4] = (v & ~0x100) | byte<<0xE; u32[r0+0x50] = u32[r1+4]; ret=r0. 2 кейса (gate on/off, v=0)..
+    """
     cfg_seeds = [(RAM + 0x1100, 0x55), (RAM + 0x1104, 0xDEADBEEF),
                  (RAM + 0x1108, 0xAA), (RAM + 0x110B, 1)]
     # v=0 сидируем: bics-квирк (нестабильный imm) влияет только на clr-биты v,
@@ -372,6 +417,9 @@ def _(run, rng):
            '(signed C-style, div-by-zero→-1); u16[RAM+0x104]=u16(v); ret=s16(v). '
            'gate=0 → u16[0x104]=0, ret=0 (быстрый путь, insn<50). 5 кейса.')
 def _(run, rng):
+    """Emulator test @ 0x1d874: E2-b70: 0x1d874(x, gate) — lookup: gate!=0 → v=0x19994(0xBB80, x)=48000//x (signed C-style, div-by-zero→-1); u16[RAM+0x104]=u16(v); ret=s16(v). gate=0 → u16[0x104]=0, ret=0 (быстрый путь, insn<50). 5 кейса..
+    Тест эмулятора @ 0x1d874: E2-b70: 0x1d874(x, gate) — lookup: gate!=0 → v=0x19994(0xBB80, x)=48000//x (signed C-style, div-by-zero→-1); u16[RAM+0x104]=u16(v); ret=s16(v). gate=0 → u16[0x104]=0, ret=0 (быстрый путь, insn<50). 5 кейса..
+    """
     uc, emu, lp = _fresh_probe(0x1D874, args=(0x100, 0))
     assert _r(uc, 0x104, 2) == 0 and uc.reg_read(UC_ARM_REG_R0) == 0, \
         f'0x1d874 gate=0: u16[0x104]={_r(uc, 0x104, 2):#x} ret={uc.reg_read(UC_ARM_REG_R0):#x} ждём 0/0'
@@ -392,6 +440,9 @@ def _(run, rng):
            'r5=u8(flag<<1); sb=0x3c7c(0, r5)=r5 (XOR c нулём); далее r6/r8-цикл '
            '(пустой при r6=r8=0); ret=sb=u8(r1<<1). 4 кейса (r1=0/1/3/5).')
 def _(run, rng):
+    """Emulator test @ 0x8f7c: E2-b70: 0x8f7c(fp, flag, r6, r8) — varargs-helper: sl=[sp+0x78] (счётчик varargs; clamp (sl&0x7E)>0x46 → ret 0); 0x11d6(sp+0xC, 0x48) zero-буфер; r5=u8(flag<<1); sb=0x3c7c(0, r5)=r5 (XOR c нулём); далее r6/r8-цикл (пустой при r6=r8=0); ret=sb=u8(r1<<1). 4 кейса (r1=0/1/3/5)..
+    Тест эмулятора @ 0x8f7c: E2-b70: 0x8f7c(fp, flag, r6, r8) — varargs-helper: sl=[sp+0x78] (счётчик varargs; clamp (sl&0x7E)>0x46 → ret 0); 0x11d6(sp+0xC, 0x48) zero-буфер; r5=u8(flag<<1); sb=0x3c7c(0, r5)=r5 (XOR c нулём); далее r6/r8-цикл (пустой при r6=r8=0); ret=sb=u8(r1<<1). 4 кейса (r1=0/1/3/5)..
+    """
     for r1, expect in ((0, 0), (1, 2), (3, 6), (5, 10)):
         uc, emu, lp = _fresh_probe(0x8F7C, args=(0, r1, 0))
         assert uc.reg_read(UC_ARM_REG_R0) == expect, \

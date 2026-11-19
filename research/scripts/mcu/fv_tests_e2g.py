@@ -7,6 +7,9 @@ from fv_core import _fresh_call, _intercept  # noqa: F401
 def _t_12804(run, rng):
     # 0x12804: ret = (arg <= u16[FLASH+0x19B3C]) ? 0x65 : -31.
     # Блок бинарного поиска (0x1282c..) — мёртвый код для этой таблицы (first<last).
+    """Emulator test @ 0x12804.
+    Тест эмулятора @ 0x12804.
+    """
     from emulator.mcu_emu import FLASH0
     img = open('D:/SCOOTER_5_PRO/research/images/mcu_0007.bin', 'rb').read()
     first = struct.unpack_from('<H', img, 0x19B3C)[0]
@@ -20,6 +23,9 @@ def _t_b978(run, rng):
     # 0xb978: q = u32[orig_sp+4] (stack-arg!); u32[q]==0 -> ret1; byte[q+0x13]!=0 -> ret0;
     # иначе init-путь: u16[q+0x36]=0 + запись флагов, ret3. Запускаем на отдельном McuEmu
     # (Run.call ставит SP=STACK_TOP, и [SP+4] уже вне RAM).
+    """Emulator test @ 0xb978.
+    Тест эмулятора @ 0xb978.
+    """
     from unicorn import UC_HOOK_CODE
     from unicorn.arm_const import UC_ARM_REG_SP as _SP, UC_ARM_REG_LR as _LR
     Q = 0x400
@@ -35,6 +41,9 @@ def _t_b978(run, rng):
         uc.mem_write(RAM + Q, bytes(qb))
         uc.mem_write(sp0 + 4, struct.pack('<I', RAM + Q))
         def _code(uc_, a, s, ud):
+            """The helper function (_code).
+            Вспомогательная функция (_code).
+            """
             aa = a & ~1
             if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
                 uc_.emu_stop()
@@ -60,6 +69,9 @@ def _ref_bcc0(type_, val, b1, e0_lo, p0a, p0h, e1_lo, p1a, p1h):
     # 0xbcc0: type/val = u16_be[f+2]/[f+4]; local=(val<<1)&0xFFFF; если b1==6: local=2;
     # range-поиск 0xbeec по таблице @RAM+0x7C4 (out/gate=@RAM+0x7D4);
     # при match: (byte[ptr+8]*byte[ptr+1]) >= local && lo+H >= val+type -> success.
+    """Emulator test @ 0xbcc0.
+    Тест эмулятора @ 0xbcc0.
+    """
     local = (val << 1) & 0xFFFF
     if b1 == 6:
         local = 2
@@ -77,6 +89,9 @@ def _ref_bcc0(type_, val, b1, e0_lo, p0a, p0h, e1_lo, p1a, p1h):
     return 1, local & 0xFF
 
 def _t_bcc0(run, rng):
+    """Emulator test @ 0xbcc0.
+    Тест эмулятора @ 0xbcc0.
+    """
     from emulator.mcu_emu import RAM as _R
     for _ in range(15):
         e0_lo = rng.randint(0, 0x40); p0a = rng.randint(0, 0x20); p0h = rng.randint(1, 0x40)
@@ -104,6 +119,9 @@ def _t_22b7c(run, rng):
     # u32[base+0x3C]=u32[r1+8]; u32[base+0x38]=u32[r1+0];
     # base∈{TIM4..,TIM2}: u32[base+0x40]=(old&0xFF00FF)|(u32[r1+0x10]&0xFF); u32[base+0x24]|=1
     # base — абсолютные адреса регистров TIM (PERIPH-диапазон); эмпирика:
+    """Emulator test @ 0x22b7c.
+    Тест эмулятора @ 0x22b7c.
+    """
     VJ = {0x40000000, 0x40000400, 0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
     V40 = {0x40012C00, 0x40014000, 0x40014400, 0x40014800, 0x40014C00}
     for _ in range(15):
@@ -138,6 +156,9 @@ def _t_22b7c(run, rng):
         st = bytearray(16); st[4] = bad[0]; st[0xC] = bad[1]
         uc.mem_write(RAM + 0x400, bytes(st))
         def _code(uc_, a, s, ud):
+            """The helper function (_code).
+            Вспомогательная функция (_code).
+            """
             aa = a & ~1
             if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
                 uc_.emu_stop()
@@ -151,7 +172,11 @@ def _t_22b7c(run, rng):
 t(0x22B7C, 'E2-b57: 0x22b7c TIM-CR1 сеттер: k=byte[r1+4]∈0..4,j=byte[r1+0xC]∈0..2 (иначе спин); k≥2: биты[7:6]=k-1; k∈{0,1}: чистит[7:5], k=1 ставит бит5; j-блок (7 баз): биты[9:8]=j; поля +0x3C/+0x38/+0x40')(_t_22b7c)
 
 # --- пороговые счётчики #5/#2/#6 (общий паттерн: фаза A считает, latch-бит, фаза B) ---
-def _s8(b): return b - 0x100 if b >= 0x80 else b
+def _s8(b):
+    """The helper function (_s8).
+    Вспомогательная функция (_s8).
+    """
+    return b - 0x100 if b >= 0x80 else b
 
 def _ref_10468(mode, b5, v, c1, c2):
     # 0x10468: b5=bit5(byte@FCD); V=s8[FC8];
@@ -159,6 +184,9 @@ def _ref_10468(mode, b5, v, c1, c2):
     #   v>10 -> c1=0; иначе c1+=1; c1>=cap -> b5=1, c1=0.
     # фаза B (b5==1) — ВСЕГДА (gate не влияет): s8[F+0x19E3D]=-32, cap u16[F+0x19E3F]=0x5F:
     #   v<-32 -> c2=0; иначе c2+=1; c2>=cap -> b5=0, c2=0.
+    """Emulator test @ 0x10468.
+    Тест эмулятора @ 0x10468.
+    """
     if mode in (1, 2) and b5 == 0:
         if v > 10: c1 = 0
         else:
@@ -172,6 +200,9 @@ def _ref_10468(mode, b5, v, c1, c2):
     return c1, c2, b5
 
 def _t_10468(run, rng):
+    """Emulator test @ 0x10468.
+    Тест эмулятора @ 0x10468.
+    """
     from emulator.mcu_emu import RAM as _R
     for _ in range(15):
         mode = rng.randint(0, 3)
@@ -196,6 +227,9 @@ def _ref_10524(b1, v, c1, c2):
     # 0x10524: b1=bit1(byte@FD0); V=s8[FCF]; фаза A (b1==0): s8[F+0x19E4C]=-86, cap u16[F+0x19E4D]=0x7C18:
     #   v<-86 -> c1=0; иначе c1+=1; c1>=cap -> b1=1, c1=0. Фаза B (b1==1): s8[F+0x19E4F]=65, cap u16[F+0x19E50]=0x1C49:
     #   v>65 -> c2=0; иначе c2+=1; c2>=cap -> b1=0, c2=0.
+    """Emulator test @ 0x10524.
+    Тест эмулятора @ 0x10524.
+    """
     if b1 == 0:
         if v < -86: c1 = 0
         else:
@@ -209,6 +243,9 @@ def _ref_10524(b1, v, c1, c2):
     return c1, c2, b1
 
 def _t_10524(run, rng):
+    """Emulator test @ 0x10524.
+    Тест эмулятора @ 0x10524.
+    """
     for _ in range(15):
         b1 = rng.getrandbits(1)
         v = rng.choice([0, -86, -87, 65, 66, rng.randint(-0x80, 0x7F)])
@@ -233,6 +270,9 @@ def _ref_105c4(mode, b6, v, cA, cB, fb):
     # фаза B (b6==1) — ВСЕГДА (gate не влияет):
     #   доп. сброс: byte@80==0 и u32[RAM+0xFBF]>=0x64 -> b6=0, cB=0;
     #   иначе v<u16[F+0x19DDE](=0x910B) -> cB=0; иначе cB+=1; cB>u16[F+0x19DE2](=0x9808) -> b6=0, cB=0.
+    """Emulator test @ 0x105c4.
+    Тест эмулятора @ 0x105c4.
+    """
     if mode in (1, 2) and b6 == 0:
         if v > 0x849: cA = 0
         else:
@@ -248,6 +288,9 @@ def _ref_105c4(mode, b6, v, cA, cB, fb):
     return cA, cB, b6
 
 def _t_105c4(run, rng):
+    """Emulator test @ 0x105c4.
+    Тест эмулятора @ 0x105c4.
+    """
     for _ in range(15):
         mode = rng.randint(0, 3)
         b6 = rng.getrandbits(1)
@@ -273,6 +316,9 @@ def _t_23544(run, rng):
     # 0x23544: r2∈{0,1}, r1<4 (иначе спин). mode0: r0>=0 -> u32[SYS+0xE180]=1<<(r0&31) (ICER0).
     # mode1: r0>=0: u32[SYS+0xE100]=u32[SYS+0xE280]=1<<(r0&31); u32[SYS+0xE400+(r0>>2)*4] |= (r1&3)<<((r0&3)*8+6);
     # r0<0: u32[SYS+0xED24+(r0>>2)*4] = (r1&3)<<((r0&3)*8+6).
+    """Emulator test @ 0x23544.
+    Тест эмулятора @ 0x23544.
+    """
     from emulator.mcu_emu import SYS as _S
     for _ in range(15):
         mode = rng.getrandbits(1)
@@ -303,6 +349,9 @@ def _t_23544(run, rng):
         uc = emu.uc
         uc.mem_write(RAM, bytes(0x20000))
         def _code(uc_, a, s, ud):
+            """The helper function (_code).
+            Вспомогательная функция (_code).
+            """
             aa = a & ~1
             if not (FLASH0<=aa<FLASH0+0x23680 or FLASH1<=aa<FLASH1+0x23680):
                 uc_.emu_stop()
@@ -324,6 +373,9 @@ def _t_ded4(run, rng):
     # 0xded4: push{r0..r3}; если byte1(r0)==3:
     #   u32[RAM+0xFE9] = (r0>>24)<<24 | (byte0(r1)<<16) | (byte1(r1)<<8) | byte2(r1)  (байты r1 в перевёрнутом порядке!)
     #   ret 1; иначе ret 0.
+    """Emulator test @ 0xded4.
+    Тест эмулятора @ 0xded4.
+    """
     for _ in range(12):
         hit = rng.getrandbits(1)
         b1 = 3 if hit else rng.choice([0, 1, 2, 4, 0xFF])
@@ -340,6 +392,9 @@ t(0xDed4, 'E2-b58: 0xded4 stack-packer: byte1(r0)==3 -> u32[RAM+0xFE9]=(r0>>24)<
 
 def _t_164f8(run, rng):
     # 0x164f8: ret = s16[RAM+0x13A4] (sign-extend)
+    """Emulator test @ 0x164f8.
+    Тест эмулятора @ 0x164f8.
+    """
     for _ in range(10):
         v = rng.choice([0, 1, -1, 0x7FFF, -0x8000, rng.randint(-0x8000, 0x7FFF)])
         run.ram_write(0x13A4, struct.pack('<h', v))
@@ -349,6 +404,9 @@ t(0x164F8, 'E2-b58: 0x164f8 getter: ret = s16[RAM+0x13A4] (sign-extend)')(_t_164
 
 def _t_174fc(run, rng):
     # 0x174fc: u32[RAM+8]=0; u32[RAM+0x10]=u32[RAM+0xF95]; u32[RAM+0xC]=0
+    """Emulator test @ 0x174fc.
+    Тест эмулятора @ 0x174fc.
+    """
     for _ in range(10):
         f95 = rng.randint(0, 0xFFFFFFFF)
         run.ram_write(0xF95, struct.pack('<I', f95))
@@ -361,6 +419,9 @@ t(0x174FC, 'E2-b58: 0x174fc helper: u32[RAM+8]=0, u32[RAM+0x10]=u32[RAM+0xF95], 
 def _t_12fe0(run, rng):
     # 0x12fe0: type=(r1>>5)&7 -> off = {1:+0xC, 2:+0x10, else:+0x14}; mask=1<<(r1&0x1F);
     # r2 ? u32[ptr+off]|=mask : &=~mask; ret = ptr+off
+    """Emulator test @ 0x12fe0.
+    Тест эмулятора @ 0x12fe0.
+    """
     B = 0x600
     for _ in range(15):
         typ = rng.randint(0, 7)
@@ -381,6 +442,9 @@ def _t_c2a8(run, rng):
     #   u32[P+0x7008] = (old & ~0x3000) | r1; u32[P+0x7000] = (old & ~7)|2 -> ret;
     #   u32[SYS+0xED10] |= 4; arg==1: WFI, иначе SEV+WFE — эмулятор останавливается на WFI/WFE,
     #   финальный ED10 &= ~4 НЕ выполняется.
+    """Emulator test @ 0xc2a8.
+    Тест эмулятора @ 0xc2a8.
+    """
     from emulator.mcu_emu import PERIPH as _P, SYS as _S
     for _ in range(10):
         arg = rng.choice([0, 1, 5])
@@ -403,6 +467,9 @@ def _t_b860(run, rng):
     #   byte==3: wait-цикл (bl 0x9874 -> в эмуляторе сразу 0) -> ret0, u32[EFC]=0x10000;
     #   иначе: цикл old=u32[EFC]; u32[EFC]=old-1; old==0 -> ret3; byte!=0 -> повтор.
     #   byte=0: 1 итерация (0x10000->0xFFFF), ret3; byte∈{1,2}: полный отсчёт ~721K инстр. -> wrap 0xFFFFFFFF, ret3.
+    """Emulator test @ 0xb860.
+    Тест эмулятора @ 0xb860.
+    """
     for _ in range(6):
         run.ram_write(0x50C, b'\x00')
         r0v, _ = run.call(0xB860, args=(RAM + 0x400,), max_insn=5000)
@@ -428,6 +495,9 @@ def _t_b860(run, rng):
     uc.mem_write(RAM, bytes(0x20000))
     uc.mem_write(RAM + 0x50C, b'\x01')
     def _code(uc_, a, s, ud):
+        """The helper function (_code).
+        Вспомогательная функция (_code).
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -447,6 +517,9 @@ def _t_7e98(run, rng):
     # 0x7e98(arg): (arg&0x7FF)!=0 -> 0; arg>=0x0801FFFF -> 0; arg<0x08003000 -> 0;
     # в диапазоне: bl 0x6378 (u32[PERIPH+0x22004] <- константы, fingerprint 0xCDEF89AB после полного пути)
     # + 0x6230(arg) — flash-зависимый код; эмпирика на mcu_0007: всегда !=6 -> ret 0.
+    """Emulator test @ 0x7e98.
+    Тест эмулятора @ 0x7e98.
+    """
     from emulator.mcu_emu import PERIPH as _P
     CANARY = 0x5A5A5A5A
     for _ in range(12):
@@ -473,6 +546,9 @@ t(0x7E98, 'E2-b58: 0x7e98 flash-range предикат: arg∈[0x08003000,0x0801
 
 def _t_2359c(run, rng):
     # 0x2359c(base, idx, val): r0 = base + (idx<<4) + 0x100; цикл записи u32[r0+8]=val с read-back до совпадения
+    """Emulator test @ 0x2359c.
+    Тест эмулятора @ 0x2359c.
+    """
     B = 0x600
     for _ in range(12):
         idx = rng.randint(0, 15)
@@ -493,6 +569,9 @@ def _t_19f4(run, rng):
     #     if byte[B+0x11]&4: C=0
     #     else: C+=1; if C>=CAP: byte[A+0xC]&=~2; C=0
     #   блок 2 (всегда): if byte[A+0x17]&1 and not byte[B+3]&8: byte[A+0x17]&=~1
+    """Emulator test @ 0x19f4.
+    Тест эмулятора @ 0x19f4.
+    """
     CAP = 219
     cases = [rng.randint(0, 255) for _ in range(10)] + [CAP - 2, CAP - 1, CAP, CAP + 1, 255]
     for c in cases:
@@ -526,6 +605,9 @@ def _t_1a68(run, rng):
     #   if byte[A+0xC]&0x10:
     #     if u16[A+6] < TH: C=0
     #     else: C+=1; if C>=CAP: byte[A+0xC]&=~0x10; C=0
+    """Emulator test @ 0x1a68.
+    Тест эмулятора @ 0x1a68.
+    """
     TH, CAP = 0x9000, 155
     for _ in range(12):
         gate = rng.choice([0, 0x10, 0x1F])
@@ -554,6 +636,9 @@ def _t_ce70(run, rng):
     # 0xce70: u32[P+0x2824]=0xCA; =0x53; u32[P+0x280C]&=~0x20 (сначала clear!);
     #   спин до bit5(P+0x280C) или 0x8000 итераций; ret = bit5?1:0; u32[P+0x2824]=0xFF.
     #   В эмуляторе bit5 никто не ставит -> полный спин ~98K инстр, всегда ret 0.
+    """Emulator test @ 0xce70.
+    Тест эмулятора @ 0xce70.
+    """
     from emulator.mcu_emu import PERIPH as _P
     for seed in [0, 0x20, 0x7F, 0xFF, rng.randint(0, 0xFFFFFFFF), rng.randint(0, 0xFFFFFFFF)]:
         run.periph_write(_P + 0x280C, seed)
@@ -567,6 +652,9 @@ def _t_f290(run, rng):
     # 0xf290: гейты: byte[0xF72]&4 (выход БЕЗ сброса) / byte[0xF71]&2 / byte[0x80]!=0 /
     #   u32[0xFBF]<0x3E8 / byte[0x107]!=1 -> C(0xA2E)=0
     #   иначе C+=1; if C>=0x12C: byte[0xF72]^=4 (toggle); C=0
+    """Emulator test @ 0xf290.
+    Тест эмулятора @ 0xf290.
+    """
     for _ in range(15):
         f72 = rng.choice([0, 4, 5, rng.randint(0, 255)])
         b81 = rng.choice([0, 2, 3, rng.randint(0, 255)])
@@ -602,6 +690,9 @@ def _t_f36c(run, rng):
     # 0xf36c: mode = bit3 byte[RAM+0xFD0]; x = s8[RAM+0xFCF]
     #   A (bit3=0): x<-30 or x>100 -> C(0xA36)+=1; C>=0x32 -> toggle bit3, C=0; иначе C=0
     #   B (bit3=1): -30<=x<=100 -> C(0xA38)+=1; C>=0x32 -> clear bit3, C=0; иначе C=0
+    """Emulator test @ 0xf36c.
+    Тест эмулятора @ 0xf36c.
+    """
     for _ in range(15):
         m = rng.choice([0, 8, 9, rng.randint(0, 255)])
         x = rng.choice([-128, -31, -30, -29, 0, 99, 100, 101, 127, rng.randint(-128, 127)])
@@ -642,6 +733,9 @@ def _t_1093c(run, rng):
     #   dst[0..4]=src[0..4]; if bit6(dst[6]): cnt=0
     #   elif s8(dst[2])<=s8(dst[5]): cnt=0
     #   else: cnt+=1; if cnt>10: dst[5]=dst[2]; U|=0x1000; cnt=0
+    """Emulator test @ 0x1093c.
+    Тест эмулятора @ 0x1093c.
+    """
     for _ in range(15):
         src = bytes(rng.randint(0, 255) for _ in range(6))
         d6 = rng.choice([0, 0x40, 0x7F, rng.randint(0, 255)])
@@ -680,6 +774,9 @@ t(0x1093C, 'E2-b59: 0x1093c copy+counter: dst[0..4]=src[0..4] (0xFC7<-0x4A); г�
 def _t_11350(run, rng):
     # 0x11350: if bit7(byte[RAM+0xFA1]): byte[0xA55]=0; u16[0xA56]=0; byte[0xA59]=0; byte[0xA5A]=0 (чистый возврат);
     #   else: fall-through в соседнюю state-машину @0x1136e (insn > 20, память не проверяем)
+    """Emulator test @ 0x11350.
+    Тест эмулятора @ 0x11350.
+    """
     for _ in range(12):
         gate = rng.choice([0, 0x80, 0xFF, rng.randint(0, 255)])
         seed = bytes([rng.randint(1, 255) for _ in range(6)])
@@ -701,6 +798,9 @@ def _t_22a48(run, rng):
     #   v в множестве -> переход в тело @0x22a96 (r4=arg): проверки byte[arg+8]∈{0..4},
     #   byte[arg+0x10]∈{0..2} (иначе спин), byte[arg+0x1A]=0 -> strb 0 [arg+0x19];
     #   byte[arg+0x1A]=2; bl 0x22b7c(arg+4, 2); byte[arg+0x1A]=1; ret 0.
+    """Emulator test @ 0x22a48.
+    Тест эмулятора @ 0x22a48.
+    """
     TIMS = {0x40012C00, 0x40001000, 0x40014000, 0x40014400, 0x40014800, 0x40014C00,
             0x40000400, 0x40000800, 0x40000C00, 0x40000000}
     r0v, _ = run.call(0x22A48, args=(0,), max_insn=2000)
@@ -738,6 +838,9 @@ def _ref_1bfa0(src0):
     # 0x1bfa0(dst, src): dst[0..15]=src[0..15]; 40 раундов (i=4..43):
     #   w = dst[(i-1)*4..+3]; if i%4==0: t1=T[w1]; w1=T[w2]; w2=T[w3]; w3=T[w0]; w0=t1^T2[i>>2]
     #   dst[i*4..+3] = dst[(i-4)*4..+3] ^ w   (T=flash+0xA907, T2=flash+0xAB07, по 256 B)
+    """Emulator test @ 0x1bfa0.
+    Тест эмулятора @ 0x1bfa0.
+    """
     T = FW[0xA907:0xA907 + 256]
     T2 = FW[0xAB07:0xAB07 + 256]
     dst = bytearray(200)
@@ -754,6 +857,9 @@ def _ref_1bfa0(src0):
 
 def _t_1bfa0(run, rng):
     # 0x1bfa0(dst, src) — табличный блочный шифр 128->176 байт (2 S-таблицы в flash)
+    """Emulator test @ 0x1bfa0.
+    Тест эмулятора @ 0x1bfa0.
+    """
     for trial in range(4):
         src = bytes(rng.getrandbits(8) for _ in range(16))
         run.ram_write(0x200, bytes(200))
@@ -766,11 +872,17 @@ def _t_1bfa0(run, rng):
 t(0x1BFA0, 'E2-b60: 0x1bfa0(dst,src) табличный шифр: dst[0..15]=src; 40 раундов XOR-цепочка + S-таблицы flash 0xA907/0xAB07 (каждые 4 раунда)')(_t_1bfa0)
 
 def _sdiv(a, b):
+    """The helper function (_sdiv).
+    Вспомогательная функция (_sdiv).
+    """
     q = abs(a) // abs(b)
     return q if (a >= 0) == (b > 0) else -q
 
 def _ref_4d48(cnt, idx, ring, v):
     # 0x4d48(r0): ring u32[0xF3C..+10*4]; cnt=byte[0x7A], idx=byte[0x7B]
+    """Emulator test @ 0x4d48.
+    Тест эмулятора @ 0x4d48.
+    """
     ring = list(ring)
     if cnt < 10:
         ring[cnt] = v & 0xFFFFFFFF
@@ -788,6 +900,9 @@ def _ref_4d48(cnt, idx, ring, v):
 
 def _t_4d48(run, rng):
     # 0x4d48(r0) — скользящее signed-среднее: ring 10×u32 @0xF3C, счётчик byte[0x7A], idx byte[0x7B]
+    """Emulator test @ 0x4d48.
+    Тест эмулятора @ 0x4d48.
+    """
     run.ram_write(0x7A, b'\x00')
     run.ram_write(0x7B, b'\x00')
     run.ram_write(0xF3C, bytes(40))
@@ -811,6 +926,9 @@ EVQ_TH = 0xFFC91170  # flash-литерал пула 0x4c14
 
 def _ref_4c14(cnt, slots, b0_vals):
     # 0x4c14(): cnt=u32[0xB4C]; ring 6×0x10 @0x164C (поле +4 = слот)
+    """Emulator test @ 0x4c14.
+    Тест эмулятора @ 0x4c14.
+    """
     cnt = (cnt + 1) & 0xFFFFFFFF
     slots = list(slots)
     if cnt >= EVQ_TH:
@@ -828,6 +946,9 @@ def _ref_4c14(cnt, slots, b0_vals):
 def _t_4c14(run, rng):
     # 0x4c14() — event-очередь wrap: u32[0xB4C]++; если >= 0xFFC91170: +1 к слотам ring (wrap -TH), cnt-=TH;
     #   затем промаркировать: slot0==1 и slot<=TH -> byte[+1]=1; ret 0x200016AC
+    """Emulator test @ 0x4c14.
+    Тест эмулятора @ 0x4c14.
+    """
     for _ in range(8):
         cnt = rng.choice([0, 1, EVQ_TH - 2, EVQ_TH - 1, EVQ_TH, EVQ_TH + 5, rng.getrandbits(32)])
         run.ram_write(0xB4C, struct.pack('<I', cnt))
@@ -849,7 +970,13 @@ t(0x4C14, 'E2-b60: 0x4c14() event-очередь wrap: u32[0xB4C]++; >= 0xFFC911
 def _ref_f5c4(bit6, v1, v2, cA, cB):
     # 0xf5c4: бит6(byte[0xFCD]); A (бит6=0): счёт cA при ОБЕХАХ вне [-0x1E,0x64], latch 0x32 -> set бит6;
     #   B (бит6=1): счёт cB при ОБЕХАХ в [-0x1E,0x64], latch 0x32 -> clear бит6
+    """Emulator test @ 0xf5c4.
+    Тест эмулятора @ 0xf5c4.
+    """
     def s8(x):
+        """The s8 function of the script.
+        Функция s8 скрипта.
+        """
         return x - 256 if x >= 128 else x
     a, b = s8(v1), s8(v2)
     in_a = (-0x1E <= a <= 0x64)
@@ -876,6 +1003,9 @@ def _ref_f5c4(bit6, v1, v2, cA, cB):
 
 def _t_f5c4(run, rng):
     # 0xf5c4() — dual-range state-machine: бит6(byte[0xFCD]); i8[0x44]/i8[0x45]
+    """Emulator test @ 0xf5c4.
+    Тест эмулятора @ 0xf5c4.
+    """
     vals = [0, 0x1E, 0x1F, 0x20, 0x64, 0x65, 0x66, 0x1E | 0x80, 0x65 | 0x80, rng.randint(0, 255)]
     for _ in range(14):
         bit6 = rng.choice([0, 0x40])
@@ -900,6 +1030,9 @@ t(0xF5C4, 'E2-b60: 0xf5c4() dual-range: бит6 0xFCD; A(0): cA(0xA3A)++ ког�
 
 def _ref_1e94(b9, bb, bfe):
     # 0x1e94(): bit-pack из byte[0x15F9]/[0x15FB]/[0x15FE] -> out0@0xAD4, out1@0xAD5
+    """Emulator test @ 0x1e94.
+    Тест эмулятора @ 0x1e94.
+    """
     out0 = 0
     out1 = 0
     if b9 & 0x80: out0 |= 0x01
@@ -918,6 +1051,9 @@ def _ref_1e94(b9, bb, bfe):
 
 def _t_1e94(run, rng):
     # 0x1e94() — flag bit-pack: 3 входных байта -> 2 упакованных (stm {r1,r2} в RAM+0xAD4)
+    """Emulator test @ 0x1e94.
+    Тест эмулятора @ 0x1e94.
+    """
     for _ in range(6):
         b9, bb, bfe = rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255)
         run.ram_write(0x15F9, bytes([b9]))
@@ -936,6 +1072,9 @@ def _t_1e2ca(run, rng):
     # 0x1e2ca(r0, r1): если u32(r0-1) > u32(r1) -> ret1; иначе SysTick init:
     #   RVR(0xE000E014)=r0-1; CVR(0xE000E018)=0; bl 0x21b84(-1,3): u32[0xE000ED20]=(old&~0xFF000000)|0xC0;
     #   CTRL(0xE000E010)=7; ret0
+    """Emulator test @ 0x1e2ca.
+    Тест эмулятора @ 0x1e2ca.
+    """
     for a, b in [(0x100, 0x100), (0x100, 0x1FF), (0x100, 0x1FE), (0x100, 0x200),
                  (5, 4), (5, 5), (1, 0), (0, 0), (0, 1), (0xFFFFFFFF, 0), (0xFFFFFFFF, 0xFFFFFFFE),
                  (rng.getrandbits(32), rng.getrandbits(32))]:
@@ -958,6 +1097,9 @@ t(0x1E2CA, 'E2-b60: 0x1e2ca(r0,r1) SysTick init: u32(r0-1)>r1 -> ret1; инач�
 def _t_61e4(run, rng):
     # 0x61e4() — HSI-старт: u32[P+0x21000]&2 -> ret0 (нетронут); иначе |=1 (HSION),
     #   спин до bit1 (HSIRDY) до 1280 итераций; ret = bit1?0:1 (в эмуляторе bit1 статичен -> 1)
+    """Emulator test @ 0x61e4.
+    Тест эмулятора @ 0x61e4.
+    """
     for seed in [0, 0x20, 0x7F, 0xFF, rng.randint(0, 0xFFFFFFFF), rng.randint(0, 0xFFFFFFFF)]:
         run.periph_write(0x40021000, seed)
         r0v, _ = run.call(0x61E4, max_insn=200000)
@@ -981,6 +1123,9 @@ def _ref_fbf8(mode, fa1, f9d, e90, e92, fbf):
     # 0xfbf8: A/B (mode∈{0,2}, бит0(0xFA1)==0): f9d<TH_A -> e90=0; иначе e90++, >=CAP_A -> set бит0, e90=0
     #   C (всегда): бит0(0xFA1): mode==1 и u32[0xFBF]>=0x64 -> clear бит0, e92=0;
     #   иначе f9d>GATE_C -> e92=0; иначе e92++, >=LATCH_C -> clear бит0, e92=0
+    """Emulator test @ 0xfbf8.
+    Тест эмулятора @ 0xfbf8.
+    """
     if mode in (0, 2) and not (fa1 & 1):
         if f9d < FBC['TH_A']:
             e90 = 0
@@ -1005,6 +1150,9 @@ def _ref_fbf8(mode, fa1, f9d, e90, e92, fbf):
 
 def _t_fbf8(run, rng):
     # 0xfbf8() — threshold counter #1: три пути (A: счёт до 0x2401 при 0xF9D>=0xE755; C: счёт 0x9E2 до 0x7E4)
+    """Emulator test @ 0xfbf8.
+    Тест эмулятора @ 0xfbf8.
+    """
     th_a, cap_a = FBC['TH_A'], FBC['CAP_A']
     gate_c, latch_c = FBC['GATE_C'], FBC['LATCH_C']
     f9d_vals = [th_a - 1, th_a, th_a + 100, gate_c - 1, gate_c, gate_c + 1, 0, 0xFFFF, rng.randint(0, 0xFFFF)]

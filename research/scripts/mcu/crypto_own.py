@@ -51,10 +51,16 @@ S2 = FW_DATA[0xab07:0xac07]   # S-box 2 (256 B)
 
 
 def is_perm(box):
+    """The is_perm function of the script.
+    Функция is_perm скрипта.
+    """
     return len(set(box)) == 256
 
 
 def L(x):
+    """The L function of the script.
+    Функция L скрипта.
+    """
     return ((x << 1) & 0xFF) ^ (0x1B * ((x >> 7) & 1))
 
 
@@ -76,6 +82,9 @@ def T(buf16):
 # перестановка из 0x1a7de..0x1a80c:
 #   цикл [1->5->9->D], swap [2,A], swap [6,E], цикл [3->F->B->7]
 def permute(buf16):
+    """The permute function of the script.
+    Функция permute скрипта.
+    """
     o = bytearray(buf16)
     # [1,5,9,D]: tmp=o[1]; o[1]=o[5]; o[5]=o[9]; o[9]=o[0xD]; o[0xD]=tmp
     t = o[1]
@@ -153,6 +162,9 @@ def gf2_invert(M):
 
 
 def gf2_rank(M):
+    """The gf2_rank function of the script.
+    Функция gf2_rank скрипта.
+    """
     n = len(M)
     A = [row[:] for row in M]
     rank = 0
@@ -181,6 +193,9 @@ def T_block_inv(out4, Minv):
 
 
 def build_T_inv():
+    """The build_T_inv function of the script.
+    Функция build_T_inv скрипта.
+    """
     M = gf2_matrix_of_T()
     rank = gf2_rank(M)
     Minv = gf2_invert(M) if rank == 32 else None
@@ -221,6 +236,9 @@ def own_cipher_inv(ct16, ctx, Tinv):
 
 
 def model():
+    """The model function of the script.
+    Функция model скрипта.
+    """
     print(f"S1(@0xa907) перестановка: {is_perm(S1)}")
     print(f"S2(@0xab07) перестановка: {is_perm(S2)}")
     seed = bytes(range(16))
@@ -264,6 +282,9 @@ def model():
 
 
 def verify():
+    """The verify function of the script.
+    Функция verify скрипта.
+    """
     sys.path.insert(0, os.path.join(os.path.dirname(HERE), "..", "..", "emulator"))
     from mcu_emu import McuEmu, RAM
 

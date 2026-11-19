@@ -34,6 +34,9 @@ TEXTY = (".js", ".jsx", ".json", ".bundle", ".txt", ".xml", ".html", ".ts", ".ma
 
 
 def classify(names):
+    """Classify the bundle files into the kinds (RN/JS, the native .so, the resources,
+    the rest).
+    Разделить файлы бандла по видам (RN/JS, нативные .so, ресурсы, прочее)."""
     kinds = {"RN/JS": [], "нативные .so": [], "ресурсы": [], "прочее": []}
     for n in names:
         low = n.lower()
@@ -49,6 +52,9 @@ def classify(names):
 
 
 def scan_blob(data, label, out):
+    """Scan the blob by the patterns (the opcodes/commands/...); record the hits into
+    out.
+    Просканировать blob по паттернам (опкоды/команды/...); записать находки в out."""
     for pat, name in PATTERNS:
         hits = list(re.finditer(pat, data, re.I))
         if hits:
@@ -56,6 +62,8 @@ def scan_blob(data, label, out):
 
 
 def main():
+    """The CLI entry point (the bundle file + --extract-dir).
+    CLI-вход (файл бандла + --extract-dir)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("bundle")
     ap.add_argument("--extract-dir", default=None)

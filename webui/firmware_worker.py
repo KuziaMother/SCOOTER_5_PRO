@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 """
+The BLE firmware flashing — the orchestration on top of dreame_flasher.py, with the
+progress for the web interface. It holds its own thread + event loop, like the
+WebState._worker in app.py — the flash cannot go simultaneously with the normal
+polling session (one BLE connection per process); the mutual exclusion is provided by
+app.py BEFORE the start_flash() call (the STATE.running check).
+
+commit=True — with the same flash() call: if the fragments are already uploaded (the CRC
+resume, see dreame_flasher.flash), the upload is skipped and it goes straight to the
+switchFirmware. So the "Flash" and the "Switch the firmware" in the UI are TWO
+DIFFERENT explicit launches (start_flash(commit=False), then start_flash(commit=True)),
+each — a new BLE connection; the resume makes the re-upload cheap.
+
+The switchFirmware is IRREVERSIBLE (the brick risk) — commit=True should be launched
+only on the explicit user confirmation in the UI (the section 5 CLAUDE.md).
+
 BLE-заливка прошивки — оркестрация поверх dreame_flasher.py, с прогрессом для
 веб-интерфейса. Держит собственный поток+event loop, как WebState._worker в
 app.py — заливка не может идти одновременно с обычной поллинг-сессией (одно
@@ -44,6 +59,8 @@ def _log_event(**fields):
 
 
 def read_log(limit=200):
+    """Read the last limit lines of the persistent JSONL log as the list of dicts.
+    Прочитать последние limit строк постоянного JSONL-лога как список dict."""
     if not os.path.exists(LOG_FILE):
         return []
     with open(LOG_FILE, "r", encoding="utf-8") as f:
@@ -65,12 +82,19 @@ class FlashError(Exception):
 
 
 class FlashState:
+    """The thread-safe flash progress state (the phases, the counters, the speed).
+    Тред-безопасное состояние прогресса заливки (фазы, счётчики, скорость)."""
+
     def __init__(self):
+        """Create the lock + reset.
+        Создать lock + reset."""
         self.lock = threading.RLock()
         self.thread = None
         self.reset()
 
     def reset(self):
+        """Reset all the progress fields to the idle values.
+        Сбросить все поля прогресса к idle-значениям."""
         with self.lock:
             self.phase = "idle"  # idle|connecting|login|starting|uploading|committing|done|error
             self.message = ""
@@ -89,15 +113,21 @@ class FlashState:
 
     @property
     def running(self):
+        """Whether the flash thread is alive.
+        Жив ли поток заливки."""
         with self.lock:
             return self.thread is not None and self.thread.is_alive()
 
     def update(self, **kw):
+        """Update the fields under the lock.
+        Обновить поля под lock."""
         with self.lock:
             for k, v in kw.items():
                 setattr(self, k, v)
 
     def snapshot(self):
+        """A dict copy of the state for the /api/firmware/flash/status response.
+        Копия состояния dict для ответа /api/firmware/flash/status."""
         with self.lock:
             return {
                 "phase": self.phase, "message": self.message, "mac": self.mac, "target": self.target,
@@ -126,10 +156,15 @@ def _update_and_log(**kw):
 
 
 def _on_progress(evt):
+    """The dreame_flasher on_progress callback -> the state update + the log.
+    Колбэк on_progress dreame_flasher -> обновление состояния + лог."""
     _update_and_log(**evt)
 
 
 async def _run(mac, path, target, commit):
+    """The whole flash: the ltmk load, the login, the flash (with the progress), the
+    done/error phase.
+    Вся заливка: загрузка ltmk, логин, flash (с прогрессом), фаза done/error."""
     ltmk_path = da.ltmk_path_for_mac(mac)
     try:
         with open(ltmk_path, "r", encoding="utf-8") as f:
@@ -166,6 +201,8 @@ async def _run(mac, path, target, commit):
 
 
 def _thread_main(mac, path, target, commit):
+    """The flash thread: its own event loop for _run.
+    Поток заливки: собственный event loop для _run."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -175,6 +212,10 @@ def _thread_main(mac, path, target, commit):
 
 
 def start_flash(mac, filename, target, commit=False):
+    """Start the flash in a background thread (the validation: one running flash, the
+    target ble|mcu, the file existence).
+    Запустить заливку в фоновом потоке (валидация: одна идущая заливка, target
+    ble|mcu, наличие файла)."""
     if FLASH_STATE.running:
         raise FlashError("заливка уже идёт")
     if target not in ("ble", "mcu"):
@@ -192,4 +233,6 @@ def start_flash(mac, filename, target, commit=False):
 
 
 def status():
+    """The current flash status (the state snapshot).
+    Текущий статус заливки (снимок состояния)."""
     return FLASH_STATE.snapshot()

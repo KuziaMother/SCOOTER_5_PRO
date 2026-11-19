@@ -20,6 +20,10 @@ MAGIC = 0xFB0BD1E5
 
 
 def unpack(path, out_dir):
+    """Unpack the React Native indexed RAM bundle (the 0xFB0BD1E5 magic) into separate
+    module files.
+    Распаковать React Native indexed RAM bundle (магия 0xFB0BD1E5) на отдельные файлы
+    модулей."""
     d = open(path, "rb").read()
     magic, count, startup_len = struct.unpack("<III", d[:12])
     if magic != MAGIC:

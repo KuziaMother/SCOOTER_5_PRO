@@ -14,10 +14,16 @@ from func_verify import Run, _s16, _sdiv
 
 
 def s16u(x):
+    """The s16u function of the script.
+    Функция s16u скрипта.
+    """
     return x & 0xFFFF
 
 
 def run_loop(target, v_max, tau, throttle_ref, iters=40, speed0=0.0):
+    """The run_loop function of the script.
+    Функция run_loop скрипта.
+    """
     run = Run()
     sm = SpeedModel(run.emu)
     uc = run.uc
@@ -51,6 +57,9 @@ def run_loop(target, v_max, tau, throttle_ref, iters=40, speed0=0.0):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     for target in (208,):
         print(f'=== target={target} ===')
         for (v_max, tau, tref) in [(520, 15.0, 4000), (520, 25.0, 4000),

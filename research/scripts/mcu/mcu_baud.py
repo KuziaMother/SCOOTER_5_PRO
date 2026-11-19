@@ -26,6 +26,9 @@ REG_NAMES = {
 
 
 def sweep():
+    """The sweep function of the script.
+    Функция sweep скрипта.
+    """
     starts = find_func_starts()
     print(f"[baud] функций: {len(starts)}")
     hits = {}   # func -> [(region, addr, size, value)]
@@ -36,6 +39,9 @@ def sweep():
         rec = []
 
         def on_w(uc, access, address, size, value, user):
+            """The on_w function of the script.
+            Функция on_w скрипта.
+            """
             for (lo, hi) in (USART3, UART4, RCC):
                 if lo <= address < hi:
                     rec.append((lo, address - lo, size, value & 0xFFFFFFFF))
@@ -75,6 +81,9 @@ def decode_brr(brr):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     hits = sweep()
     print(f"\n[baud] функций с записями в USART3/UART4/RCC: {len(hits)}")
     for addr, recs in sorted(hits.items(), key=lambda kv: -len(kv[1]))[:30]:

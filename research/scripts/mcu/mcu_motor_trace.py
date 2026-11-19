@@ -28,6 +28,9 @@ TIM1_HI = 0x40012C60
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     func = int(sys.argv[1], 16) if len(sys.argv) > 1 else 0x1dfd8
     emu = McuEmu(max_insn=3_000_000)
     emu.uc.mem_write(0x40000000, bytes(0x100000))  # периферия = 0 (чистые флаги)
@@ -36,10 +39,16 @@ def main():
     tim1_rw = []       # (pc, 'R'/'W', off, size, val)
 
     def h_table_read(uc, access, address, size, value, user):
+        """The h_table_read function of the script.
+        Функция h_table_read скрипта.
+        """
         table_reads.append((uc.reg_read(UC_ARM_REG_PC), address))
         return None
 
     def h_tim1(uc, access, address, size, value, user):
+        """The h_tim1 function of the script.
+        Функция h_tim1 скрипта.
+        """
         tim1_rw.append((uc.reg_read(UC_ARM_REG_PC), "R" if access == 1 else "W",
                         address - TIM1_LO, size, value))
         return None

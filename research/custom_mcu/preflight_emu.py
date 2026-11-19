@@ -34,6 +34,9 @@ PTR = 0x20001100      # r0: указатель на u16
 
 
 def run_case(fw, start, u16_val, label):
+    """The run_case function of the script.
+    Функция run_case скрипта.
+    """
     mcu_emu.FW = fw
     e = mcu_emu.McuEmu(max_insn=5000)
     e.uc.mem_write(CTX, b"\x00" * 0x100)
@@ -53,6 +56,9 @@ def run_case(fw, start, u16_val, label):
 
 
 def mcuc_pc():
+    """The mcuc_pc function of the script.
+    Функция mcuc_pc скрипта.
+    """
     from unicorn import UC_ARM_REG_PC
     return UC_ARM_REG_PC
 

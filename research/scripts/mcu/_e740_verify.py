@@ -1,3 +1,9 @@
+"""The scratch verification of the 0xE740 function: the emulator vs the reference
+(the A/B values and the reference slots @0x13AB/0x13A4/0x130A).
+
+Скрэтч-верификация функции 0xE740: эмулятор vs референс (значения A/B и
+слоты референса @0x13AB/0x13A4/0x130A).
+"""
 import sys, struct, random
 sys.path.insert(0,'..'); sys.path.insert(0,'../../..')
 from unicorn import UcError, UC_HOOK_CODE
@@ -5,6 +11,9 @@ from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_SP
 from emulator.mcu_emu import McuEmu, FLASH0, FLASH1, RAM, STACK_TOP
 FW_LEN=len(open(r'D:\SCOOTER_5_PRO\research\images\mcu_0007.bin','rb').read())
 def run(A,B,refA,refB):
+    """The run function of the script.
+    Функция run скрипта.
+    """
     emu=McuEmu(max_insn=20000); uc=emu.uc
     uc.mem_write(RAM,b'\x00'*0x20000)
     uc.mem_write(RAM+0x13AB,struct.pack('<H',A&0xffff))
@@ -15,6 +24,9 @@ def run(A,B,refA,refB):
     uc.reg_write(UC_ARM_REG_R0,RAM+0x500)
     uc.reg_write(UC_ARM_REG_SP,STACK_TOP); uc.reg_write(UC_ARM_REG_LR,0x0BADF001)
     def stop(uc_,addr,size,user):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         if not(FLASH0<=addr<FLASH0+FW_LEN or FLASH1<=addr<FLASH1+FW_LEN): uc_.emu_stop()
     hs=uc.hook_add(UC_HOOK_CODE,stop)
     try: uc.emu_start(0xe740|1,0,count=20000)
@@ -22,6 +34,9 @@ def run(A,B,refA,refB):
     uc.hook_del(hs)
     return uc.mem_read(RAM+0x500,1)[0]
 def model(A,B,refA,refB,use_abs):
+    """The model function of the script.
+    Функция model скрипта.
+    """
     devA=abs((A&0xffff)-(refA&0xffff))
     devB=(B-refB) if not use_abs else abs(B-refB)
     devB=min(devB,0x7fff); devB=max(devB,-0x8000)

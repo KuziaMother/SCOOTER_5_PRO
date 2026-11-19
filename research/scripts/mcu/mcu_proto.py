@@ -14,8 +14,14 @@ CODE=[(0x01200,0x02400),(0x02600,0x10200),(0x10400,0x10e00),(0x11000,0x12400),
       (0x18e00,0x19200),(0x19a00,0x24200),(0x24400,0x24600)]
 fstarts=sorted(o for a,b in CODE for o in range(a,b,2) if (u16(o)&0xFF00)==0xB500)
 def func_of(o):
+    """The func_of function of the script.
+    Функция func_of скрипта.
+    """
     i=bisect.bisect_right(fstarts,o)-1; return fstarts[i] if i>=0 else None
 def fend(f):
+    """The fend function of the script.
+    Функция fend скрипта.
+    """
     i=bisect.bisect_right(fstarts,f); return fstarts[i] if i<len(fstarts) else f+400
 
 # ---- 1) поиск cmp с сигнатурами кадров ----

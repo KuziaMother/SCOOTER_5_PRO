@@ -27,6 +27,9 @@ from emulator.mcu_emu import (SYST_CSR, SYST_CVR, SYST_RVR, SysTickModel, TimeMo
 
 
 def _a4_fresh(off, seeds=(), args=(), max_insn=100000):
+    """The helper function (_a4_fresh).
+    Вспомогательная функция (_a4_fresh).
+    """
     emu = McuEmu(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -42,22 +45,34 @@ def _a4_fresh(off, seeds=(), args=(), max_insn=100000):
     uc.reg_write(UC_ARM_REG_LR, 0x0BADF001)
     lastpc = [0]
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
     uc.hook_add(UC_HOOK_CODE, _hc)
     return emu, uc, lastpc
 
 
 def _rd(uc, off, n=4):
+    """The helper function (_rd).
+    Вспомогательная функция (_rd).
+    """
     b = bytes(uc.mem_read(RAM + off, n))
     return struct.unpack_from('<I', b, 0)[0] if n == 4 else b
 
 
 def _sys(uc, off):
+    """The helper function (_sys).
+    Вспомогательная функция (_sys).
+    """
     return struct.unpack_from('<I', bytes(uc.mem_read(0xE000E000 + off, 4)), 0)[0]
 
 
 @t(0x22934, 'A4 §90: 0x22934(&struct{rvr,cvr,flag,ctrl}) — clock-config: u32[0x1C]=base/1000, u32[0x20]=base/10000, u32[0x24]=base/100000 (base=u32[0x08], ÷8 если flag==0; пул-константы НЕ deref) + RVR/CVR/CTRL из struct (CTRL=(flag<<2)|ctrl)')
 def _(run, rng):
+    """Emulator test @ 0x22934: A4 §90: 0x22934(&struct{rvr,cvr,flag,ctrl}) — clock-config: u32[0x1C]=base/1000, u32[0x20]=base/10000, u32[0x24]=base/100000 (base=u32[0x08], ÷8 если flag==0; пул-константы НЕ deref) + RVR/CVR/CTRL из struct (CTRL=(flag<<2)|ctrl).
+    Тест эмулятора @ 0x22934: A4 §90: 0x22934(&struct{rvr,cvr,flag,ctrl}) — clock-config: u32[0x1C]=base/1000, u32[0x20]=base/10000, u32[0x24]=base/100000 (base=u32[0x08], ÷8 если flag==0; пул-константы НЕ deref) + RVR/CVR/CTRL из struct (CTRL=(flag<<2)|ctrl).
+    """
     for base in (72000000, 96000000, rng.getrandbits(26)):
         for flag, ctrl in ((1, 0x05), (0, 0x03), (1, 0x01)):
             rvr, cvr = rng.getrandbits(24), rng.getrandbits(24)
@@ -79,6 +94,9 @@ def _(run, rng):
 
 @t(0x229D4, 'A4 §90: 0x229D4(r0, r1) — SysTick-busy-wait delay r0×u32[0x24] counts (CVR-окно 0x1000000−T, reset 0x00FFFFFF), u16-повторы r1: с SysTickModel (1 insn = 1 count) ≈ 27 + T insn (r1=1), повторы складываются')
 def _(run, rng):
+    """Emulator test @ 0x229d4: A4 §90: 0x229D4(r0, r1) — SysTick-busy-wait delay r0×u32[0x24] counts (CVR-окно 0x1000000−T, reset 0x00FFFFFF), u16-повторы r1: с SysTickModel (1 insn = 1 count) ≈ 27 + T insn (r1=1), повторы складываются.
+    Тест эмулятора @ 0x229d4: A4 §90: 0x229D4(r0, r1) — SysTick-busy-wait delay r0×u32[0x24] counts (CVR-окно 0x1000000−T, reset 0x00FFFFFF), u16-повторы r1: с SysTickModel (1 insn = 1 count) ≈ 27 + T insn (r1=1), повторы складываются.
+    """
     for coeff in (0, 50, 100, rng.getrandbits(8)):
         for r0 in (1, 5, rng.getrandbits(8)):
             tgt = coeff * r0
@@ -106,6 +124,9 @@ def _(run, rng):
 
 @t(0x22A0C, 'A4 §90: 0x22A0C(r0, r1) — SysTick-busy-wait delay r0×u32[0x10] counts (CVR-reset via OR 0x00FFFFFF), u16-повторы r1: ≈ 27 + r0×coeff insn (r1=1)')
 def _(run, rng):
+    """Emulator test @ 0x22a0c: A4 §90: 0x22A0C(r0, r1) — SysTick-busy-wait delay r0×u32[0x10] counts (CVR-reset via OR 0x00FFFFFF), u16-повторы r1: ≈ 27 + r0×coeff insn (r1=1).
+    Тест эмулятора @ 0x22a0c: A4 §90: 0x22A0C(r0, r1) — SysTick-busy-wait delay r0×u32[0x10] counts (CVR-reset via OR 0x00FFFFFF), u16-повторы r1: ≈ 27 + r0×coeff insn (r1=1).
+    """
     for coeff in (0, 25, 50, rng.getrandbits(8)):
         for r0 in (2, 4, rng.getrandbits(7)):
             tgt = coeff * r0
@@ -132,6 +153,9 @@ def _(run, rng):
 
 @t(0x11C84, 'A4 §90: 0x11C84(r0) — SysTick_CTRL bit2 (TICK_REF): r0==4 → CTRL |= 4 (on), r0!=4 → CTRL &= ~4 (off)')
 def _(run, rng):
+    """Emulator test @ 0x11c84: A4 §90: 0x11C84(r0) — SysTick_CTRL bit2 (TICK_REF): r0==4 → CTRL |= 4 (on), r0!=4 → CTRL &= ~4 (off).
+    Тест эмулятора @ 0x11c84: A4 §90: 0x11C84(r0) — SysTick_CTRL bit2 (TICK_REF): r0==4 → CTRL |= 4 (on), r0!=4 → CTRL &= ~4 (off).
+    """
     for v in (4, 5, 0, 0x6A00, rng.getrandbits(24)):
         emu, uc, lp = _a4_fresh(0x11C84, args=(v,), max_insn=1000)
         try:
@@ -147,6 +171,9 @@ def _(run, rng):
 
 @t(0x3600, 'A4 §90: 0x3600(ticks) — композит SysTick-периода: bl 0x11C84 (build-quirk: bl → r0=4 → TICK_REF on), reload из LUT 0xC708 (zero-контекст → 0 → skip-путь), udiv(r1, 1000), RVR=r1−1 (если < 0x1000000) + tail CVR=0/CTRL=7 (skip-путь пропускает): в изоляции CTRL ∈ {0x4, 7}, RVR < 0x1000000, функция завершается')
 def _(run, rng):
+    """Emulator test @ 0x3600: A4 §90: 0x3600(ticks) — композит SysTick-периода: bl 0x11C84 (build-quirk: bl → r0=4 → TICK_REF on), reload из LUT 0xC708 (zero-контекст → 0 → skip-путь), udiv(r1, 1000), RVR=r1−1 (если < 0x1000000) + tail CVR=0/CTRL=7 (skip-путь пропускает): в изоляции CTRL ∈ {0x4, 7}, RVR < 0x1000000, функция завершается.
+    Тест эмулятора @ 0x3600: A4 §90: 0x3600(ticks) — композит SysTick-периода: bl 0x11C84 (build-quirk: bl → r0=4 → TICK_REF on), reload из LUT 0xC708 (zero-контекст → 0 → skip-путь), udiv(r1, 1000), RVR=r1−1 (если < 0x1000000) + tail CVR=0/CTRL=7 (skip-путь пропускает): в изоляции CTRL ∈ {0x4, 7}, RVR < 0x1000000, функция завершается.
+    """
     for ticks in (73088000, 10000, 2000000000, rng.getrandbits(31)):
         emu, uc, lp = _a4_fresh(0x3600, args=(ticks,), max_insn=200000)
         try:
@@ -162,6 +189,9 @@ def _(run, rng):
 
 @t(0x11BAC, 'A4 §90: TimeModel-интеграция — format_datetime(v) (живой код 0x11BAC) == ref_datetime(v) (reference-модель) для случайных total-seconds (§61 контракт: дивизоры 31104000/2592000/86400/3600/60)')
 def _(run, rng):
+    """Emulator test @ 0x11bac: A4 §90: TimeModel-интеграция — format_datetime(v) (живой код 0x11BAC) == ref_datetime(v) (reference-модель) для случайных total-seconds (§61 контракт: дивизоры 31104000/2592000/86400/3600/60).
+    Тест эмулятора @ 0x11bac: A4 §90: TimeModel-интеграция — format_datetime(v) (живой код 0x11BAC) == ref_datetime(v) (reference-модель) для случайных total-seconds (§61 контракт: дивизоры 31104000/2592000/86400/3600/60).
+    """
     emu = McuEmu()
     tm = TimeModel(emu)
     for _ in range(25):

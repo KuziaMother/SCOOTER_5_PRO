@@ -41,6 +41,9 @@ for name, sig in [("S-box", SBOX), ("Inv-S-box", INV), ("Te0", te0)]:
 
 # 4) кандидаты ключей: 16/32-байтовые высокоэнтропийные константы в открытых секциях
 def ent(b):
+    """The ent function of the script.
+    Функция ent скрипта.
+    """
     if not b: return 0
     c = collections.Counter(b); n=len(b)
     return -sum((x/n)*math.log2(x/n) for x in c.values())

@@ -17,9 +17,15 @@ F_ADDR = RAM + 0x100
 
 
 def run_one(emu_factory, addr, max_insn=12000):
+    """The run_one function of the script.
+    Функция run_one скрипта.
+    """
     emu = emu_factory()
     emu.uc.mem_write(V_ADDR, struct.pack('<I', 0xDEAD))
     def stop(uc_, a, size, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                 FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -38,6 +44,9 @@ def run_one(emu_factory, addr, max_insn=12000):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     starts = find_func_starts()
     print(f'функций: {len(starts)}; ищу запись в V={V_ADDR:#x}')
     hits = []
@@ -46,6 +55,9 @@ def main():
         emu.uc.mem_write(RAM, bytes(0x20000))
         emu.uc.mem_write(V_ADDR, struct.pack('<I', 0xDEAD))
         def stop(uc_, a, size, u):
+            """The stop function of the script.
+            Функция stop скрипта.
+            """
             aa = a & ~1
             if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                     FLASH1 <= aa < FLASH1 + FW_LEN):

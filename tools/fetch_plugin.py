@@ -43,12 +43,16 @@ import token_extractor as tx           # noqa: E402
 
 
 def flush(*a):
+    """print with flush (the live logs).
+    print с flush (живые логи)."""
     print(*a, flush=True)
 
 
 # ---------------------------------------------------------------- сессия
 
 def save_session(c):
+    """Save the Mi Cloud session to secrets/micloud_session.json (git-ignored).
+    Сохранить сессию Mi Cloud в secrets/micloud_session.json (git-ignore)."""
     os.makedirs(os.path.dirname(SESSION_JSON), exist_ok=True)
     with open(SESSION_JSON, "w", encoding="utf-8") as f:
         json.dump({"userId": c.userId, "ssecurity": c._ssecurity,
@@ -58,6 +62,8 @@ def save_session(c):
 
 
 def load_session():
+    """Load the saved Mi Cloud session (None if absent/corrupt).
+    Загрузить сохранённую сессию Mi Cloud (None если нет/бито)."""
     if not os.path.exists(SESSION_JSON):
         return None
     try:
@@ -74,6 +80,9 @@ def load_session():
 
 
 def qr_login():
+    """The QR login to the Mi Cloud (the steps 1..4, the QR to the file, the session
+    save).
+    QR-логин в Mi Cloud (шаги 1..4, QR в файл, сохранение сессии)."""
     os.makedirs(OUT_DIR, exist_ok=True)
     c = tx.QrCodeXiaomiCloudConnector()
     if not c.login_step_1():
@@ -101,7 +110,8 @@ def qr_login():
 # ---------------------------------------------------------------- запросы
 
 def req_variants(model, region):
-    """Разные формы data для fetch_plugin — пробуем все за один прогон."""
+    """The different data forms for fetch_plugin — try all in one run.
+    Разные формы data для fetch_plugin — пробуем все за один прогон."""
     plugins = [{"model": model}]
     latest = {"api_version": API_VERSION, "app_platform": "Android",
               "region": region, "plugins": plugins, "package_type": ""}
@@ -118,11 +128,16 @@ def req_variants(model, region):
 
 
 def call(c, country, data):
+    """The encrypted fetch_plugin call to the cloud.
+    Зашифрованный вызов fetch_plugin к облаку."""
     url = c.get_api_url(country) + "/v2/plugin/fetch_plugin"
     return c.execute_api_call_encrypted(url, {"data": json.dumps(data)})
 
 
 def find_downloads(obj, acc, path=""):
+    """Recursively collect the download URLs (with the md5/version/model) from the
+    response tree.
+    Рекурсивно собрать URL-загрузки (с md5/версией/моделью) из дерева ответа."""
     if isinstance(obj, dict):
         for k in ("download_url", "url", "safe_url", "package_url"):
             v = obj.get(k)
@@ -139,7 +154,8 @@ def find_downloads(obj, acc, path=""):
 
 
 def summarize(resp):
-    """Короткая сводка непустых блоков ответа."""
+    """A short summary of the non-empty blocks of the response.
+    Короткая сводка непустых блоков ответа."""
     r = resp.get("result") or {}
     bits = []
     for k, v in r.items():
@@ -153,6 +169,8 @@ def summarize(resp):
 
 
 def download(entry, out_dir):
+    """Download the plugin bundle (with the MD5 check) to out_dir.
+    Скачать бандл плагина (с проверкой MD5) в out_dir."""
     name = entry["url"].split("/")[-1].split("?")[0] or "plugin.mpk"
     dest = os.path.join(out_dir, name)
     flush(f"    скачиваю {name} ...")
@@ -170,6 +188,8 @@ def download(entry, out_dir):
 
 
 def main():
+    """The CLI entry point (--relogin/--model).
+    CLI-вход (--relogin/--model)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--relogin", action="store_true", help="игнорировать кэш, новый QR")
     ap.add_argument("--model", default=MODEL)

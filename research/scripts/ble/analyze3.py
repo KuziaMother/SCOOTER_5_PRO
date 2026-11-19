@@ -34,6 +34,9 @@ for base in (0x01800000, 0x01804000, 0x00000000, 0x01000000, 0x01806000):
 BASE = best
 print(f"[i] литералов ldr: {len(lit_vals)}, выбранная база загрузки: 0x{BASE:08x} (hits={best_hits})")
 def to_off(vaddr):
+    """The to_off function of the script.
+    Функция to_off скрипта.
+    """
     o = vaddr - BASE
     return o if 0 <= o < N else None
 

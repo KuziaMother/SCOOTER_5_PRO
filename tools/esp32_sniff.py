@@ -44,6 +44,9 @@ print("SNIF_OK")
 
 
 def conn():
+    """Open the REPL port and wait for the '>>> ' prompt (nudging it with newlines if
+    silent).
+    Открыть порт REPL и дождаться промпта '>>> ' (подталкивая newline если молчит)."""
     s = serial.Serial(PORT, BAUD_REPL, timeout=2)
     # ждём готовность REPL: newline -> '>>> ' (баннер после сброса может задерживаться)
     deadline = time.time() + 10
@@ -63,12 +66,16 @@ def conn():
 
 
 def cmd(s, text, wait=1.0):
+    """Send the command to the REPL and return the reply (after the wait).
+    Отправить команду в REPL и вернуть ответ (после ожидания)."""
     s.write(text.encode() + b"\n")
     time.sleep(wait)
     return s.read(65536).decode(errors="replace")
 
 
 def wait_prompt(s, marker, timeout=10):
+    """Wait for the marker in the REPL output; return the accumulated text.
+    Дождаться маркера в выводе REPL; вернуть накопленный текст."""
     end = time.time() + timeout
     buf = b""
     while time.time() < end:
@@ -81,6 +88,8 @@ def wait_prompt(s, marker, timeout=10):
 
 
 def check():
+    """The REPL liveness check (the free RAM).
+    Проверка живости REPL (свободная RAM)."""
     s = conn()
     out = cmd(s, "import gc; print('CHECK', gc.mem_free())", 1.0)
     line = [l for l in out.splitlines() if l.startswith("CHECK")]
@@ -91,7 +100,9 @@ def check():
 
 
 def probe(s):
-    """Первая команда: если REPL был занят (баннер/main.py) — Ctrl-C и повтор."""
+    """The first command: if the REPL was busy (the banner/main.py) — the Ctrl-C and the
+    retry.
+    Первая команда: если REPL был занят (баннер/main.py) — Ctrl-C и повтор."""
     out = cmd(s, "print('CHECK', 1)", 1.0)
     if "CHECK" not in out:
         s.write(b"\x03")
@@ -102,6 +113,9 @@ def probe(s):
 
 
 def sniff(out_path, seconds, baud):
+    """The capture run: the REPL probe, the sniff script upload, the capture, the dump
+    to out_path.
+    Прогон захвата: probe REPL, загрузка sniff-скрипта, захват, дамп в out_path."""
     s = conn()
     out = probe(s)
     if "CHECK" not in out:

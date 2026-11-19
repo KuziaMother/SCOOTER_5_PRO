@@ -48,6 +48,9 @@ def _b2_fresh(off, args=(), seeds=(), max_insn=300000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -59,6 +62,9 @@ def _b2_fresh(off, args=(), seeds=(), max_insn=300000):
 
 
 def _pw(emu, addr):
+    """The helper function (_pw).
+    Вспомогательная функция (_pw).
+    """
     return [v for pc, a, s, v in emu.periph_writes if a == addr]
 
 
@@ -71,6 +77,9 @@ CFG_2D70 = struct.pack('<I5H', 0x080186A0, 0x0000, 0xBFFF, 0x0030, 0x0400, 0x400
            '(+0x04=0xFFC0, +0x08=0x4030, +0x1C=0x8001, +0x20=1, enable 0x401); '
            'ID2 → то же с bit22; неизвестный ID/гейты → ret 1 без записей')
 def _(run, rng):
+    """Emulator test @ 0x2e0c: §79.3: 0x2e0c(ID, &struct) — ID-пространство {0x40005400, 0x40005800}: ID1 → latch bit21 @0x4002101C + pulse bit21 @0x40021010 + config (+0x04=0xFFC0, +0x08=0x4030, +0x1C=0x8001, +0x20=1, enable 0x401); ID2 → то же с bit22; неизвестный ID/гейты → ret 1 без записей.
+    Тест эмулятора @ 0x2e0c: §79.3: 0x2e0c(ID, &struct) — ID-пространство {0x40005400, 0x40005800}: ID1 → latch bit21 @0x4002101C + pulse bit21 @0x40021010 + config (+0x04=0xFFC0, +0x08=0x4030, +0x1C=0x8001, +0x20=1, enable 0x401); ID2 → то же с bit22; неизвестный ID/гейты → ret 1 без записей.
+    """
     for i, bit in ((ID1, 0x200000), (ID2, 0x400000)):
         emu, uc, lp = _b2_fresh(0x2E0C, [i, RAM + 0x400], seeds=[
             (RAM + 0x400, CFG_2D70), (PERIPH + 0x2101C, 0), (PERIPH + 0x21010, 0), (i, 0)])
@@ -98,6 +107,9 @@ def _(run, rng):
 @t(0x97F4, '§79.3: 0x97f4(ID) — pulse бита в 0x40021010: ID1 → bit21 [0x200000→0], '
            'ID2 → bit22 [0x400000→0] (set-then-clear, 0xc684)')
 def _(run, rng):
+    """Emulator test @ 0x97f4: §79.3: 0x97f4(ID) — pulse бита в 0x40021010: ID1 → bit21 [0x200000→0], ID2 → bit22 [0x400000→0] (set-then-clear, 0xc684).
+    Тест эмулятора @ 0x97f4: §79.3: 0x97f4(ID) — pulse бита в 0x40021010: ID1 → bit21 [0x200000→0], ID2 → bit22 [0x400000→0] (set-then-clear, 0xc684).
+    """
     for i, bit in ((ID1, 0x200000), (ID2, 0x400000)):
         emu, uc, lp = _b2_fresh(0x97F4, [i], seeds=[(PERIPH + 0x21010, 0)])
         assert _pw(emu, PERIPH + 0x21010)[0] == bit, f'0x97f4({i:#x}): {_pw(emu, PERIPH + 0x21010)}'
@@ -109,6 +121,9 @@ def _(run, rng):
            '(r1&0xFF000000)>>16 в u32[base+0x18] (ret 0/1); r1 bit31=1 → биты 24..31 '
            'u32[base+0x14] (ветка статически верифицирована; lsrs #28 — quirk-класс)')
 def _(run, rng):
+    """Emulator test @ 0x9874: §79.3: 0x9874(base, r1) — status-reader: r1 bit31=0 → тест битов (r1&0xFF000000)>>16 в u32[base+0x18] (ret 0/1); r1 bit31=1 → биты 24..31 u32[base+0x14] (ветка статически верифицирована; lsrs #28 — quirk-класс).
+    Тест эмулятора @ 0x9874: §79.3: 0x9874(base, r1) — status-reader: r1 bit31=0 → тест битов (r1&0xFF000000)>>16 в u32[base+0x18] (ret 0/1); r1 bit31=1 → биты 24..31 u32[base+0x14] (ветка статически верифицирована; lsrs #28 — quirk-класс).
+    """
     for seed, exp in ((0x2, 1), (0x0, 0), (0x1, 0)):
         emu, uc, lp = _b2_fresh(0x9874, [ID2, 0x20000], seeds=[(ID2 + 0x18, seed)])
         assert uc.reg_read(UC_ARM_REG_R0) == exp, \
@@ -121,6 +136,9 @@ def _(run, rng):
            'остановка на RAM-trampoline внутри 0x332c (контекст-зависимо); struct '
            '{0x080186A0, 0, 0xBFFF, 0x30, 0x400, 0x4000} на стеке')
 def _(run, rng):
+    """Emulator test @ 0x2d70: §79.3: 0x2d70() — один-разовый init power-стадии: 0x97f4(0x40005800) bit22 pulse (0x40021010: 0xFFFFFFFF → clear с bics-quirk-маской) → GPIO-дескрипторы 0x332c (flash @0x1A780/0x1A794) → delay → 0x2e0c(ID2, &cfg); в изоляции остановка на RAM-trampoline внутри 0x332c (контекст-зависимо); struct {0x080186A0, 0, 0xBFFF, 0x30, 0x400, 0x4000} на стеке.
+    Тест эмулятора @ 0x2d70: §79.3: 0x2d70() — один-разовый init power-стадии: 0x97f4(0x40005800) bit22 pulse (0x40021010: 0xFFFFFFFF → clear с bics-quirk-маской) → GPIO-дескрипторы 0x332c (flash @0x1A780/0x1A794) → delay → 0x2e0c(ID2, &cfg); в изоляции остановка на RAM-trampoline внутри 0x332c (контекст-зависимо); struct {0x080186A0, 0, 0xBFFF, 0x30, 0x400, 0x4000} на стеке.
+    """
     emu, uc, lp = _b2_fresh(0x2D70, [], max_insn=300000)
     assert emu.insn > 100, f'0x2d70: insn={emu.insn}'
     p10 = _pw(emu, PERIPH + 0x21010)

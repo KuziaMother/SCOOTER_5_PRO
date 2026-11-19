@@ -50,6 +50,9 @@ def make_frame_b(hdr, sub, data=b""):
 
 
 def run_subcmd(frame, max_calls=8):
+    """The run_subcmd function of the script.
+    Функция run_subcmd скрипта.
+    """
     emu = McuEmu(trace=False, max_insn=100000)
     uc = emu.uc
     uc.mem_write(PERIPH, b"\xff" * PERIPH_SIZE)
@@ -65,6 +68,9 @@ def run_subcmd(frame, max_calls=8):
     writes = []
 
     def on_w(uc_, access, address, size, value, user):
+        """The on_w function of the script.
+        Функция on_w скрипта.
+        """
         if 0x20000000 <= address < 0x20010000:
             pc = uc_.reg_read(UC_ARM_REG_PC)
             writes.append((pc, address - 0x20000000, size, value))
@@ -117,6 +123,9 @@ PATH_B_SUBS = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--hdr", type=lambda x: int(x, 16), default=0x51)
     ap.add_argument("--data", default="0102030405060708",

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+The FINAL step: the switchFirmware (the MCU, the opcode 6) — the activation of the staged image over the BLE. Explicitly approved by the user (2026-08-22). The v0007 image is byte-identical to the working one; the MCU target's acceptance of the same version is documented (the UART dfu_active).
 ФИНАЛЬНЫЙ ШАГ: switchFirmware(MCU, опкод 6) — активация staged-образа по BLE.
 
 Явно одобрен пользователем (2026-08-22). Образ v0007 байт-в-байт идентичен
@@ -13,6 +14,7 @@ staging очищается. Для той же версии «смена» НЕ 
 Одна команда; далее только read-only опрос версии ([01] на 0x001c).
 
 Запуск:  python probes/mcu_ble_commit.py
+ФИНАЛЬНЫЙ ШАГ: switchFirmware (MCU, опкод 6) — активация staged-образа по BLE. Явно одобрен пользователем (2026-08-22). Образ v0007 байт-в-байт идентичен работающему; принятие MCU той же версии задокументировано (UART dfu_active).
 """
 import asyncio
 import os
@@ -28,6 +30,9 @@ from dreame_flasher import login, poll_mcu_version, OPS  # noqa: E402
 
 
 async def main():
+    """The run: the login, the staged-image commit (the switchFirmware opcode 6), the
+    verification.
+    Прогон: логин, commit staged-образа (switchFirmware опкод 6), верификация."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

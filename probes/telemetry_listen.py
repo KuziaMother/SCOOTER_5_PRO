@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 """
+The passive listening after the login: the search for the telemetry (the battery/the
+speed/the mileage).
+
+The read only: nothing is written to the device, except the mandatory login handshake.
+Everything caught on the 0x001a/0x001b/0x0016 is tried to be decrypted with the
+session key.
+
+The sessionKey layout (the 40 B, the Mijia scheme):
+    [0:16] the dev_key   (the device -> the app)   [16:32] the app_key (the app -> the
+    device)
+    [32:36] the dev_iv                     [36:40] the app_iv
+
+Usage:  python telemetry_listen.py [--secs 40]
+
 Пассивное прослушивание после логина: ищем телеметрию (батарея/скорость/пробег).
 
 Read-only: ничего не пишем в устройство, кроме обязательного login-хендшейка.
@@ -25,7 +39,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 
 
 def try_decrypt(sk: bytes, blob: bytes, direction: str = "dev"):
-    """Перебор counter'ов и раскладок кадра для CCM-расшифровки."""
+    """The counter/frame-layout search for the CCM decryption.
+    Перебор counter'ов и раскладок кадра для CCM-расшифровки."""
     key = sk[0:16] if direction == "dev" else sk[16:32]
     iv = sk[32:36] if direction == "dev" else sk[36:40]
     ccm = AESCCM(key, tag_length=4)
@@ -49,6 +64,8 @@ def try_decrypt(sk: bytes, blob: bytes, direction: str = "dev"):
 
 
 def annotate(pt: bytes) -> str:
+    """The heuristics on the plaintext (the ascii/battery/voltage hints).
+    Хевристики по открытому тексту (ascii/батарея/напряжение)."""
     hints = []
     if all(32 <= b < 127 for b in pt) and pt:
         hints.append(f"ascii='{pt.decode()}'")
@@ -65,6 +82,8 @@ def annotate(pt: bytes) -> str:
 
 
 async def run(mac: str, secs: float):
+    """The run: the login + the passive listening (the decrypt attempts).
+    Прогон: логин + пассивное прослушивание (попытки расшифровки)."""
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     try:

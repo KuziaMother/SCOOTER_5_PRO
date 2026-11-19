@@ -22,6 +22,9 @@ for i in range(0, 0x40, 16):
     print(f"{i:05x}: {hexs:<48} {asc}")
 
 def prologues(a, b):
+    """The prologues function of the script.
+    Функция prologues скрипта.
+    """
     b5 = []
     i = a
     while i + 2 <= b:
@@ -57,6 +60,9 @@ md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
 md.detail = False
 
 def plausible(v):
+    """The plausible function of the script.
+    Функция plausible скрипта.
+    """
     if v is None: return "none"
     if 0x20000000 <= v < 0x20020000: return "ram"
     if 0x40000000 <= v < 0x40100000: return "peri"
@@ -66,6 +72,9 @@ def plausible(v):
     return "out"
 
 def word(off):
+    """The word function of the script.
+    Функция word скрипта.
+    """
     if 0 <= off + 4 <= N:
         return struct.unpack_from("<I", d, off)[0]
     return None

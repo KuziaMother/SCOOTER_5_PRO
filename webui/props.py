@@ -212,6 +212,8 @@ def is_safe(key):
 
 
 def safe_filter(keys):
+    """Keep only the safe (non-secret, non-dangerous) keys, in order, without duplicates.
+    Оставить только безопасные (не секретные, не опасные) ключи, по порядку, без дублей."""
     out = []
     for k in keys:
         if isinstance(k, str) and "." in k:
@@ -223,7 +225,8 @@ def safe_filter(keys):
 
 
 def decode_value(tcode, val):
-    """Значение по коду типа (как в probes/spec_read.py)."""
+    """The value by the type code (as in probes/spec_read.py).
+    Значение по коду типа (как в probes/spec_read.py)."""
     if not val:
         return None
     if tcode == 9 and len(val) == 4:
@@ -236,7 +239,8 @@ def decode_value(tcode, val):
 
 
 def unit_multiplier(mileage_unit_value):
-    """1 = KM (множитель 1.0), иначе MI (0.6213712) — как в плагине."""
+    """1 = KM (multiplier 1.0), otherwise MI (0.6213712) — as in the plugin.
+    1 = KM (множитель 1.0), иначе MI (0.6213712) — как в плагине."""
     try:
         iv = int(mileage_unit_value)
     except (TypeError, ValueError):
@@ -245,16 +249,22 @@ def unit_multiplier(mileage_unit_value):
 
 
 def _is_num(v):
+    """True if v is a real number (int/float, not bool).
+    True если v — настоящее число (int/float, не bool)."""
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
 def _num_str(v):
+    """The number as a string (the %g form for the floats).
+    Число строкой (для float — формат %g)."""
     if isinstance(v, float):
         return f"{v:g}"
     return str(v)
 
 
 def _unit_text(name, v, unit_mult=1.0):
+    """The human-readable value with the unit (the KM/MI multiplier is applied).
+    Человекочитаемое значение с единицей (применяется множитель KM/MI)."""
     if name not in UNITS or not _is_num(v):
         return None
     mul, unit = UNITS[name]
@@ -269,6 +279,8 @@ def _unit_text(name, v, unit_mult=1.0):
 
 
 def _fmt_riding_time(v):
+    """The riding time as h/m/s text.
+    Время поездки текстом ч/м/с."""
     if not _is_num(v) or v < 0:
         return str(v)
     s = int(v)
@@ -282,6 +294,10 @@ def _fmt_riding_time(v):
 
 
 def _fmt_tire(v):
+    """The tire reminder value (the digit string: the state + the interval + the
+    remaining days).
+    Значение напоминания о шинах (цифровая строка: состояние + интервал + остаток
+    дней)."""
     s = str(v).strip()
     if len(s) >= 7 and s.isdigit():
         state = "выкл" if s[0] == "2" else "вкл"
@@ -292,6 +308,8 @@ def _fmt_tire(v):
 
 
 def _fmt_more_battery(v):
+    """The battery extra info (the hex string: the energy/number of deep discharges).
+    Доп. информация батареи (hex-строка: энергия/глубокие разряды)."""
     s = str(v).strip().lower()
     try:
         if len(s) >= 14 and all(c in "0123456789abcdef" for c in s):
@@ -306,6 +324,9 @@ def _fmt_more_battery(v):
 
 
 def _fmt_more_battery2(v):
+    """The extreme-temperature battery data (the hex string: the timestamp + the
+    charging time).
+    Экстрем. температура батареи (hex-строка: время + длительность зарядки)."""
     s = str(v).strip().lower()
     try:
         if len(s) >= 16 and all(c in "0123456789abcdef" for c in s):
@@ -326,6 +347,8 @@ def _fmt_more_battery2(v):
 
 
 def _fmt_ride_record(rec, unit_mult=1.0):
+    """One 16-char ride record (the raw string) as the human-readable line.
+    Одна 16-символьная запись поездки (raw-строка) как человекочитаемая строка."""
     try:
         dur = int(rec[0:4]) / 10.0
         dist = int(rec[4:8]) / 10.0 * unit_mult
@@ -346,6 +369,8 @@ def _fmt_ride_record(rec, unit_mult=1.0):
 
 
 def _fmt_ride_log(v, unit_mult=1.0):
+    """The ride log (the concatenation of 16-char records) as the joined line.
+    Журнал поездок (конкатенация 16-символьных записей) как склеенная строка."""
     s = str(v).strip()
     if not s:
         return "пусто"
@@ -361,7 +386,9 @@ def _fmt_ride_log(v, unit_mult=1.0):
 
 
 def ride_records(v, unit_mult=1.0):
-    """Структурированные записи поездок (для списка в UI). Каждая — dict строк колонок."""
+    """The structured ride records (for the UI list). Each — a dict of the column
+    strings.
+    Структурированные записи поездок (для списка в UI). Каждая — dict строк колонок."""
     s = str(v).strip()
     out = []
     for i in range(0, len(s), 16):
@@ -392,7 +419,8 @@ def ride_records(v, unit_mult=1.0):
 
 
 def format_property(siid, piid, tcode, val, unit_mult=1.0):
-    """Безопасный человекочитаемый вид одного свойства (секреты маскируются)."""
+    """The safe human-readable view of a single property (the secrets are masked).
+    Безопасный человекочитаемый вид одного свойства (секреты маскируются)."""
     key = f"{siid}.{piid}"
     name = NAMES.get((siid, piid), "?")
     base = {

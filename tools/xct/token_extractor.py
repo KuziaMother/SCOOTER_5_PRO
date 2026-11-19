@@ -1,3 +1,16 @@
+"""
+The Xiaomi cloud tokens extractor (vendored, from the Xiaomi-cloud-tokens-extractor
+projects): the Mi Cloud login (the password / the QR code), the RC4-encrypted cloud
+calls (the homes/devices/beaconkey), the tokens extraction. The session is shared
+with the tools/fetch_firmware.py, tools/fetch_plugin.py and the webui/micloud_ltmk.py
+via the secrets/micloud_session.json.
+
+Извлекатель токенов Xiaomi cloud (вендор, из проектов Xiaomi-cloud-tokens-extractor):
+вход в Mi Cloud (пароль / QR-код), RC4-зашифрованные облачные вызовы (дома/устройства/
+beaconkey), извлечение токенов. Сессия общая с tools/fetch_firmware.py,
+tools/fetch_plugin.py и webui/micloud_ltmk.py через secrets/micloud_session.json.
+
+"""
 from abc import ABC, abstractmethod
 import argparse
 import base64
@@ -57,6 +70,9 @@ if args.non_interactive and (not args.username or not args.password):
 init(autoreset=True)
 
 class ColorFormatter(logging.Formatter):
+    """A logging formatter with the per-level color codes.
+    Форматтер логирования с кодами цветов по уровням."""
+
     COLORS = {
         "CRITICAL": Fore.RED + Style.BRIGHT,
         "FATAL": Fore.RED + Style.BRIGHT,
@@ -68,12 +84,21 @@ class ColorFormatter(logging.Formatter):
     }
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format the log record with the level color.
+        Форматировать лог-запись с цветом уровня."""
+
         color = self.COLORS.get(record.levelname, "")
         return color + logging.Formatter.format(self, record)
 
 
 class ColorLogger(logging.Logger):
+    """A logging.Logger with the color handler (the level from the CLI).
+    logging.Logger с color-хендлером (уровень из CLI)."""
+
     def __init__(self, name: str) -> None:
+        """Create the logger with the level from the CLI + the color handler.
+        Создать логгер с уровнем из CLI + color-хендлером."""
+
         level = NAME_TO_LEVEL[args.log_level.upper()]
         logging.Logger.__init__(self, name, level)
         color_formatter = ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -86,8 +111,14 @@ _LOGGER = logging.getLogger("token_extractor")
 
 
 class XiaomiCloudConnector(ABC):
+    """The base class of the Xiaomi cloud connectors: the agent/device ID, the RC4-encrypted API calls, the nonce/signature generation.
+    Базовый класс коннекторов Xiaomi cloud: agent/device ID, RC4-зашифрованные API-вызовы, генерация nonce/сигнатур."""
+
 
     def __init__(self):
+        """Generate the agent/device ID and create the HTTP session (the credentials are set by the login).
+        Сгенерировать agent/device ID и создать HTTP-сессию (креды ставятся логин-ом)."""
+
         self._agent = self.generate_agent()
         self._device_id = self.generate_device_id()
         self._session = requests.session()
@@ -97,15 +128,24 @@ class XiaomiCloudConnector(ABC):
 
     @abstractmethod
     def login(self) -> bool:
+        """The abstract login (implemented by the subclasses).
+        Абстрактный логин (реализуется подклассами)."""
+
         pass
 
     def get_homes(self, country):
+        """The gethome call: the homes of the account (the encrypted call).
+        Вызов gethome: дома аккаунта (зашифрованный вызов)."""
+
         url = self.get_api_url(country) + "/v2/homeroom/gethome"
         params = {
             "data": '{"fg": true, "fetch_share": true, "fetch_share_dev": true, "limit": 300, "app_ver": 7}'}
         return self.execute_api_call_encrypted(url, params)
 
     def get_devices(self, country, home_id, owner_id):
+        """The home_device_list call: the devices of the home.
+        Вызов home_device_list: устройства дома."""
+
         url = self.get_api_url(country) + "/v2/home/home_device_list"
         params = {
             "data": '{"home_owner": ' + str(owner_id) +
@@ -115,6 +155,9 @@ class XiaomiCloudConnector(ABC):
         return self.execute_api_call_encrypted(url, params)
 
     def get_dev_cnt(self, country):
+        """The get_device_cnt call: the number of the devices (the session check).
+        Вызов get_device_cnt: число устройств (проверка сессии)."""
+
         url = self.get_api_url(country) + "/v2/user/get_device_cnt"
         params = {
             "data": '{ "fetch_own": true, "fetch_share": true}'
@@ -122,6 +165,9 @@ class XiaomiCloudConnector(ABC):
         return self.execute_api_call_encrypted(url, params)
 
     def get_beaconkey(self, country, did):
+        """The blt_get_beaconkey call for the device.
+        Вызов blt_get_beaconkey для устройства."""
+
         url = self.get_api_url(country) + "/v2/device/blt_get_beaconkey"
         params = {
             "data": '{"did":"' + did + '","pdid":1}'
@@ -129,6 +175,9 @@ class XiaomiCloudConnector(ABC):
         return self.execute_api_call_encrypted(url, params)
 
     def execute_api_call_encrypted(self, url, params):
+        """The RC4-encrypted POST to the cloud (the nonce/signature/cookies per the protocol); returns the JSON or None.
+        RC4-зашифрованный POST к облаку (nonce/сигнатура/cookies по протоколу); вернуть JSON или None."""
+
         headers = {
             "Accept-Encoding": "identity",
             "User-Agent": self._agent,
@@ -158,24 +207,39 @@ class XiaomiCloudConnector(ABC):
 
     @staticmethod
     def get_api_url(country):
+        """The API base URL for the country.
+        Базовый URL API для страны."""
+
         return "https://" + ("" if country == "cn" else (country + ".")) + "api.io.mi.com/app"
 
     def signed_nonce(self, nonce):
+        """The SHA256 of the ssecurity + the nonce (the base64).
+        SHA256 от ssecurity + nonce (base64)."""
+
         hash_object = hashlib.sha256(base64.b64decode(self._ssecurity) + base64.b64decode(nonce))
         return base64.b64encode(hash_object.digest()).decode("utf-8")
 
     @staticmethod
     def signed_nonce_sec(nonce, ssecurity):
+        """The same with the explicit ssecurity argument (the static version).
+        То же с явным аргументом ssecurity (статическая версия)."""
+
         hash_object = hashlib.sha256(base64.b64decode(ssecurity) + base64.b64decode(nonce))
         return base64.b64encode(hash_object.digest()).decode("utf-8")
 
     @staticmethod
     def generate_nonce(millis):
+        """The random nonce (the 8 random bytes + the 4 bytes of the minute counter).
+        Случайный nonce (8 случайных байт + 4 байта счётчика минут)."""
+
         nonce_bytes = os.urandom(8) + (int(millis / 60000)).to_bytes(4, byteorder="big")
         return base64.b64encode(nonce_bytes).decode()
 
     @staticmethod
     def generate_agent():
+        """The fake User-Agent (as the Mi Home app).
+        Псевдо User-Agent (как у приложения Mi Home)."""
+
         agent_id = "".join(
             map(lambda i: chr(i), [random.randint(65, 69) for _ in range(13)])
         )
@@ -184,10 +248,16 @@ class XiaomiCloudConnector(ABC):
 
     @staticmethod
     def generate_device_id():
+        """The random 6-char device ID.
+        Случайный 6-символьный device ID."""
+
         return "".join(map(lambda i: chr(i), [random.randint(97, 122) for _ in range(6)]))
 
     @staticmethod
     def generate_signature(url, signed_nonce, nonce, params):
+        """The HMAC-SHA256 signature (the legacy scheme).
+        HMAC-SHA256-сигнатура (старая схема)."""
+
         signature_params = [url.split("com")[1], signed_nonce, nonce]
         for k, v in params.items():
             signature_params.append(f"{k}={v}")
@@ -197,6 +267,9 @@ class XiaomiCloudConnector(ABC):
 
     @staticmethod
     def generate_enc_signature(url, method, signed_nonce, params):
+        """The SHA1 signature of the encrypted scheme (the method + the URL + the params + the nonce).
+        SHA1-сигнатура зашифрованной схемы (метод + URL + параметры + nonce)."""
+
         signature_params = [str(method).upper(), url.split("com")[1].replace("/app/", "/")]
         for k, v in params.items():
             signature_params.append(f"{k}={v}")
@@ -206,6 +279,9 @@ class XiaomiCloudConnector(ABC):
 
     @staticmethod
     def generate_enc_params(url, method, signed_nonce, nonce, params, ssecurity):
+        """RC4-encrypt the params + add the signature/ssecurity/_nonce.
+        RC4-зашифровать параметры + добавить signature/ssecurity/_nonce."""
+
         params["rc4_hash__"] = XiaomiCloudConnector.generate_enc_signature(url, method, signed_nonce, params)
         for k, v in params.items():
             params[k] = XiaomiCloudConnector.encrypt_rc4(signed_nonce, v)
@@ -218,24 +294,39 @@ class XiaomiCloudConnector(ABC):
 
     @staticmethod
     def to_json(response_text):
+        """Parse the response JSON (stripping the &&&START&&& marker).
+        Разобрать JSON ответа (срезая маркер &&&START&&&)."""
+
         return json.loads(response_text.replace("&&&START&&&", ""))
 
     @staticmethod
     def encrypt_rc4(password, payload):
+        """The RC4 encryption (with the 1024-byte skip) -> the base64.
+        RC4-шифрование (с пропуском 1024 байт) -> base64."""
+
         r = ARC4.new(base64.b64decode(password))
         r.encrypt(bytes(1024))
         return base64.b64encode(r.encrypt(payload.encode())).decode()
 
     @staticmethod
     def decrypt_rc4(password, payload):
+        """The RC4 decryption (with the 1024-byte skip).
+        RC4-дешифрование (с пропуском 1024 байт)."""
+
         r = ARC4.new(base64.b64decode(password))
         r.encrypt(bytes(1024))
         return r.encrypt(base64.b64decode(payload))
 
 
 class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
+    """The Mi Cloud login with the username/password (the steps 1..3 + the captcha/2FA).
+    Вход в Mi Cloud по логину/паролю (шаги 1..3 + captcha/2FA)."""
+
 
     def __init__(self):
+        """The state fields of the password login.
+        Поля состояния логина по паролю."""
+
         super().__init__()
         self._sign = None
         self._cUserId = None
@@ -244,6 +335,9 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         self._code = None
 
     def login(self) -> bool:
+        """The username/password login (the steps 1..3, the prompts).
+        Логин по логину/паролю (шаги 1..3, промпты)."""
+
         if args.username:
             self._username = args.username
         else:
@@ -279,6 +373,9 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         return True
 
     def login_step_1(self):
+        """The serviceLogin call: get the _sign (or, if already known, the ssecurity).
+        Вызов serviceLogin: получить _sign (или, если уже известно, ssecurity)."""
+
         _LOGGER.debug("login_step_1")
         url = "https://account.xiaomi.com/pass/serviceLogin?sid=xiaomiio&_json=true"
         headers = {
@@ -308,6 +405,9 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         return False
 
     def login_step_2(self) -> bool:
+        """The serviceLoginAuth2 call: the password verification (the captcha/2FA if needed).
+        Вызов serviceLoginAuth2: проверка пароля (captcha/2FA при необходимости)."""
+
         _LOGGER.debug("login_step_2")
         url: str = "https://account.xiaomi.com/pass/serviceLoginAuth2"
         headers: dict = {
@@ -375,6 +475,9 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         return valid
 
     def login_step_3(self):
+        """Fetch the location: extract the serviceToken cookie.
+        Забрать location: извлечь cookie serviceToken."""
+
         _LOGGER.debug("login_step_3")
         headers = {
             "User-Agent": self._agent,
@@ -387,6 +490,9 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         return response.status_code == 200
 
     def handle_captcha(self, captcha_url: str) -> str:
+        """Download the captcha image, serve it over the local HTTP, get the user's solution.
+        Скачать captcha-картинку, подать её локальным HTTP, получить решение пользователя."""
+
         # Full URL in case it's relative
         if captcha_url.startswith("/"):
             captcha_url = "https://account.xiaomi.com" + captcha_url
@@ -597,14 +703,23 @@ class PasswordXiaomiCloudConnector(XiaomiCloudConnector):
         return True
 
     def install_service_token_cookies(self, token: str):
+        """Set the service token cookies on the mi.com/xiaomi.com domains.
+        Поставить cookies сервисного токена на домены mi.com/xiaomi.com."""
+
         for d in [".api.io.mi.com", ".io.mi.com", ".mi.com"]:
             self._session.cookies.set("serviceToken", token, domain=d)
             self._session.cookies.set("yetAnotherServiceToken", token, domain=d)
 
 
 class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
+    """The Mi Cloud login via the QR code (the steps 1..4).
+    Вход в Mi Cloud по QR-коду (шаги 1..4)."""
+
 
     def __init__(self):
+        """The QR login state (the session fields).
+        Состояние QR-логина (поля сессии)."""
+
         super().__init__()
         self._cUserId = None
         self._pass_token = None
@@ -614,6 +729,9 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         self._long_polling_url = None
 
     def login(self) -> bool:
+        """The QR login (the steps 1..4).
+        QR-логин (шаги 1..4)."""
+
 
         if not self.login_step_1():
             print_if_interactive(f"{Fore.RED}Unable to get login message.")
@@ -634,6 +752,9 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         return True
 
     def login_step_1(self) -> bool:
+        """Get the QR code (the authStart call).
+        Получить QR-код (вызов authStart)."""
+
         _LOGGER.debug("login_step_1")
         url = "https://account.xiaomi.com/longPolling/loginUrl"
         data = {
@@ -661,6 +782,9 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         return False
 
     def login_step_2(self) -> bool:
+        """Return the QR image + the login URL (for the manual browser path).
+        Вернуть картинку QR + URL логина (для ручного пути через браузер)."""
+
         _LOGGER.debug("login_step_2")
         url = self._qr_image_url
         _LOGGER.debug("login_step_2: Image URL: %s", url)
@@ -688,6 +812,9 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         return False
 
     def login_step_3(self) -> bool:
+        """Wait for the QR scan (the long-polling) — the ssecurity.
+        Дождаться скана QR (long-polling) — ssecurity."""
+
         _LOGGER.debug("login_step_3")
 
         url = self._long_polling_url
@@ -738,6 +865,9 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
         return True
 
     def login_step_4(self) -> bool:
+        """The final step: the serviceToken (the location).
+        Финальный шаг: serviceToken (location)."""
+
         _LOGGER.debug("login_step_4")
         _LOGGER.debug("Fetching service token...")
 
@@ -755,19 +885,31 @@ class QrCodeXiaomiCloudConnector(XiaomiCloudConnector):
 
 
 def print_if_interactive(value: str="") -> None:
+    """Print only in the interactive mode (the value is optional).
+    Печать только в интерактивном режиме (значение необязательно)."""
+
     if not args.non_interactive:
         print(value)
 
 def print_tabbed(value: str, tab: int) -> None:
+    """Print the value with the tab indentation.
+    Печать значения с табуляцией."""
+
     print_if_interactive(" " * tab + value)
 
 
 def print_entry(key: str, value: str, tab: int) -> None:
+    """Print the key=value entry with the indentation.
+    Печать записи key=value с отступом."""
+
     if value:
         print_tabbed(f'{Fore.YELLOW}{key + ":": <10}{Style.RESET_ALL}{value}', tab)
 
 
 def print_banner() -> None:
+    """Print the banner (the tool header).
+    Печать баннера (шапки инструмента)."""
+
     print_if_interactive(Fore.YELLOW + Style.BRIGHT + r"""
                                Xiaomi Cloud
 ___ ____ _  _ ____ _  _ ____    ____ _  _ ___ ____ ____ ____ ___ ____ ____ 
@@ -780,14 +922,26 @@ ___ ____ _  _ ____ _  _ ____    ____ _  _ ___ ____ ____ ____ ___ ____ ____
 
 
 def start_image_server(image: bytes) -> None:
+    """Serve the image over the local HTTP (the port 31415) so the user can open it in the browser.
+    Подача картинки через локальный HTTP (порт 31415), чтобы пользователь открыл её в браузере."""
+
     class ImgHttpHandler(BaseHTTPRequestHandler):
+        """The HTTP handler: serve the single image.
+        HTTP-хендлер: подавать одну картинку."""
+
 
         def do_GET(self) -> None:
+            """Return the image (the 200).
+            Вернуть картинку (200)."""
+
             self.send_response(200)
             self.end_headers()
             self.wfile.write(image)
 
         def log_message(self, msg, *args) -> None:
+            """Silence the request log.
+            Молчаливый лог запросов."""
+
             _LOGGER.debug(msg, *args)
 
     httpd = HTTPServer(("", 31415), ImgHttpHandler)
@@ -805,6 +959,10 @@ def present_image_image(
         message_file_saved: str,
         message_manually_open_file: str,
 ) -> None:
+    """Present the image: serve it over the local HTTP + save to a temp file (the
+    messages per the fallbacks).
+    Показать картинку: подать её локальным HTTP + сохранить во временный файл
+    (сообщения по вариантам)."""
     try:
         # Try to serve an image file
         start_image_server(image_content)
@@ -825,6 +983,9 @@ def present_image_image(
 
 
 def main() -> None:
+    """The CLI entry point (the login + the tokens output).
+    CLI-вход (логин + вывод токенов)."""
+
     print_banner()
     if args.non_interactive:
         connector = PasswordXiaomiCloudConnector()
@@ -909,6 +1070,9 @@ def main() -> None:
 
 
 def get_servers_to_check() -> list[str]:
+    """The list of the cloud servers to check (in the given order).
+    Список серверов облака для проверки (в заданном порядке)."""
+
     servers_str = ", ".join(SERVERS)
     if args.server is not None:
         server = args.server

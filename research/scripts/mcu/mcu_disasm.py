@@ -37,6 +37,9 @@ FIELDS = {
 
 
 def field_tag(v):
+    """The field_tag function of the script.
+    Функция field_tag скрипта.
+    """
     off = v - RAM
     if off in FIELDS:
         return f"  <<< {FIELDS[off]}"
@@ -47,6 +50,9 @@ def field_tag(v):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(FW, "rb").read()
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
     args = [a for a in sys.argv[1:] if not a.startswith("--")]

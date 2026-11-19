@@ -15,6 +15,9 @@ for off in range(0, 64, 16):
 
 # --- энтропия по блокам 1К ---
 def entropy(b):
+    """The entropy function of the script.
+    Функция entropy скрипта.
+    """
     if not b: return 0
     cnt = collections.Counter(b); n = len(b)
     return -sum((c/n)*math.log2(c/n) for c in cnt.values())

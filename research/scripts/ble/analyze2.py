@@ -22,6 +22,9 @@ print(f"  [0x28] u32=0x{u32(0x28):08x}")
 
 # ---------- энтропия -> секции ----------
 def ent(b):
+    """The ent function of the script.
+    Функция ent скрипта.
+    """
     if not b: return 0
     c = collections.Counter(b); n = len(b)
     return -sum((x/n)*math.log2(x/n) for x in c.values())

@@ -13,10 +13,16 @@ CODE=[(0x01200,0x02400),(0x02600,0x10200),(0x10400,0x10e00),(0x11000,0x12400),
       (0x18e00,0x19200),(0x19a00,0x24200),(0x24400,0x24600)]
 fstarts=sorted(o for a,b in CODE for o in range(a,b,2) if (u16(o)&0xFF00)==0xB500)
 def fend(f):
+    """The fend function of the script.
+    Функция fend скрипта.
+    """
     i=bisect.bisect_right(fstarts,f)
     return min(fstarts[i] if i<len(fstarts) else f+300, f+300)
 
 def dis(f, lim=42, title=""):
+    """The dis function of the script.
+    Функция dis скрипта.
+    """
     print(f"\n=== {title} func_0x{f:05x} ===")
     n=0
     for ins in md.disasm(d[f:fend(f)], f):
@@ -47,6 +53,9 @@ print("\n=== movw-константы в мотор/лимит-функциях (
 INTEREST=set()
 # правдоподобные лимиты самоката
 def plausible(v):
+    """The plausible function of the script.
+    Функция plausible скрипта.
+    """
     return (v in (5,6,20,25,32) or 40<=v<=320 or   # км/ч, км/ч×10
             v in (250,200,300,150,100) or
             3000<=v<=5500 or 30000<=v<=55000 or     # мВ ячейка / АКБ

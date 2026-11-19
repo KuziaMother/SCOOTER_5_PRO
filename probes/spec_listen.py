@@ -1,5 +1,40 @@
 #!/usr/bin/env python3
 """
+The listener of the property-change push notifications (the MIoT spec over the BLE).
+
+The subscription is ALREADY there: the `Transport.connect()` itself sets the CCCD on ALL
+the notify characteristics of the FE95, including the spec-notify `0x001b`. Proven on
+the same path — the `spec_read.py` successfully receives the REPLIES on the `0x001b`
+via this subscription. The push goes by the same notify path `0x001b`, just WITHOUT the
+preceding request on the `0x001a`. (The plugin additionally calls
+`bt.subscribeMessages("prop.s.p", ...)` — this is only the local routing of the JS
+callbacks by the topics, and NOT a separate command to the device; see the FACTS.md
+"The device can PUSH".)
+
+The push comes ONLY on the PROPERTY CHANGE. On the standing scooter with the full
+charge there is nothing to change — so the "silence" by itself refutes nothing. To see
+the traffic, something has to be changed: press the throttle, turn the light on/off,
+ride the scooter.
+
+The device frame format — THE SAME as the read response (the spec_read.py):
+  single:    [0000][02][00][counter u16 LE][ct]   -> the ACK [0000][03][00]
+  multi:     [0000][00][ch][fc]  -> we ACK 01 -> the frames [seq u16][data] -> we ACK 00
+The decryption: the key=sk[0:16], the iv=sk[32:36] (the device keys), the AES-CCM, the
+tag 4 B.
+
+READ ONLY: nothing is written, except the mandatory transport ACKs and (optional)
+the baseline reads.
+
+The run order:
+  the connect -> the login -> [the baseline: the DEFAULT_SET as the "before the
+  changes", one property at a time] -> the pre-roll countdown -> the listening window
+  (change the state!) -> the result.
+
+Usage:
+  python probes/spec_listen.py [--secs 120] [--pre 5] [--no-baseline] [--log PATH]
+Everything printed (including the login) is duplicated into the log file (the default
+logs/).
+
 Слушатель пуш-уведомлений об изменении свойств (MIoT-spec поверх BLE).
 
 Подписка УЖЕ есть: `Transport.connect()` сам ставит CCCD на ВСЕ notify-характеристики
@@ -58,11 +93,17 @@ SUBSCRIBABLE = {
 
 
 class _Tee:
-    """Дублирует вывод в консоль и в лог-файл."""
+    """Duplicates the output into the console and the log file.
+    Дублирует вывод в консоль и в лог-файл."""
+
     def __init__(self, *streams):
+        """The streams to write to.
+        Потоки для записи."""
         self.streams = streams
 
     def write(self, s):
+        """Write to all the streams (the errors are suppressed).
+        Записать во все потоки (ошибки подавляются)."""
         for st in self.streams:
             try:
                 st.write(s)
@@ -70,6 +111,8 @@ class _Tee:
                 pass
 
     def flush(self):
+        """Flush all the streams.
+        Flush всех потоков."""
         for st in self.streams:
             try:
                 st.flush()
@@ -78,7 +121,9 @@ class _Tee:
 
 
 def parse_props(pt):
-    """Разбор spec-кадра: заголовок + объекты [siid][piid][status][tl][value]."""
+    """The parsing of the spec frame: the header + the objects [siid][piid][status][tl]
+    [value].
+    Разбор spec-кадра: заголовок + объекты [siid][piid][status][tl][value]."""
     out = []
     if len(pt) < 6:
         return [("?", "?", None, f"короткий кадр {pt.hex()}")]
@@ -96,7 +141,10 @@ def parse_props(pt):
 
 
 async def read_baseline(t, sk):
-    """«До изменений»-снапшот в той же сессии (CCCD уже стоит, один логин).
+    """The "before the changes" snapshot in the same session (the CCCD is already set,
+one login). The device serves only the FIRST request object -> read one by one, the
+    app counter grows. The read only.
+    «До изменений»-снапшот в той же сессии (CCCD уже стоит, один логин).
     Устройство обслуживает только ПЕРВЫЙ объект запроса => читаем по одному,
     счётчик app растёт. Только чтение."""
     print("\n=== БАЗА (значения ДО изменений) ===")
@@ -114,6 +162,9 @@ async def read_baseline(t, sk):
 
 
 async def listen(mac, secs, pre=5.0, baseline=True, log_path=None, snoop=False):
+    """The run: the login + the baseline + the listening window (the pushes); the log
+    file.
+    Прогон: логин + baseline + окно прослушивания (пуши); лог-файл."""
     if log_path is None:
         d = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "logs")
         _os.makedirs(d, exist_ok=True)
@@ -164,6 +215,8 @@ async def listen(mac, secs, pre=5.0, baseline=True, log_path=None, snoop=False):
                 ch_counts = {}
 
                 async def handle_plain(pt, src):
+                    """Handle the decrypted push (the properties print + the counter).
+                    Обработать расшифрованный пуш (печать свойств + счётчик)."""
                     nonlocal n_push
                     n_push += 1
                     res = parse_props(pt)

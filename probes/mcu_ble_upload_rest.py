@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe 4: finish the MCU image upload over the BLE from the fragment 3 (the 1-2 are already in the staging).
 Проба 4: завершить заливку MCU-образа по BLE с фрагмента 3 (1–2 уже в staging).
 
 Модель (проверена пробами 1–3):
@@ -12,6 +13,7 @@
 новом индексе — стоп и отчёт (модель неверна, не спамим дальше).
 
 Запуск:  python probes/mcu_ble_upload_rest.py [START]   (START по умолчанию 3)
+Проба 4: завершить заливку MCU-образа по BLE с фрагмента 3 (1-2 уже в staging).
 """
 import asyncio
 import os
@@ -29,6 +31,8 @@ MCU_IMG = os.path.join(ROOT, "firmware_ota",
 
 
 async def main():
+    """The run: the login + the MCU upload from the fragment N (the argv[1], default 3).
+    Прогон: логин + заливка MCU с фрагмента N (argv[1], дефолт 3)."""
     start = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)

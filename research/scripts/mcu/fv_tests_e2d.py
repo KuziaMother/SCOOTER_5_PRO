@@ -12,7 +12,13 @@ _OD39D_FAM = {0x0D6E4: 0xE, 0x0D734: 0xD, 0x0D75C: 0x10,
 
 
 def _mk_od39d(addr, ch):
+    """The helper function (_mk_od39d).
+    Вспомогательная функция (_mk_od39d).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         from emulator.mcu_emu import RAM as _R
         import struct as _st
         cap, _emu = _intercept(addr, 0x0D39D,
@@ -31,7 +37,13 @@ _OD46D_FAM = {0x0D70C: 0x9, 0x0D7AC: 0xB, 0x0D7FC: 0xC, 0x0D824: 0xA}
 
 
 def _mk_od46d(addr, ch):
+    """The helper function (_mk_od46d).
+    Вспомогательная функция (_mk_od46d).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         from emulator.mcu_emu import RAM as _R
         import struct as _st
         cap, _emu = _intercept(addr, 0x0D46D,
@@ -55,7 +67,13 @@ _FX_DELEG = {0x0395C: (0x0D299, 0), 0x03966: (0x0D299, 1), 0x03B20: (0x01BDD, 0x
 
 
 def _mk_pt(daddr, haddr):
+    """The helper function (_mk_pt).
+    Вспомогательная функция (_mk_pt).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0x5678, 0xABCD, 0))
         assert cap.get('r0') == 0x1234 and cap.get('r1') == 0x5678, \
             f'0x{daddr:05x}: {cap}'
@@ -63,7 +81,13 @@ def _mk_pt(daddr, haddr):
 
 
 def _mk_fx(daddr, haddr, val):
+    """The helper function (_mk_fx).
+    Вспомогательная функция (_mk_fx).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, arg=0)
         assert cap.get('r0') == val, \
             f'0x{daddr:05x}: r0={cap.get("r0"):#x} want {val:#x}'
@@ -85,28 +109,52 @@ _R3FIX = {0x0C200: 0x09F65}  # helper r3=1, r0 passthrough
 
 
 def _mk_pt2(daddr, haddr):
+    """The helper function (_mk_pt2).
+    Вспомогательная функция (_mk_pt2).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0, 0, 0))
         assert cap.get('r0') == 0x1234, f'0x{daddr:05x}: {cap}'
     return _test
 
 
 def _mk_fx2(daddr, haddr, val):
+    """The helper function (_mk_fx2).
+    Вспомогательная функция (_mk_fx2).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, arg=0)
         assert cap.get('r0') == val, f'0x{daddr:05x}: r0={cap.get("r0"):#x} want {val:#x}'
     return _test
 
 
 def _mk_shuf(daddr, haddr):
+    """The helper function (_mk_shuf).
+    Вспомогательная функция (_mk_shuf).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, args=(0x1111, 0, 0, 0))
         assert cap.get('r1') == 0x1111, f'0x{daddr:05x}: r1={cap.get("r1"):#x} want 0x1111'
     return _test
 
 
 def _mk_r3fix(daddr, haddr):
+    """The helper function (_mk_r3fix).
+    Вспомогательная функция (_mk_r3fix).
+    """
     def _test(run, rng):
+        """The helper function (_test).
+        Вспомогательная функция (_test).
+        """
         cap, _emu = _intercept(daddr, haddr, args=(0x1234, 0, 0, 0))
         assert cap.get('r0') == 0x1234 and cap.get('r3') == 1, f'0x{daddr:05x}: {cap}'
     return _test
@@ -130,6 +178,9 @@ for _d, _h in sorted(_R3FIX.items()):
 
 
 def _t_19fbe(run, rng):
+    """Emulator test @ 0x19fbe.
+    Тест эмулятора @ 0x19fbe.
+    """
     for a in (5, 123456, -7):
         cap, _ = _intercept(0x19FBE, 0x1A0F9, args=(a & 0xFFFFFFFF, 0, 0, 0))
         assert cap.get('r0') == (a & 0xFFFFFFFF) and cap.get('r1') == 0 \
@@ -137,6 +188,9 @@ def _t_19fbe(run, rng):
 
 
 def _t_19fae(run, rng):
+    """Emulator test @ 0x19fae.
+    Тест эмулятора @ 0x19fae.
+    """
     for a, b in ((100, 200), (-50, 30), (100, -5), (0x40000000, 0x10000000)):
         cap, _ = _intercept(0x19FAE, 0x1A0F9, args=(a & 0xFFFFFFFF, b & 0xFFFFFFFF, 0, 0))
         exp_r0 = (a + b) & 0xFFFFFFFF
@@ -146,6 +200,9 @@ def _t_19fae(run, rng):
 
 
 def _t_19fcc(run, rng):
+    """Emulator test @ 0x19fcc.
+    Тест эмулятора @ 0x19fcc.
+    """
     for x in (5, -5, 0, 123456, -123456):
         cap, _ = _intercept(0x19FCC, 0x1A185, args=(x & 0xFFFFFFFF, 0, 0, 0))
         assert cap.get('r0') == (abs(x) & 0xFFFFFFFF) and cap.get('r1') == 0 \
@@ -164,6 +221,9 @@ t(0x19FCC, 'E2-b40: 0x19fcc(x) -> 0x1a185(abs(x),0,0,0) [abs wrapper]')(_t_19fcc
 
 
 def _t_0cb10(run, rng):
+    """Emulator test @ 0xcb10.
+    Тест эмулятора @ 0xcb10.
+    """
     import struct as _st
     r0, emu = _fresh_call(0x0CB10, args=(0,))
     a = _st.unpack('<I', bytes(emu.uc.mem_read(0x40002824, 4)))[0]
@@ -175,6 +235,9 @@ t(0x0CB10, 'E2-b41: 0x0cb10 periph-init -> [0x40002824]=0xff (seq ca->53->ff)')(
 
 # --- E2-batch42: stateful делегаторы (gate / fixed-ptr / stack-arg) ---
 def _t_0e6ec(run, rng):
+    """Emulator test @ 0xe6ec.
+    Тест эмулятора @ 0xe6ec.
+    """
     from emulator.mcu_emu import RAM as _R
     cap, _ = _intercept(0x0E6EC, 0x0F14D, extra_ram=[(_R + 0x13C9, b'\x01')])
     assert cap.get('r0') == 1, f'gate=1: {cap}'
@@ -183,11 +246,17 @@ def _t_0e6ec(run, rng):
 
 
 def _t_123c0(run, rng):
+    """Emulator test @ 0x123c0.
+    Тест эмулятора @ 0x123c0.
+    """
     cap, _ = _intercept(0x123C0, 0x0B855, arg=0)
     assert cap.get('r0') == 0x20000DD8, f'{cap}'
 
 
 def _t_139ac(run, rng):
+    """Emulator test @ 0x139ac.
+    Тест эмулятора @ 0x139ac.
+    """
     import struct as _st
     cap, emu = _intercept(0x139AC, 0x13C79, arg=0)
     r0v = cap.get('r0')
@@ -202,11 +271,17 @@ t(0x139AC, 'E2-b42: 0x139ac -> 0x13c79(sp) [writes 3 to stack, passes ptr]')(_t_
 
 # --- E2-batch43: последние тонкие делегаторы (класс исчерпан) ---
 def _t_02a5c(run, rng):
+    """Emulator test @ 0x2a5c.
+    Тест эмулятора @ 0x2a5c.
+    """
     cap, _ = _intercept(0x02A5C, 0x01BDD, arg=0)
     assert cap.get('r0') == 0x9A, f'{cap}'
 
 
 def _t_08afc(run, rng):
+    """Emulator test @ 0x8afc.
+    Тест эмулятора @ 0x8afc.
+    """
     for arg in (0x1234, 7):
         cap, _ = _intercept(0x08AFC, 0x0218D, args=(arg, 0, 0, 0))
         assert cap.get('r0') == arg, f'arg={arg}: {cap}'
@@ -218,6 +293,9 @@ t(0x08AFC, 'E2-b43: 0x08afc -> 0x218d(r0) [passthrough, stores result]')(_t_08af
 
 # --- E2-batch44: setters (RAM/periph) + init-группы (2-3 bl) ---
 def _t_087de(run, rng):
+    """Emulator test @ 0x87de.
+    Тест эмулятора @ 0x87de.
+    """
     import struct as _st
     from emulator.mcu_emu import RAM as _R
     scratch = _R + 0x1000
@@ -228,6 +306,9 @@ def _t_087de(run, rng):
 
 
 def _t_1f1c0(run, rng):
+    """Emulator test @ 0x1f1c0.
+    Тест эмулятора @ 0x1f1c0.
+    """
     import struct as _st
     sent = 0xC0FFEE11
     r0, emu = _fresh_call(0x1F1C0, args=(sent,))
@@ -236,6 +317,9 @@ def _t_1f1c0(run, rng):
 
 
 def _t_211ec(run, rng):
+    """Emulator test @ 0x211ec.
+    Тест эмулятора @ 0x211ec.
+    """
     import struct as _st
     sent = 0xC0FFEE11
     r0, emu = _fresh_call(0x211EC, args=(sent,))
@@ -244,7 +328,13 @@ def _t_211ec(run, rng):
 
 
 def _mk_init_group(fn, last):
+    """The helper function (_mk_init_group).
+    Вспомогательная функция (_mk_init_group).
+    """
     def _t(run, rng, _fn=fn, _last=last):
+        """The helper function (_t).
+        Вспомогательная функция (_t).
+        """
         cap, _ = _intercept(_fn, _last, arg=0)
         assert cap, f'0x{_fn:x} did not reach last bl 0x{_last:x}'
     return _t
@@ -268,6 +358,9 @@ t(0x09B44, 'E2-b45: 0x09b44 init-group (5 bl: 0x9ddd->...->0x9db5)')(_mk_init_gr
 
 
 def _t_0df10(run, rng):
+    """Emulator test @ 0xdf10.
+    Тест эмулятора @ 0xdf10.
+    """
     import struct as _st
     from emulator.mcu_emu import RAM as _R
     buf = _R + 0x5000
@@ -289,6 +382,9 @@ t(0x0DF10, 'E2-b45: 0x0df10 protocol-parser magic-gate [s+2]==0xaa (mismatch->re
 # (см. PROGRAM.md); тестируем только детерминированный gate по первому возврату.
 
 def _t_19f7c(run, rng):
+    """Emulator test @ 0x19f7c.
+    Тест эмулятора @ 0x19f7c.
+    """
     cases = [
         (1, 0, 5), (5, 0, 3), (3, 0x1234, 0x1000),   # r2>0 -> r0_out=r0
         (1, 0, 0), (1, 0, -5), (5, 7, 0x80000000),   # r2<=0 -> r0_out=0
@@ -306,14 +402,23 @@ t(0x19F7C, 'E2-b46: 0x19f7c compute gate: r0_out = r0 if (signed)r2>0 else 0')(_
 
 # --- E2-batch47: тонкие делегаторы + init-группы (цепочки 0xc625/0x8589/0x5971/0x59a5) ---
 def _t_05874(run, rng):
+    """Emulator test @ 0x5874.
+    Тест эмулятора @ 0x5874.
+    """
     cap, _emu = _intercept(0x05874, 0x597D)
     assert cap.get('r0') == 1, f'r0={cap.get("r0"):#x} want 1'
 
 def _t_058f6(run, rng):
+    """Emulator test @ 0x58f6.
+    Тест эмулятора @ 0x58f6.
+    """
     cap, _emu = _intercept(0x058F6, 0x597D)
     assert cap.get('r0') == 0x10, f'r0={cap.get("r0"):#x} want 0x10'
 
 def _t_030a6(run, rng):
+    """Emulator test @ 0x30a6.
+    Тест эмулятора @ 0x30a6.
+    """
     import struct as _st
     cap, emu = _intercept(0x030A6, 0x59A5, max_insn=30000)
     assert cap, 'last bl 0x59a5 not reached'
@@ -322,6 +427,9 @@ def _t_030a6(run, rng):
     assert (u32, b4, b5, b6) == (0x800, 0, 8, 0), f'struct={u32:#x},{b4},{b5},{b6}'
 
 def _t_032f4(run, rng):
+    """Emulator test @ 0x32f4.
+    Тест эмулятора @ 0x32f4.
+    """
     import struct as _st
     cap, emu = _intercept(0x032F4, 0x59A5, max_insn=30000)
     assert cap, 'last bl 0x59a5 not reached'
@@ -330,6 +438,9 @@ def _t_032f4(run, rng):
     assert (u32, b4, b5, b6) == (0x80, 0, 12, 0), f'struct={u32:#x},{b4},{b5},{b6}'
 
 def _t_03168(run, rng):
+    """Emulator test @ 0x3168.
+    Тест эмулятора @ 0x3168.
+    """
     cap, _emu = _intercept(0x03168, 0x5971, max_insn=30000)
     assert cap, 'bl 0x5971 not reached (gate 0xcc69 failed)'
     assert cap.get('r0') == 0x100000, f'r0={cap.get("r0"):#x} want 0x100000'
@@ -343,23 +454,38 @@ t(0x03168, 'E2-b47: 0x03168 init-group (gate 0xcc69) -> bl 0x5971(r0=0x100000)')
 
 # --- E2-batch48: одиночные тонкие делегаторы (скан по частоте bl-целей) ---
 def _t_5dbc(run, rng):
+    """Emulator test @ 0x5dbc.
+    Тест эмулятора @ 0x5dbc.
+    """
     cap, _emu = _intercept(0x5DBC, 0x2D5D, max_insn=30000)
     assert cap.get('r0') == 0xAAAA, f'r0={cap.get("r0"):#x} want 0xaaaa'
 
 def _t_10770(run, rng):
+    """Emulator test @ 0x10770.
+    Тест эмулятора @ 0x10770.
+    """
     cap, _emu = _intercept(0x10770, 0xC625, max_insn=30000)
     assert cap.get('r0') == 1, f'r0={cap.get("r0"):#x} want 1'
 
 def _t_128c8(run, rng):
+    """Emulator test @ 0x128c8.
+    Тест эмулятора @ 0x128c8.
+    """
     cap, _emu = _intercept(0x128C8, 0x50B1, max_insn=30000)
     assert cap.get('r0') == 0x20000044 and cap.get('r1') == 2, \
         f'r0={cap.get("r0"):#x} r1={cap.get("r1")} want (0x20000044, 2)'
 
 def _t_12a64(run, rng):
+    """Emulator test @ 0x12a64.
+    Тест эмулятора @ 0x12a64.
+    """
     cap, _emu = _intercept(0x12A64, 0x4C85, max_insn=30000)
     assert cap.get('r0') == 0 and cap.get('r1') == 1, f'r0={cap.get("r0")} r1={cap.get("r1")}'
 
 def _t_13c5c(run, rng):
+    """Emulator test @ 0x13c5c.
+    Тест эмулятора @ 0x13c5c.
+    """
     cap, _emu = _intercept(0x13C5C, 0x11D7, max_insn=30000)
     assert cap.get('r1') == 0x4B, f'r1={cap.get("r1"):#x} want 0x4b'
 
@@ -372,14 +498,23 @@ t(0x13C5C, 'E2-b48: 0x13c5c delegate -> bl 0x11d7(r1=0x4b)')(_t_13c5c)
 
 # --- E2-batch49: stateful single-base gate + оставшиеся делегаторы ---
 def _t_2d5c(run, rng):
+    """Emulator test @ 0x2d5c.
+    Тест эмулятора @ 0x2d5c.
+    """
     cap, _emu = _intercept(0x2D5C, 0x332C, max_insn=30000)
     assert cap.get('r1') == 0x1A, f'r1={cap.get("r1"):#x} want 0x1a'
 
 def _t_02a6c(run, rng):
+    """Emulator test @ 0x2a6c.
+    Тест эмулятора @ 0x2a6c.
+    """
     cap, _emu = _intercept(0x02A6C, 0x4E50, max_insn=30000)
     assert cap, 'bl 0x4e50 not reached (init-group incomplete)'
 
 def _t_0178c(run, rng):
+    """Emulator test @ 0x178c.
+    Тест эмулятора @ 0x178c.
+    """
     cap, _emu = _intercept(0x178C, 0x182B, max_insn=30000)
     assert cap, 'bl 0x182b not reached'
     cap2, _ = _intercept(0x178C, 0x1815, max_insn=30000)

@@ -77,14 +77,23 @@ REGIONS = [
 
 
 def fname_of(off):
+    """The fname_of function of the script.
+    Функция fname_of скрипта.
+    """
     return f"func_0x{off:05x}"
 
 
 def in_code(off):
+    """The in_code function of the script.
+    Функция in_code скрипта.
+    """
     return any(a <= off < b for a, b, _ in REGIONS)
 
 
 def region_name(off):
+    """The region_name function of the script.
+    Функция region_name скрипта.
+    """
     for a, b, n in REGIONS:
         if a <= off < b:
             return n
@@ -192,6 +201,9 @@ def _block_starts(d, md, t):
 
 
 def _first_b_target(d, md, t):
+    """The helper function (_first_b_target).
+    Вспомогательная функция (_first_b_target).
+    """
     insns = _block_starts(d, md, t)
     if not insns or insns[0].mnemonic not in ("b", "b.w"):
         return None
@@ -200,6 +212,9 @@ def _first_b_target(d, md, t):
 
 
 def _starts_with_epilogue(d, md, t):
+    """The helper function (_starts_with_epilogue).
+    Вспомогательная функция (_starts_with_epilogue).
+    """
     insns = _block_starts(d, md, t)
     if not insns:
         return False
@@ -391,6 +406,9 @@ def detect_functions(d, md):
     # --- тир 2: цели bl вне подтверждённых функций ---
     confirmed_spans.sort()
     def inside_confirmed(t):
+        """The inside_confirmed function of the script.
+        Функция inside_confirmed скрипта.
+        """
         for fa, fb in confirmed_spans:
             if fa <= t < fb:
                 return True
@@ -576,6 +594,9 @@ def classify(v, d, strings, func_starts):
 
 
 def _lit_tag(cls, extra, strings):
+    """The helper function (_lit_tag).
+    Вспомогательная функция (_lit_tag).
+    """
     if cls == "string":
         return f'"{strings[extra]}"'
     if cls == "func":
@@ -606,6 +627,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words, valid_pool
     pending_movw = {}
 
     def note_lit(src, v):
+        """The note_lit function of the script.
+        Функция note_lit скрипта.
+        """
         if v in lit_map:
             return
         cls, extra = classify(v, d, strings, func_starts)
@@ -614,6 +638,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words, valid_pool
             str_refs.append((src, v, strings[extra]))
 
     def lit_comment(v):
+        """The lit_comment function of the script.
+        Функция lit_comment скрипта.
+        """
         cls, extra = lit_map[v][1], lit_map[v][2]
         tag = _lit_tag(cls, extra, strings)
         return f"-> {tag}" if tag else ""
@@ -666,6 +693,9 @@ def analyze_function(d, strings, func_starts, code_insns, pool_words, valid_pool
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(FW, "rb").read()
     N = len(d)
     strings = load_strings(d)

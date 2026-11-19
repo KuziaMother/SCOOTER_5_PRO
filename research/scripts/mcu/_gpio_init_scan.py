@@ -10,6 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "em
 from mcu_emu import McuEmu, PERIPH, PERIPH_SIZE, PERIPH2, PERIPH2_SIZE, SYS, SYS_SIZE
 
 def scan(entry, label, budget=3_000_000):
+    """The scan function of the script.
+    Функция scan скрипта.
+    """
     emu = McuEmu(max_insn=budget)
     emu.run_broad(entry, budget=budget)
     print(f"\n===== {label} (entry 0x{entry:05x}) — periph-записи по адресу =====")

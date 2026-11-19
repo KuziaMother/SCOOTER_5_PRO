@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""The scratch MD-check: the Capstone Thumb decode of the reference encodings
+(the movs/adds etc. from the real disassembly / the ARM ARM).
+
+Скрэтч-MD-проверка: Capstone Thumb-декод эталонных кодирований
+(movs/adds и т.п. из реальной дизассембляции / ARM ARM).
+"""
 import sys, io, struct
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 import capstone

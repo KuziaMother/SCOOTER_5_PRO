@@ -26,12 +26,18 @@ SLOT = 0x96
 
 
 def make_frame_a(hdr, sub, data):
+    """The make_frame_a function of the script.
+    Функция make_frame_a скрипта.
+    """
     body = bytes([hdr, sub, len(data)]) + data
     chk = sum(body) & 0xFF
     return body + bytes([chk, 0xFF - hdr])
 
 
 def make_frame_b(hdr, sub, data=b""):
+    """The make_frame_b function of the script.
+    Функция make_frame_b скрипта.
+    """
     return bytes([hdr, sub, (hdr + sub) & 0xFF, 0xFF - hdr]) + data
 
 
@@ -49,6 +55,9 @@ def drive(frame, max_calls=10):
     writes = []
 
     def on_w(uc_, _access, address, size, value, _user):
+        """The on_w function of the script.
+        Функция on_w скрипта.
+        """
         pc = uc_.reg_read(UC_ARM_REG_PC)
         writes.append((pc & ~1, address - 0x20000000, size, value))
 
@@ -81,6 +90,9 @@ def tx_frames(emu):
 
 
 def run_set_sweep():
+    """The run_set_sweep function of the script.
+    Функция run_set_sweep скрипта.
+    """
     print("=" * 72)
     print("SET-СВИП Path A (0x51 xx DATA): записи в RAM 0x840..0x880")
     print("=" * 72)
@@ -102,6 +114,9 @@ def run_set_sweep():
 
 
 def run_get_capture():
+    """The run_get_capture function of the script.
+    Функция run_get_capture скрипта.
+    """
     print()
     print("=" * 72)
     print("GET-ЗАХВАТ Path B: TX-кадры при предзаполненном blob-регионе")

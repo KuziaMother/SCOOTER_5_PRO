@@ -12,6 +12,9 @@ BIN = os.path.join(RES, "images", "mcu_0007.bin")
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(BIN, "rb").read()
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
     md.detail = False

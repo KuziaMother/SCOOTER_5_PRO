@@ -25,6 +25,9 @@ _Q20_CASES = [
 
 
 def _run_q20(off):
+    """The helper function (_run_q20).
+    Вспомогательная функция (_run_q20).
+    """
     for args, exp in _Q20_CASES:
         r1, _e1 = _fresh_call(off, args, max_insn=200000)
         r2, _e2 = _fresh_call(off, args, max_insn=200000)
@@ -36,6 +39,9 @@ def _run_q20(off):
             'sign=sb(a1)^sb(a3), abs, u64-swap, zero→first-pair; mid-путь (|dfrac diff|<0x40) — '
             'сложение мантисс 21-bit с нормализацией/знаком; const-calc 10 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x19c58: E2-b66: 0x19c58(x,y) — u64 Q20 фикс-арифметика (моторная цепь, 12-bit dfrac): sign=sb(a1)^sb(a3), abs, u64-swap, zero→first-pair; mid-путь (|dfrac diff|<0x40) — сложение мантисс 21-bit с нормализацией/знаком; const-calc 10 кейсов (детерм.).
+    Тест эмулятора @ 0x19c58: E2-b66: 0x19c58(x,y) — u64 Q20 фикс-арифметика (моторная цепь, 12-bit dfrac): sign=sb(a1)^sb(a3), abs, u64-swap, zero→first-pair; mid-путь (|dfrac diff|<0x40) — сложение мантисс 21-bit с нормализацией/знаком; const-calc 10 кейсов (детерм.).
+    """
     _run_q20(0x19C58)
 
 
@@ -43,6 +49,9 @@ def _(run, rng):
             'та же семантика на 10 кейсах (разница 11/12 бит проявляется только при dfrac bit30). '
             'const-calc (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x1346: E2-b66: 0x1346(x,y) — twin 0x19c58 с 11-bit dfrac (ubfx #0,#0xb вместо lsls/lsrs): та же семантика на 10 кейсах (разница 11/12 бит проявляется только при dfrac bit30). const-calc (детерм.).
+    Тест эмулятора @ 0x1346: E2-b66: 0x1346(x,y) — twin 0x19c58 с 11-bit dfrac (ubfx #0,#0xb вместо lsls/lsrs): та же семантика на 10 кейсах (разница 11/12 бит проявляется только при dfrac bit30). const-calc (детерм.).
+    """
     _run_q20(0x1346)
 
 
@@ -65,6 +74,9 @@ _19BDC_CASES = [
             'деление r1/r2 с аккумулятором r3) → IEEE-float биты (0x3F800000=1.0); '
             'малые x→0. const-calc 10 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x19bdc: E2-b66: 0x19bdc(a0,a1) — signed евклидов-подобный цикл (abs-u64, биту-по-биту деление r1/r2 с аккумулятором r3) → IEEE-float биты (0x3F800000=1.0); малые x→0. const-calc 10 кейсов (детерм.).
+    Тест эмулятора @ 0x19bdc: E2-b66: 0x19bdc(a0,a1) — signed евклидов-подобный цикл (abs-u64, биту-по-биту деление r1/r2 с аккумулятором r3) → IEEE-float биты (0x3F800000=1.0); малые x→0. const-calc 10 кейсов (детерм.).
+    """
     for (a0, a1), exp in _19BDC_CASES:
         r1, _e1 = _fresh_call(0x19BDC, (a0, a1), max_insn=200000)
         r2, _e2 = _fresh_call(0x19BDC, (a0, a1), max_insn=200000)
@@ -92,6 +104,9 @@ _19AB0_CASES = [
             'bit23=1; a1==0 → a0, a0==0 → a1 (кроме 0x80000000→0), оба ненулевые → сумма с '
             'ренормализацией в bit23; 25-bit перенос → доп. масштаб). const-calc 26 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x19ab0: E2-b66: 0x19ab0(a0,a1) — нормализованное мантиссенное сложение (24-bit мантисса, bit23=1; a1==0 → a0, a0==0 → a1 (кроме 0x80000000→0), оба ненулевые → сумма с ренормализацией в bit23; 25-bit перенос → доп. масштаб). const-calc 26 кейсов (детерм.).
+    Тест эмулятора @ 0x19ab0: E2-b66: 0x19ab0(a0,a1) — нормализованное мантиссенное сложение (24-bit мантисса, bit23=1; a1==0 → a0, a0==0 → a1 (кроме 0x80000000→0), оба ненулевые → сумма с ренормализацией в bit23; 25-bit перенос → доп. масштаб). const-calc 26 кейсов (детерм.).
+    """
     for (a0, a1), exp in _19AB0_CASES:
         r1, _e1 = _fresh_call(0x19AB0, (a0, a1), max_insn=200000)
         r2, _e2 = _fresh_call(0x19AB0, (a0, a1), max_insn=200000)
@@ -105,6 +120,9 @@ def _(run, rng):
            'init 0, idx=b^(crc>>8), crc=tbl[idx]^(crc<<8)); dst[len+4]=crc>>8, dst[len+5]=crc; '
            '*len_ptr=strb(len+6) (1 байт); ret=len+6. Реф-модель по flash-таблице эмулятора.')
 def _(run, rng):
+    """Emulator test @ 0x38ec: E2-b66: 0x38ec(src,dst,len_ptr) — TLV+ CRC-16: len=byte[src+3]; header 4B → dst; 0x11a4 копирует len B (src+4→dst+4); crc=CRC-16-tab(dst,len+4) (tbl@flash 0x19784, init 0, idx=b^(crc>>8), crc=tbl[idx]^(crc<<8)); dst[len+4]=crc>>8, dst[len+5]=crc; *len_ptr=strb(len+6) (1 байт); ret=len+6. Реф-модель по flash-таблице эмулятора..
+    Тест эмулятора @ 0x38ec: E2-b66: 0x38ec(src,dst,len_ptr) — TLV+ CRC-16: len=byte[src+3]; header 4B → dst; 0x11a4 копирует len B (src+4→dst+4); crc=CRC-16-tab(dst,len+4) (tbl@flash 0x19784, init 0, idx=b^(crc>>8), crc=tbl[idx]^(crc<<8)); dst[len+4]=crc>>8, dst[len+5]=crc; *len_ptr=strb(len+6) (1 байт); ret=len+6. Реф-модель по flash-таблице эмулятора..
+    """
     for _ in range(8):
         ln = rng.getrandbits(5)  # 0..31
         hdr = bytes(rng.getrandbits(8) for _ in range(3)) + bytes([ln])
@@ -144,6 +162,9 @@ _ONESHOT = [
 
 
 def _t_oneshot(cat, start, bit, mask, callee_ret, _run, _rng):
+    """The helper function (_t_oneshot).
+    Вспомогательная функция (_t_oneshot).
+    """
     for v in (0, 1 << bit):
         seeds = [(RAM + 0x8C, struct.pack('<I', v))]
         ret, emu = _fresh_call(start, (0,), extra_ram=seeds, max_insn=200000)
@@ -162,4 +183,7 @@ for _cat, _start, _bit, _mask, _cret in _ONESHOT:
              f'выставлен → bl (0xd39c/0xd46c/0xd41c)({_bit:#x}) → fresh-emu ret {_cret}, '
              f'бит не сбрасывается (clear при callee==1, в fresh-контексте не достигается).')
     def _(run, rng, _cat=_cat, _start=_start, _bit=_bit, _mask=_mask, _cret=_cret):
+        """The helper function (_).
+        Вспомогательная функция (_).
+        """
         _t_oneshot(_cat, _start, _bit, _mask, _cret, run, rng)

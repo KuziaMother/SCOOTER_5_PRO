@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 """
+The full telemetry dump of the Dreame/Xiaomi Scooter 5 Pro via the MIoT spec over BLE.
+
+It reads the whole property map (siid 1..4 + the siid 6 logs) and prints the table.
+The protocol and the layout — see research/REPORT.md; the implementation is in
+probes/spec_read.py.
+
+IMPORTANT: it reads ONE property per request. The device serves only the first object
+in the request and sets the status 0xf05d (-4003) for the rest — verified by three
+experiments (including a request of the same property twice). So no batching.
+
+READ ONLY: no set requests at all.
+
+Usage:  python tools/dump_telemetry.py [--out docs/telemetry.txt] [--all]
+
 Полный дамп телеметрии Dreame/Xiaomi Scooter 5 Pro по MIoT-spec поверх BLE.
 
 Читает всю карту свойств (siid 1..4 + логи siid 6) и печатает таблицу.
@@ -55,7 +69,8 @@ sr.NAMES.update(EXTRA_NAMES)
 
 
 async def login(mac):
-    """Поднять транспорт и залогиниться. Возвращает (transport, sessionKey)."""
+    """Raise the transport and log in. Returns (transport, sessionKey).
+    Поднять транспорт и залогиниться. Возвращает (transport, sessionKey)."""
     import struct
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
@@ -75,7 +90,13 @@ async def login(mac):
 
 
 def parse_one(pt):
-    """Ответ на одиночный запрос -> (siid, piid, tcode, value, status) или None.
+    """The response to a single request -> (siid, piid, tcode, value, status) or None.
+
+    The error record is shorter than the normal one: 5 bytes [u8 siid][u16 LE piid]
+    [u16 LE status] (confirmed by the response to 3.9: `03 0900 5ff0` = siid 3, piid 9,
+    status -4001). The normal record: 7 + len — [siid][piid][status][(type<<12)|len]
+    [value].
+    Ответ на одиночный запрос -> (siid, piid, tcode, value, status) или None.
 
     Запись-ошибка короче обычной: 5 байт [u8 siid][u16 LE piid][u16 LE status]
     (подтверждено ответом на 3.9: `03 0900 5ff0` = siid 3, piid 9, status -4001).
@@ -93,6 +114,8 @@ def parse_one(pt):
 
 
 async def read_all(mac, props, out_path):
+    """Read all the properties one by one and write the table to out_path.
+    Прочитать все свойства по одному и написать таблицу в out_path."""
     t, sk = await login(mac)
     print("[+] LOGIN OK — читаем свойства по одному\n")
     rows, cnt = [], 0
@@ -166,6 +189,8 @@ async def read_all(mac, props, out_path):
 
 
 def main():
+    """The CLI entry point (the options: --mac/--out/--all/--props).
+    CLI-вход (опции: --mac/--out/--all/--props)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--mac", default=da.MAC_DEFAULT)
     ap.add_argument("--out", default=os.path.join(ROOT, "docs", "telemetry.txt"))

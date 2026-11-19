@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 """
+The enumeration of the channel numbers of the channel transport after the login.
+
+The logic: the CTR frame [00 00][03][channel][fc u16] — the transfer application. The
+device answers the ACK only for the EXISTING channels (as the err 0x02 filtered out
+the dead opcodes on 0x001c). The channel=5 is known (the securitychipauth/login).
+
+SAFE: only the CTR with fc=0 is sent, not a single DATA frame — that is, not a single
+command to the device. A pure reconnaissance of the channel map.
+
+Usage:  python channel_probe.py [--chars 0x0016,0x001a] [--max 31]
+
 Перебор номеров каналов канального транспорта после логина.
 
 Логика: CTR-кадр [00 00][03][channel][fc u16] — заявка на передачу. Устройство
@@ -24,6 +35,8 @@ import dreame_auth as da
 
 
 async def probe_char(t, char_sid: int, max_ch: int, fc: int = 1):
+    """Probe the channels on the characteristic: the CTR per channel, the alive map.
+    Пробовать каналы на характеристике: CTR по каждому каналу, карта живых."""
     print(f"\n=== характеристика 0x{char_sid:04x} ===")
     if char_sid not in t.chars:
         print("   нет такой характеристики")
@@ -53,6 +66,8 @@ async def probe_char(t, char_sid: int, max_ch: int, fc: int = 1):
 
 
 async def run(mac: str, char_list, max_ch: int, fc: int = 1):
+    """The run: the login + the probes of the characteristics (the channels 0..max).
+    Прогон: логин + пробы характеристик (каналы 0..max)."""
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     try:

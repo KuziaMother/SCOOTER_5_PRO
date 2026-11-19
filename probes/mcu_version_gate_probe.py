@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Probe: what exactly the device checks on the MCU fragment 1 (the status 5 refusal). Hypothesis H1: the "image version vs the installed" comparison, the version is read from the image header @0x22 ("0007").
 Проба: что именно устройство проверяет на MCU-фрагменте 1 (отказ status 5)?
 
 Гипотеза H1: сравнение «версия образа vs установленная», версия читается из
@@ -16,6 +17,7 @@
 dreame_flasher это обрабатывает). Одна попытка за прогон.
 
 Запуск:  python probes/mcu_version_gate_probe.py
+Проба: что именно устройство проверяет на MCU-фрагменте 1 (отказ status 5). Гипотеза H1: сравнение «версия образа vs установленная», версия читается из заголовка образа @0x22 ("0007").
 """
 import asyncio
 import sys
@@ -34,6 +36,9 @@ VER_OFF = 0x22          # ASCII-версия в заголовке MCU-обра�
 
 
 async def main():
+    """The run: the MCU fragment 1 with the modified image header (the H1 test) + the
+    restore.
+    Прогон: MCU-фрагмент 1 с изменённым заголовком образа (тест H1) + возврат."""
     ltmk = bytes.fromhex(open(LTMK_HEX).read().strip())
     t = Transport(MAC_DEFAULT)
     try:

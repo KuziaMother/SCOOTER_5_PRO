@@ -194,6 +194,8 @@ async def spec_write(t, sk, siid, piid, type_code, value, app_cnt, timeout=8.0):
     await t.write(CH_WRITE, struct.pack("<HBBH", 0, 0x00, sr.SPEC_CHANNEL, len(frames)))
 
     async def send_seq(n):
+        """Send the n-th DATA frame of the SET payload.
+        Отправить n-й DATA-кадр SET-пейлоада."""
         if 1 <= n <= len(frames):
             await t.write(CH_WRITE, struct.pack("<H", n) + frames[n - 1])
 
@@ -273,6 +275,10 @@ async def apply_pending_sets(t, sk, set_queue, on_event, unit_mult, app_cnt):
 
 
 async def _emit_push_items(t, sk, pt, pushes, rx_counts, on_event, unit_mult):
+    """Format the items of the decrypted push payload and emit the property/counters
+    events; returns the updated push counter.
+    Отформатировать элементы расшифрованного push-пейлоада и отдать события
+    property/counters; вернуть обновлённый счётчик пушей."""
     items, _op = parse_spec_payload(pt)
     if not items:
         return pushes
@@ -359,6 +365,9 @@ async def listen_push(t, sk, on_event, unit_mult, should_stop):
 
 
 async def _run_once(mac, mode, interval, static_interval, on_event, should_stop, set_queue=None):
+    """One session cycle: establish the link, then the mode loop (once|poll|push) until
+    the stop.
+    Один цикл сессии: установить связь, затем режимный цикл (once|poll|push) до стопа."""
     t, sk = await establish(mac, on_event)
     unit_mult = [1.0]
     app_cnt = 0

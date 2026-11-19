@@ -27,6 +27,8 @@ BAUDS = [115200, 9600, 19200, 38400, 57600, 230400, 460800, 921600, 4800, 2400]
 
 
 def beep():
+    """The beep (the Windows winsound; the bell if absent).
+    Сигнал (Windows winsound; если нет — колокольчик)."""
     try:
         import winsound
         winsound.Beep(1200, 250)
@@ -36,10 +38,16 @@ def beep():
 
 
 def ts():
+    """The current timestamp as an ISO string (the milliseconds).
+    Текущая метка времени ISO-строкой (миллисекунды)."""
     return datetime.now().isoformat(timespec="milliseconds")
 
 
 def run(port, out_path, slot, minutes, sound=True):
+    """The background logger run: the baud sweep, the data captures (the beep + the raw
+    dump), the heartbeats; the JSONL log to out_path.
+    Прогон фонового логгера: обход бод-рейтов, захват данных (сигнал + raw-дамп),
+    heartbeats; JSONL-лог в out_path."""
     global beep
     if not sound:
         beep = lambda: None
@@ -51,6 +59,8 @@ def run(port, out_path, slot, minutes, sound=True):
     log = open(out_path, "a", encoding="utf-8")
 
     def w(obj):
+        """Append the JSONL line + flush.
+        Дописать JSONL-строку + flush."""
         log.write(json.dumps(obj, ensure_ascii=False) + "\n")
         log.flush()
 
@@ -89,6 +99,8 @@ def run(port, out_path, slot, minutes, sound=True):
 
 
 def show(out_path):
+    """The summary of the logger log (the data events, the first/last, the bauds).
+    Сводка по логу логгера (события данных, первый/последний, боды)."""
     data_lines = hb = 0
     first_data = last_data = None
     with open(out_path, encoding="utf-8") as f:

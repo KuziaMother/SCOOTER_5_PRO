@@ -3,6 +3,9 @@
 import os, struct, math, collections
 d=open(os.path.join(os.path.dirname(__file__),"..","..","images","ble_2.7.0_0015.bin"),"rb").read(); N=len(d)
 def ent(b):
+    """The ent function of the script.
+    Функция ent скрипта.
+    """
     if not b: return 0
     c=collections.Counter(b); n=len(b)
     return -sum((x/n)*math.log2(x/n) for x in c.values())

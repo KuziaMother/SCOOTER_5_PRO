@@ -30,6 +30,9 @@ def run_foc(emu, current_ref):
     uc.mem_write(r4 + 2, struct.pack('<h', 16384))          # value (mid) — не управляет PWM
     uc.mem_write(RAM + 0x224, struct.pack('<H', current_ref & 0xFFFF))
     def stop(uc_, a, s, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -51,6 +54,9 @@ def run_pid(emu):
     """Запустить PID 0x1d078. Возвращает throttle s16[RAM+0x42c]."""
     uc = emu.uc
     def stop(uc_, a, s, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = a & ~1
         if not (0 <= aa < FW_LEN or FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -68,6 +74,9 @@ def run_pid(emu):
 
 
 def run_loop(target, v_max=522.0, tau=15.0, tref=28624.0, iters=40, speed0=0.0):
+    """The run_loop function of the script.
+    Функция run_loop скрипта.
+    """
     emu = McuEmu(max_insn=400000)
     uc = emu.uc
     sm = SpeedModel(emu)
@@ -100,6 +109,9 @@ def run_loop(target, v_max=522.0, tau=15.0, tref=28624.0, iters=40, speed0=0.0):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     for target in (208, 300):
         print(f'=== target={target} (FOC в контуре) ===')
         traj = run_loop(target, iters=40)

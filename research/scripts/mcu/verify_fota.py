@@ -42,6 +42,9 @@ def _root_pubkey():
 
 
 def load_chain():
+    """The load_chain function of the script.
+    Функция load_chain скрипта.
+    """
     c0 = x509.load_der_x509_certificate(open(os.path.join(CERT_DIR, 'c0.der'), 'rb').read())
     c1 = x509.load_der_x509_certificate(open(os.path.join(CERT_DIR, 'c1.der'), 'rb').read())
     # валидность цепочки до корня: c1 ← c0 ← Mijia Root
@@ -81,6 +84,9 @@ def verify(path):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     files = sys.argv[1:]
     if not files or files == ['--self']:
         files = [f for f in (MCU_IMG, BLE_PKG) if os.path.exists(f)]

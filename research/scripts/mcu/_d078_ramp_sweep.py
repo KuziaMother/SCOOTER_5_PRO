@@ -12,6 +12,9 @@ from random import Random
 
 
 def sdiv(a, b):
+    """The sdiv function of the script.
+    Функция sdiv скрипта.
+    """
     if b == 0:
         return 0
     q = abs(a) // abs(b)
@@ -19,11 +22,17 @@ def sdiv(a, b):
 
 
 def s16(x):
+    """The s16 function of the script.
+    Функция s16 скрипта.
+    """
     x &= 0xFFFF
     return x - 0x10000 if x >= 0x8000 else x
 
 
 def run_once(run, V, F, mode, f339, c326, m2t):
+    """The run_once function of the script.
+    Функция run_once скрипта.
+    """
     run.ram_write(0x158, struct.pack('<I', V))
     run.ram_write(0x100, bytes([F]))
     run.ram_write(0x229, bytes([mode]))
@@ -60,6 +69,9 @@ def run_once(run, V, F, mode, f339, c326, m2t):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     run = Run(max_insn=500000)
     rng = Random(7)
     N = 300

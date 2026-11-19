@@ -16,6 +16,9 @@ FW_LEN = 0x25000
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     emu = McuEmu(trace=False, max_insn=200000)
     emu.uc.mem_write(RAM, bytes(0x20000))          # чистая RAM
     emu.hook_periph_ready()                        # periph = 0xFF (ready)
@@ -25,6 +28,9 @@ def main():
     emu.uc.mem_write(r4 + 2, struct.pack('<h', 16384))  # value (mid)
 
     def stop(uc_, addr, size, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -57,6 +63,9 @@ def main():
     emu2.hook_periph_ready(); r4b = RAM + 0x040
     emu2.uc.mem_write(r4b, bytes(0x80)); emu2.uc.mem_write(r4b + 2, struct.pack('<h', 16384))
     def stop2(uc_, addr, size, u):
+        """The stop2 function of the script.
+        Функция stop2 скрипта.
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()

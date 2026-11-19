@@ -11,11 +11,18 @@ u16 = lambda o: struct.unpack_from("<H", d, o)[0]
 CODE = [(0x01200,0x02400),(0x02600,0x10200),(0x10400,0x10e00),(0x11000,0x12400),
         (0x12800,0x13e00),(0x14200,0x14400),(0x14600,0x17a00),(0x18000,0x18200),
         (0x18e00,0x19200),(0x19a00,0x24200),(0x24400,0x24600)]
-def in_code(o): return any(a<=o<b for a,b in CODE)
+def in_code(o):
+    """The in_code function of the script.
+    Функция in_code скрипта.
+    """
+    return any(a<=o<b for a,b in CODE)
 
 # границы функций = push {..,lr}
 fstarts = sorted(o for a,b in CODE for o in range(a,b,2) if (u16(o)&0xFF00)==0xB500)
 def func_of(o):
+    """The func_of function of the script.
+    Функция func_of скрипта.
+    """
     i = bisect.bisect_right(fstarts, o) - 1
     return fstarts[i] if i>=0 else None
 
@@ -38,7 +45,11 @@ for o in range(0,N-4,4):
 
 print(f"[i] функций в коде: {len(fstarts)};  функций, трогающих известную периферию: {len(func_peri)}\n")
 print("=== функции по периферии (motor/sense/comms/flash) ===")
-def has(f,sub): return any(sub in k for k in func_peri[f])
+def has(f,sub):
+    """The has function of the script.
+    Функция has скрипта.
+    """
+    return any(sub in k for k in func_peri[f])
 for label,key in [("МОТОР (TIM1)","TIM1"),("ДАТЧИКИ (ADC1)","ADC1"),
                   ("СВЯЗЬ (USART)","USART"),("OTA (FLASH)","FLASH"),("CAN","CAN")]:
     fs=[f for f in func_peri if has(f,key)]
@@ -48,7 +59,11 @@ for label,key in [("МОТОР (TIM1)","TIM1"),("ДАТЧИКИ (ADC1)","ADC1"),
         print(f"   func_0x{f:05x}: {peris}")
 
 # ---------- дизасм самой «мотор-ёмкой» функции (макс TIM1+ADC) ----------
-def score(f): return sum(v for k,v in func_peri[f].items() if "TIM1" in k or "ADC" in k)
+def score(f):
+    """The score function of the script.
+    Функция score скрипта.
+    """
+    return sum(v for k,v in func_peri[f].items() if "TIM1" in k or "ADC" in k)
 motor = max(func_peri, key=score) if func_peri else None
 if motor and score(motor)>0:
     end = fstarts[bisect.bisect_right(fstarts,motor)] if bisect.bisect_right(fstarts,motor)<len(fstarts) else motor+256

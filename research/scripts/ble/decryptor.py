@@ -51,6 +51,9 @@ CANDIDATE_KEYS = {
 
 
 def entropy(b):
+    """The entropy function of the script.
+    Функция entropy скрипта.
+    """
     if not b:
         return 0.0
     c = collections.Counter(b)
@@ -59,6 +62,9 @@ def entropy(b):
 
 
 def ascii_strings(b, min_len=8):
+    """The ascii_strings function of the script.
+    Функция ascii_strings скрипта.
+    """
     out, cur = [], bytearray()
     for byte in b:
         if 32 <= byte < 127:
@@ -90,6 +96,9 @@ def thumb_plausibility(b):
 
 
 def try_one(name, key, data, iv):
+    """The try_one function of the script.
+    Функция try_one скрипта.
+    """
     results = []
     for mode_name in ("CBC", "CTR"):
         try:
@@ -109,6 +118,9 @@ def try_one(name, key, data, iv):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     d = open(FW, "rb").read()
     enc = d[ENC[0]:ENC[1]]
     iv = d[0x0C:0x1C]

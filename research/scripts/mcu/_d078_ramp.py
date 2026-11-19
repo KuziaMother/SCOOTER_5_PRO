@@ -14,6 +14,9 @@ S = 0x3C8    # structB
 
 
 def dump(run, base, fields):
+    """The dump function of the script.
+    Функция dump скрипта.
+    """
     for off, nm in fields:
         sz = 4 if off >= 0x50 else (1 if nm.startswith('b') else 2)
         fmt = '<I' if sz == 4 else ('<B' if sz == 1 else '<H')
@@ -22,6 +25,9 @@ def dump(run, base, fields):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     run = Run(max_insn=500000)
 
     V, F = 3000, 1          # val = 48000/3000 = 16
@@ -55,7 +61,13 @@ def main():
     events = []
 
     def mk(tag):
+        """The mk function of the script.
+        Функция mk скрипта.
+        """
         def h(uc, access, address, size, value, user):
+            """The h function of the script.
+            Функция h скрипта.
+            """
             rel = address - RAM
             if S <= rel < S + 0x80:
                 b, o = 'S', rel - S

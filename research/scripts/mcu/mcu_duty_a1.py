@@ -55,6 +55,9 @@ def run(emu, iterations=30):
     code_trace = {}
 
     def on_write(uc_, access, address, size, value, user):
+        """The on_write function of the script.
+        Функция on_write скрипта.
+        """
         for lo, hi, name in PERIPH_RANGES:
             if lo <= address < hi:
                 writes.append((name, address - lo, size, value,
@@ -62,6 +65,9 @@ def run(emu, iterations=30):
                 break
 
     def on_code(uc_, addr, size, user):
+        """The on_code function of the script.
+        Функция on_code скрипта.
+        """
         code_trace[addr] = code_trace.get(addr, 0) + 1
 
     h1 = uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
@@ -81,6 +87,9 @@ def run(emu, iterations=30):
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     emu = McuEmu(max_insn=500_000)
     # маппим периферийные диапазоны как RAM (заглушки), чтобы хуки срабатывали
     uc = emu.uc

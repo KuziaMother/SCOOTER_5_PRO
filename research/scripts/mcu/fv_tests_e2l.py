@@ -38,6 +38,9 @@ _19DBC_CASES = [
 
 
 def _run_19dbc(_run, _rng):
+    """The helper function (_run_19dbc).
+    Вспомогательная функция (_run_19dbc).
+    """
     for args, e0, e1, blk in _19DBC_CASES:
         r0, emu = _fresh_call(0x19DBC, args, max_insn=200000)
         r1 = emu.uc.reg_read(UC_ARM_REG_R1)
@@ -52,6 +55,9 @@ def _run_19dbc(_run, _rng):
             'sign/0x0BADF001/sum(pool 0x19E88=0xFFFFFC0D)/продукт u16[2..]-слайды; tail bl 0x1a184. '
             'const-calc 10 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x19dbc: E2-b67: 0x19dbc(a0,a1,a2,a3) — u64 fixed-point micro-engine: sign=sb(a1)^sb(a3), abs(a1)/abs(a3), гейты (a2|a3)/(a0|a1)→(0,0); 16B-блок на стеке (STACK_TOP-0x78): sign/0x0BADF001/sum(pool 0x19E88=0xFFFFFC0D)/продукт u16[2..]-слайды; tail bl 0x1a184. const-calc 10 кейсов (детерм.).
+    Тест эмулятора @ 0x19dbc: E2-b67: 0x19dbc(a0,a1,a2,a3) — u64 fixed-point micro-engine: sign=sb(a1)^sb(a3), abs(a1)/abs(a3), гейты (a2|a3)/(a0|a1)→(0,0); 16B-блок на стеке (STACK_TOP-0x78): sign/0x0BADF001/sum(pool 0x19E88=0xFFFFFC0D)/продукт u16[2..]-слайды; tail bl 0x1a184. const-calc 10 кейсов (детерм.).
+    """
     _run_19dbc(run, rng)
 
 
@@ -79,6 +85,9 @@ _19E8C_CASES = [
             '(0x3FF00000=2.0, 0xBFEFFFFF≈-2.0+ε, 0x3FF00002/3 — малые мантиссы); r0 = коррекция. '
             'const-calc 15 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x19e8c: E2-b67: 0x19e8c(a0,a1,a2,a3) — u64 → float: sign=sb(a1)^sb(a3) → IEEE-биты в r1 (0x3FF00000=2.0, 0xBFEFFFFF≈-2.0+ε, 0x3FF00002/3 — малые мантиссы); r0 = коррекция. const-calc 15 кейсов (детерм.).
+    Тест эмулятора @ 0x19e8c: E2-b67: 0x19e8c(a0,a1,a2,a3) — u64 → float: sign=sb(a1)^sb(a3) → IEEE-биты в r1 (0x3FF00000=2.0, 0xBFEFFFFF≈-2.0+ε, 0x3FF00002/3 — малые мантиссы); r0 = коррекция. const-calc 15 кейсов (детерм.).
+    """
     for args, e0, e1 in _19E8C_CASES:
         r0, emu = _fresh_call(0x19E8C, args, max_insn=200000)
         r1 = emu.uc.reg_read(UC_ARM_REG_R1)
@@ -111,6 +120,9 @@ _1A184_CASES = [
             'читает стек вызывающего (fresh → 0). fresh-emu: (0,0), кроме (FFFF,FFFF)→(0,0xC00000). '
             'const-calc 15 кейсов (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x1a184: E2-b67: 0x1a184(a0,a1) — u64 LSL с нормализацией: count=0x21b24(a1|a1==0→0x20+0x20); S=(a1:a0)<<count; zero-гейты; R=(a1:a0)>>(0x40-count) + T-перенос-гейт; tail 0x1a1ec читает стек вызывающего (fresh → 0). fresh-emu: (0,0), кроме (FFFF,FFFF)→(0,0xC00000). const-calc 15 кейсов (детерм.).
+    Тест эмулятора @ 0x1a184: E2-b67: 0x1a184(a0,a1) — u64 LSL с нормализацией: count=0x21b24(a1|a1==0→0x20+0x20); S=(a1:a0)<<count; zero-гейты; R=(a1:a0)>>(0x40-count) + T-перенос-гейт; tail 0x1a1ec читает стек вызывающего (fresh → 0). fresh-emu: (0,0), кроме (FFFF,FFFF)→(0,0xC00000). const-calc 15 кейсов (детерм.).
+    """
     for args, e0, e1 in _1A184_CASES:
         r0, emu = _fresh_call(0x1A184, args, max_insn=200000)
         r1 = emu.uc.reg_read(UC_ARM_REG_R1)
@@ -125,6 +137,9 @@ def _(run, rng):
            'src[7],src[8]}, ret=8; 0x10 → dst[2..5]=src[2..5], ret=8; иначе ret=type (только hdr). '
            'хвост: crc=0x8a50(dst, r7) (u16) → dst[r7]=hi, dst[r7+1]=lo. Реф-модель.')
 def _(run, rng):
+    """Emulator test @ 0xbe6c: E2-b67: 0xbe6c(src,dst) — TLV-декодер: dst[0..1]=hdr; type=byte[src+1]: 3 → len=byte[src+6], 0x11a4(len, src+7→dst+3), ret=len+5; 6 → dst[2..5]={src[2],src[3],src[7],src[8]}, ret=8; 0x10 → dst[2..5]=src[2..5], ret=8; иначе ret=type (только hdr). хвост: crc=0x8a50(dst, r7) (u16) → dst[r7]=hi, dst[r7+1]=lo. Реф-модель..
+    Тест эмулятора @ 0xbe6c: E2-b67: 0xbe6c(src,dst) — TLV-декодер: dst[0..1]=hdr; type=byte[src+1]: 3 → len=byte[src+6], 0x11a4(len, src+7→dst+3), ret=len+5; 6 → dst[2..5]={src[2],src[3],src[7],src[8]}, ret=8; 0x10 → dst[2..5]=src[2..5], ret=8; иначе ret=type (только hdr). хвост: crc=0x8a50(dst, r7) (u16) → dst[r7]=hi, dst[r7+1]=lo. Реф-модель..
+    """
     for _ in range(6):
         t = rng.choice((3, 6, 0x10, rng.getrandbits(8) & ~0x11 if rng.getrandbits(8) not in (3, 6, 0x10) else 5))
         ln = rng.getrandbits(4)
@@ -175,6 +190,9 @@ def _(run, rng):
            'хвост: u16[frame] ∈ [8..0x82] → L1[0x9D]=byte[frame+u16], L1[0x9E]=byte[frame+u16+1]. '
            'ret=0 (fresh). Реф-модель.')
 def _(run, rng):
+    """Emulator test @ 0xbd50: E2-b67: 0xbd50(frame, r1) — frame-экстрактор: L1=RAM+0x1154 (pool 0xBE68): L1[0..1]=byte[2..3]; type=L1[1]: 3 → L1[2..5]=byte[4..7]; 6 → L1[2]=byte[4], L1[3]=byte[5], L1[7]=byte[6], L1[8]=byte[7] (тот же pool 0xBE68); 0x10 → L1[2..6]=byte[4..8] + гейт ≤0x82. хвост: u16[frame] ∈ [8..0x82] → L1[0x9D]=byte[frame+u16], L1[0x9E]=byte[frame+u16+1]. ret=0 (fresh). Реф-модель..
+    Тест эмулятора @ 0xbd50: E2-b67: 0xbd50(frame, r1) — frame-экстрактор: L1=RAM+0x1154 (pool 0xBE68): L1[0..1]=byte[2..3]; type=L1[1]: 3 → L1[2..5]=byte[4..7]; 6 → L1[2]=byte[4], L1[3]=byte[5], L1[7]=byte[6], L1[8]=byte[7] (тот же pool 0xBE68); 0x10 → L1[2..6]=byte[4..8] + гейт ≤0x82. хвост: u16[frame] ∈ [8..0x82] → L1[0x9D]=byte[frame+u16], L1[0x9E]=byte[frame+u16+1]. ret=0 (fresh). Реф-модель..
+    """
     for _ in range(5):
         t = rng.choice((3, 6, 0x10, 9))
         u16 = rng.choice((0, 0x0F, 0x82, 0x92))
@@ -213,6 +231,9 @@ def _(run, rng):
            '(fresh: fn-таблицы 0 → payload-сдвиг: dst[0..len-3]=data[2..len], хвост 0). '
            'пусто → ret 0, dst 0; занято → S: бит снят, counter=найденный слот; ret 0 (детерм.)')
 def _(run, rng):
+    """Emulator test @ 0x4b04: E2-b67: 0x4b04() — consumer: bl 0x4a04 (локальная таблица) + bl 0x12d04(sp+4) (free-очередь 0x190D: u16[dst]=len, memcpy(dst+2, data+2, len)) + cbz → bl 0x4a4c (fresh: fn-таблицы 0 → payload-сдвиг: dst[0..len-3]=data[2..len], хвост 0). пусто → ret 0, dst 0; занято → S: бит снят, counter=найденный слот; ret 0 (детерм.).
+    Тест эмулятора @ 0x4b04: E2-b67: 0x4b04() — consumer: bl 0x4a04 (локальная таблица) + bl 0x12d04(sp+4) (free-очередь 0x190D: u16[dst]=len, memcpy(dst+2, data+2, len)) + cbz → bl 0x4a4c (fresh: fn-таблицы 0 → payload-сдвиг: dst[0..len-3]=data[2..len], хвост 0). пусто → ret 0, dst 0; занято → S: бит снят, counter=найденный слот; ret 0 (детерм.).
+    """
     DST = STACK_TOP - 0x40 - 0x9C + 4
     S = RAM + 0x190D
     # пусто
@@ -261,6 +282,9 @@ def _flash_call(off, arg0, scbr, ctrl=0, addr=0, max_insn=30000000):
            '→ если 1: delay-цикл ×0xb0000 → 0xA (10.8M инстр.); иначе 3 (быстро). cmp r5, #6 → erase-блок '
            '(в fresh недостижим: bit2 всегда set) → ret=r5. SCBR=0 → ret 3; SCBR=1 → ret 0xA (delay). Чистый emu.')
 def _(run, rng):
+    """Emulator test @ 0x6230: E2-b67: 0x6230(addr) — FLASH sector erase core: 0x61d4(0x7C) → [0x4002200C] |= 0x7C; r5=0x6390(0xb0000): 0x6284-декодер SCBR (bit0→1, bit2→3, bit3→4, bit4→5, bit6→7, иначе 6) → если 1: delay-цикл ×0xb0000 → 0xA (10.8M инстр.); иначе 3 (быстро). cmp r5, #6 → erase-блок (в fresh недостижим: bit2 всегда set) → ret=r5. SCBR=0 → ret 3; SCBR=1 → ret 0xA (delay). Чистый emu..
+    Тест эмулятора @ 0x6230: E2-b67: 0x6230(addr) — FLASH sector erase core: 0x61d4(0x7C) → [0x4002200C] |= 0x7C; r5=0x6390(0xb0000): 0x6284-декодер SCBR (bit0→1, bit2→3, bit3→4, bit4→5, bit6→7, иначе 6) → если 1: delay-цикл ×0xb0000 → 0xA (10.8M инстр.); иначе 3 (быстро). cmp r5, #6 → erase-блок (в fresh недостижим: bit2 всегда set) → ret=r5. SCBR=0 → ret 3; SCBR=1 → ret 0xA (delay). Чистый emu..
+    """
     CTRL = 0x40022010
     ADDR = 0x40022014
     # быстрый путь: SCBR = 0 → |= 0x7C → 0x7C → 0x6284 = 3 → ret 3
@@ -282,6 +306,9 @@ def _(run, rng):
 
 # --- 0xc0b4: NVIC IRQ enable (IPR + ISER) ---
 def _prio_byte(p1, p2, ctrl):
+    """The helper function (_prio_byte).
+    Вспомогательная функция (_prio_byte).
+    """
     n = (0x700 - (ctrl & 0x700)) >> 8
     r3 = (4 - n) & 0xFF  # rsb mod 256; сдвиг ≥32 → 0
     t = (p1 << r3) if r3 < 32 else 0
@@ -295,6 +322,9 @@ def _prio_byte(p1, p2, ctrl):
            'en=0: 0xE000E180) [word irq>>5] = 1<<(irq&0x1F). ret=struct. '
            'Реф-модель по register-trace (11/11 кейсов).')
 def _(run, rng):
+    """Emulator test @ 0xc0b4: E2-b67: 0xc0b4({irq,p1,p2,en}) — NVIC IRQ enable: n=(0x700−(CTRL&0x700))>>8; en=0 → только ISER[0xE000E100+irq>>3]=1<<(irq&0x1F); en=1 → IPR[0xE000E400+irq] = (((p1<<r3)|(p2&(n>>1)))<<4)&0xFF (r3=(4−n)&0xFF, сдвиг≥32→0) + ISER (en=1: 0xE000E100, en=0: 0xE000E180) [word irq>>5] = 1<<(irq&0x1F). ret=struct. Реф-модель по register-trace (11/11 кейсов)..
+    Тест эмулятора @ 0xc0b4: E2-b67: 0xc0b4({irq,p1,p2,en}) — NVIC IRQ enable: n=(0x700−(CTRL&0x700))>>8; en=0 → только ISER[0xE000E100+irq>>3]=1<<(irq&0x1F); en=1 → IPR[0xE000E400+irq] = (((p1<<r3)|(p2&(n>>1)))<<4)&0xFF (r3=(4−n)&0xFF, сдвиг≥32→0) + ISER (en=1: 0xE000E100, en=0: 0xE000E180) [word irq>>5] = 1<<(irq&0x1F). ret=struct. Реф-модель по register-trace (11/11 кейсов)..
+    """
     ST = 0x2000
     for _ in range(5):
         irq = rng.getrandbits(5)
@@ -328,6 +358,9 @@ def _(run, rng):
             '[+0x20]|=0x80, byte[0x245]=1, byte[0x246]=0; byte[0x102]: 0 → byte[0x247]|=1, '
             'u16[0x21E]|=8, ret=8; 1/≥3 → ret=0x20000247; 2 → byte[0x247]|=2, u16[0x21E]|=0x2000, ret=0x2000.')
 def _(run, rng):
+    """Emulator test @ 0x1a2a4: E2-b67: 0x1a2a4() — timer IRQ @0x40012C00: гейт = bit7(+0x1C) (lsls #0x18 + bpl); bit7=0 → ret=0x40012C00, без записей; bit7=1 → [+0x54]&=~0x8000, byte[0x218]=0, [+0x20]|=0x80, byte[0x245]=1, byte[0x246]=0; byte[0x102]: 0 → byte[0x247]|=1, u16[0x21E]|=8, ret=8; 1/≥3 → ret=0x20000247; 2 → byte[0x247]|=2, u16[0x21E]|=0x2000, ret=0x2000..
+    Тест эмулятора @ 0x1a2a4: E2-b67: 0x1a2a4() — timer IRQ @0x40012C00: гейт = bit7(+0x1C) (lsls #0x18 + bpl); bit7=0 → ret=0x40012C00, без записей; bit7=1 → [+0x54]&=~0x8000, byte[0x218]=0, [+0x20]|=0x80, byte[0x245]=1, byte[0x246]=0; byte[0x102]: 0 → byte[0x247]|=1, u16[0x21E]|=8, ret=8; 1/≥3 → ret=0x20000247; 2 → byte[0x247]|=2, u16[0x21E]|=0x2000, ret=0x2000..
+    """
     SR = 0x40012C1C
     R54 = 0x40012C54
     R20 = 0x40012C20
@@ -374,6 +407,9 @@ def _(run, rng):
            'u16[dst] < r6 → counter=s8[0x2FFA+0x14]+1 (clamp 0x7F), иначе 0; u16[src] не меняется; '
            'fixed-point хвост (udiv 0x3E8) → fresh ret 0. Реф-модель.')
 def _(run, rng):
+    """Emulator test @ 0xee48: E2-b67: 0xee48(src,dst,r2) — buffer manager: r6=u16[src]−0xF (underflow→0); u16[dst] < r6 → counter=s8[0x2FFA+0x14]+1 (clamp 0x7F), иначе 0; u16[src] не меняется; fixed-point хвост (udiv 0x3E8) → fresh ret 0. Реф-модель..
+    Тест эмулятора @ 0xee48: E2-b67: 0xee48(src,dst,r2) — buffer manager: r6=u16[src]−0xF (underflow→0); u16[dst] < r6 → counter=s8[0x2FFA+0x14]+1 (clamp 0x7F), иначе 0; u16[src] не меняется; fixed-point хвост (udiv 0x3E8) → fresh ret 0. Реф-модель..
+    """
     SRC = 0x2000
     DST = 0x3000
     B = 0x2FFA
@@ -406,6 +442,9 @@ def _(run, rng):
             '→ fresh: table[0]=0x26004605 (незамапленный) → останов fetch, r0=0x26004605, last_error. '
             'Реф-модель.')
 def _(run, rng):
+    """Emulator test @ 0x1b67c: E2-b67: 0x1b67c() — overheat pre-stage: u32[0x3C8+0x68] = s16[0x24A] + u32[0x430] − s16[0x24C]; s16[0x24C] = результат >> 5 (арифм.); blx [flash-табл 0xA8C8][byte[0x3C8+0x10]] → fresh: table[0]=0x26004605 (незамапленный) → останов fetch, r0=0x26004605, last_error. Реф-модель..
+    Тест эмулятора @ 0x1b67c: E2-b67: 0x1b67c() — overheat pre-stage: u32[0x3C8+0x68] = s16[0x24A] + u32[0x430] − s16[0x24C]; s16[0x24C] = результат >> 5 (арифм.); blx [flash-табл 0xA8C8][byte[0x3C8+0x10]] → fresh: table[0]=0x26004605 (незамапленный) → останов fetch, r0=0x26004605, last_error. Реф-модель..
+    """
     for _ in range(5):
         v = rng.getrandbits(16) - 0x8000
         old = rng.getrandbits(16) - 0x8000
@@ -433,6 +472,9 @@ def _(run, rng):
            'byte[cs]≠0x10: len=byte[cs+4], out[2]=len, 0x11a4(len, cs+5→out+3) (2+len+2 кадра). '
            'chk=0x1e34(out, r4) → out[r4], out[r4+1]=0x8B; *len_ptr=strb(длина); ret=длина−1.')
 def _(run, rng):
+    """Emulator test @ 0x56bc: E2-b67: 0x56bc(cs,out,len_ptr) — response encoder: out[0]=0x74, out[1]=byte[cs+2]; byte[cs]==0x10: byte[cs+2]==0x81 → out[2]=0x1B, out[3]=byte[0xCB3], out[4]=byte[0xCB3+1], 0x11a4(25B: RAM+0x30DD→out+3, перезаписывает 3..4) (30B-кадр); иначе «OK»: out[2..3]=0x4F 0x4B (6B-кадр). byte[cs]≠0x10: len=byte[cs+4], out[2]=len, 0x11a4(len, cs+5→out+3) (2+len+2 кадра). chk=0x1e34(out, r4) → out[r4], out[r4+1]=0x8B; *len_ptr=strb(длина); ret=длина−1..
+    Тест эмулятора @ 0x56bc: E2-b67: 0x56bc(cs,out,len_ptr) — response encoder: out[0]=0x74, out[1]=byte[cs+2]; byte[cs]==0x10: byte[cs+2]==0x81 → out[2]=0x1B, out[3]=byte[0xCB3], out[4]=byte[0xCB3+1], 0x11a4(25B: RAM+0x30DD→out+3, перезаписывает 3..4) (30B-кадр); иначе «OK»: out[2..3]=0x4F 0x4B (6B-кадр). byte[cs]≠0x10: len=byte[cs+4], out[2]=len, 0x11a4(len, cs+5→out+3) (2+len+2 кадра). chk=0x1e34(out, r4) → out[r4], out[r4+1]=0x8B; *len_ptr=strb(длина); ret=длина−1..
+    """
     CS = 0x2000
     OUT = 0x3000
     LP = 0x4000

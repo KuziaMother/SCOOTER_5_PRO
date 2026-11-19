@@ -17,6 +17,9 @@ from emulator.mcu_emu import (MI_BLE_SIID_MAIN, MI_BLE_SIID_SEC, MI_BLE_SIID_OTA
             '0xF5/0,1=OTA шифр. CRC-8 (poly 0x29/0x49/0x31/0x9B) на siid=0/piid=0 не совпадает. '
             'mi_ble_decode сверен с реальными snoop-фреймами (logs/btsnoop_hci.log)')
 def _(run, rng):
+    """Emulator test @ 0x211f8: §96(9) BLE app-протокол (Mi Home APK + snoop): data-фрейм [siid][piid][len:2 LE][data]; len=полный размер, len>MTU→фрагментация (стриминг). siid/piid-карта: 0/0=main, 1/0=sec, 0xF5/0,1=OTA шифр. CRC-8 (poly 0x29/0x49/0x31/0x9B) на siid=0/piid=0 не совпадает. mi_ble_decode сверен с реальными snoop-фреймами (logs/btsnoop_hci.log).
+    Тест эмулятора @ 0x211f8: §96(9) BLE app-протокол (Mi Home APK + snoop): data-фрейм [siid][piid][len:2 LE][data]; len=полный размер, len>MTU→фрагментация (стриминг). siid/piid-карта: 0/0=main, 1/0=sec, 0xF5/0,1=OTA шифр. CRC-8 (poly 0x29/0x49/0x31/0x9B) на siid=0/piid=0 не совпадает. mi_ble_decode сверен с реальными snoop-фреймами (logs/btsnoop_hci.log).
+    """
     assert MI_BLE_SIID_MAIN == 0 and MI_BLE_SIID_SEC == 1 and MI_BLE_SIID_OTA == 0xF5
     # короткий полный фрейм: siid=0/piid=0, len=2, data=2Б
     d = mi_ble_decode(bytes([0x00, 0x00, 0x02, 0x00, 0xAA, 0xBB]))
@@ -64,6 +67,9 @@ def _(run, rng):
             'в callback/RAM-трамплинах (live). Статически верифицирован: все 6 содержат blx_r4+bx_r3+cbz. '
             'Разница setter\'ов — только адрес cfg-struct и offset callback-указателя')
 def _(run, rng):
+    """Emulator test @ 0x6008: §96(8) BLE co-proc тривиальные статик: setter-семья 0x06008..0x060e4 (6×44Б, ble_2.7.0_0015.bin) — единый trampoline-паттерн: push{r4,r5,lr} → save {lr,r5,r4} в per-setter cfg-struct (+0/+4/+8) → cbz callback → blx r4 (вызов зарегистрированного callback) → bx r3 (возврат через saved-указатель [ret+8]). Глубокая логика — в callback/RAM-трамплинах (live). Статически верифицирован: все 6 содержат blx_r4+bx_r3+cbz. Разница setter'ов — только адрес cfg-struct и offset callback-указателя.
+    Тест эмулятора @ 0x6008: §96(8) BLE co-proc тривиальные статик: setter-семья 0x06008..0x060e4 (6×44Б, ble_2.7.0_0015.bin) — единый trampoline-паттерн: push{r4,r5,lr} → save {lr,r5,r4} в per-setter cfg-struct (+0/+4/+8) → cbz callback → blx r4 (вызов зарегистрированного callback) → bx r3 (возврат через saved-указатель [ret+8]). Глубокая логика — в callback/RAM-трамплинах (live). Статически верифицирован: все 6 содержат blx_r4+bx_r3+cbz. Разница setter'ов — только адрес cfg-struct и offset callback-указателя.
+    """
     import os
     ble = os.path.join(os.path.dirname(__file__), '..', '..', 'images', 'ble_2.7.0_0015.bin')
     if not os.path.exists(ble):
@@ -91,6 +97,9 @@ def _(run, rng):
             'sign-bit([0x40004828]<<17). UsartTxSenderModel: frame-буфер @0xA43 + 1 байт/tick. Контроль: load_frame(8Б) → '
             '8×tick() → 8 байт в USART3_DR (uc.mem_read(USART3_DR) == последний), usart_out == frame')
 def _(run, rng):
+    """Emulator test @ 0x1f600: §96(4) A2 TX-sender (объединение §94 scheduler + A2): 0x1F600 = main-loop dispatcher (head 0x2C1/tail 0x2C2, ring @0xA43, слот 0x96, период 432) + byte-примитив 0x1F1C0 → USART3_DR (0x40004804). Гейт TX-ready = sign-bit([0x40004828]<<17). UsartTxSenderModel: frame-буфер @0xA43 + 1 байт/tick. Контроль: load_frame(8Б) → 8×tick() → 8 байт в USART3_DR (uc.mem_read(USART3_DR) == последний), usart_out == frame.
+    Тест эмулятора @ 0x1f600: §96(4) A2 TX-sender (объединение §94 scheduler + A2): 0x1F600 = main-loop dispatcher (head 0x2C1/tail 0x2C2, ring @0xA43, слот 0x96, период 432) + byte-примитив 0x1F1C0 → USART3_DR (0x40004804). Гейт TX-ready = sign-bit([0x40004828]<<17). UsartTxSenderModel: frame-буфер @0xA43 + 1 байт/tick. Контроль: load_frame(8Б) → 8×tick() → 8 байт в USART3_DR (uc.mem_read(USART3_DR) == последний), usart_out == frame.
+    """
     from emulator.mcu_emu import (UsartTxSenderModel, USART3_DR, USART3_TXSR,
                                   TX_SENDER_FN, TX_BYTE_SEND_FN, TX_FRAME_LEN)
     assert TX_SENDER_FN == 0x1F600 and TX_BYTE_SEND_FN == 0x1F1C0 and TX_FRAME_LEN == 8
@@ -123,6 +132,9 @@ def _(run, rng):
             'и отдаёт UsartTxSenderModel (1 байт/tick → USART3_DR). run(20) → tx_sent монотонно растёт, tx_byte ≠ None, '
             'собранные usart_out складываются в целые 8-байтовые фреймы (кратность len)')
 def _(run, rng):
+    """Emulator test @ 0x1f600: §96(4) A2 ControlLoop-интеграция: ControlLoop._emit_tx() собирает push-фрейм телеметрии {8,"A",sp16,thr16,XOR,0xA5} и отдаёт UsartTxSenderModel (1 байт/tick → USART3_DR). run(20) → tx_sent монотонно растёт, tx_byte ≠ None, собранные usart_out складываются в целые 8-байтовые фреймы (кратность len).
+    Тест эмулятора @ 0x1f600: §96(4) A2 ControlLoop-интеграция: ControlLoop._emit_tx() собирает push-фрейм телеметрии {8,"A",sp16,thr16,XOR,0xA5} и отдаёт UsartTxSenderModel (1 байт/tick → USART3_DR). run(20) → tx_sent монотонно растёт, tx_byte ≠ None, собранные usart_out складываются в целые 8-байтовые фреймы (кратность len).
+    """
     from emulator.mcu_emu import ControlLoop
     cl = ControlLoop(run_foc=False)
     cl.setup(target=2000, mode=3, soc=100.0)

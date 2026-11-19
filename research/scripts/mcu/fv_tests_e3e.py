@@ -27,6 +27,9 @@ from emulator.mcu_emu import (TxAggregatorModel, TX_BCN_C, TX_BCN_TABLE_OFF,  # 
 
 
 def _b3_fresh(off, seeds=(), max_insn=200000):
+    """The helper function (_b3_fresh).
+    Вспомогательная функция (_b3_fresh).
+    """
     emu = McuEmu(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -41,6 +44,9 @@ def _b3_fresh(off, seeds=(), max_insn=200000):
     lastpc = [0]
 
     def _hc(uc_, address, size, user):
+        """The helper function (_hc).
+        Вспомогательная функция (_hc).
+        """
         lastpc[0] = address
 
     uc.hook_add(UC_HOOK_CODE, _hc)
@@ -54,6 +60,9 @@ def _b3_fresh(off, seeds=(), max_insn=200000):
 @t(0x1F1CC, '§89: 0x1F1CC() — beacon «c» builder: slot 0xA43+0x96·byte[0x2C1] = '
            '{4,\'c\',\'D\',0xA7,0x9C}; counter++ (wrap ≥4→0); ret 1')
 def _(run, rng):
+    """Emulator test @ 0x1f1cc: §89: 0x1F1CC() — beacon «c» builder: slot 0xA43+0x96·byte[0x2C1] = {4,'c','D',0xA7,0x9C}; counter++ (wrap ≥4→0); ret 1.
+    Тест эмулятора @ 0x1f1cc: §89: 0x1F1CC() — beacon «c» builder: slot 0xA43+0x96·byte[0x2C1] = {4,'c','D',0xA7,0x9C}; counter++ (wrap ≥4→0); ret 1.
+    """
     emu, uc, lp = _b3_fresh(0x1F1CC)
     assert uc.reg_read(UC_ARM_REG_R0) == 1, f'0x1F1CC: ret={uc.reg_read(UC_ARM_REG_R0):#x}'
     tx = TxAggregatorModel(emu)
@@ -73,6 +82,9 @@ def _(run, rng):
            '\'Z\'→0x14 (byte[0x180]); tail++ на обработку')
 def _(run, rng):
     # guard: tail == head → early-exit
+    """Emulator test @ 0x1f71c: §89: 0x1F71C() — 24-состоянная машина (агрегатор MCU→BLE): guard byte[0x2C8]≠byte[0x2C7] (иначе early-exit 22 insn → 0x2000C); классификатор slot 0xC05+0x96 (изоляция: idx=1 → 0xC9B): 'Q'-'T'→класс 1, 'd'→0x0A, 'Z'→0x14 (byte[0x180]); tail++ на обработку.
+    Тест эмулятора @ 0x1f71c: §89: 0x1F71C() — 24-состоянная машина (агрегатор MCU→BLE): guard byte[0x2C8]≠byte[0x2C7] (иначе early-exit 22 insn → 0x2000C); классификатор slot 0xC05+0x96 (изоляция: idx=1 → 0xC9B): 'Q'-'T'→класс 1, 'd'→0x0A, 'Z'→0x14 (byte[0x180]); tail++ на обработку.
+    """
     emu, uc, lp = _b3_fresh(0x1F71C, seeds=[(RAM + 0x2C7, 2), (RAM + 0x2C8, 2)])
     assert emu.insn == 22, f'guard: insn={emu.insn}'
     # изоляция: head=0, tail=1 (non-empty), slot idx=1 → байты @0xC9B..0xC9E
@@ -97,6 +109,9 @@ def _(run, rng):
            '0x9C}: запись веткозависима (в изоляции default-path обходит её: 0x20BC6 → '
            'эпилог 0x211E4); контракт: exit через pop @0x211E6, counter ∈ {0,1}')
 def _(run, rng):
+    """Emulator test @ 0x211ae: §89: tail 0x211AE (общий exit 0x1F71C) — beacon «a» builder {4,<byte>,«a»,0xC4,0x9C}: запись веткозависима (в изоляции default-path обходит её: 0x20BC6 → эпилог 0x211E4); контракт: exit через pop @0x211E6, counter ∈ {0,1}.
+    Тест эмулятора @ 0x211ae: §89: tail 0x211AE (общий exit 0x1F71C) — beacon «a» builder {4,<byte>,«a»,0xC4,0x9C}: запись веткозависима (в изоляции default-path обходит её: 0x20BC6 → эпилог 0x211E4); контракт: exit через pop @0x211E6, counter ∈ {0,1}.
+    """
     emu, uc, lp = _b3_fresh(0x1F71C, seeds=[(RAM + 0x2C7, 0), (RAM + 0x2C8, 1)])
     assert lp == 0x211E6, f'exit tail: lastpc={lp:#x}'
     tx = TxAggregatorModel(emu)

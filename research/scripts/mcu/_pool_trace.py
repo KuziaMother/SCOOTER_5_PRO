@@ -23,6 +23,9 @@ FW_LEN = 0x23680
 
 
 def trace(off, args=(), max_insn=50000):
+    """The trace function of the script.
+    Функция trace скрипта.
+    """
     emu = McuEmu(max_insn=max_insn)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -31,10 +34,16 @@ def trace(off, args=(), max_insn=50000):
     writes = set()
 
     def hr(u, access, address, size, value, user):
+        """The hr function of the script.
+        Функция hr скрипта.
+        """
         if RAM <= address < RAM + 0x20000:
             reads.add(address - RAM)
 
     def hw(u, access, address, size, value, user):
+        """The hw function of the script.
+        Функция hw скрипта.
+        """
         if RAM <= address < RAM + 0x20000:
             writes.add(address - RAM)
 
@@ -42,6 +51,9 @@ def trace(off, args=(), max_insn=50000):
     h2 = uc.hook_add(UC_HOOK_MEM_WRITE, hw, None, RAM, RAM + 0x20000)
 
     def _st(uc_, a, s, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = a & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or FLASH1 <= aa < FLASH1 + FW_LEN):
             uc_.emu_stop()
@@ -69,6 +81,9 @@ def trace(off, args=(), max_insn=50000):
 
 
 def _show(off, args=()):
+    """The helper function (_show).
+    Вспомогательная функция (_show).
+    """
     r0, reads, writes = trace(off, args=args)
     print(f'=== 0x{off:05x}  (r0={r0:#x}) ===')
     print(f'  RAM-reads  ({len(reads)}): ' +

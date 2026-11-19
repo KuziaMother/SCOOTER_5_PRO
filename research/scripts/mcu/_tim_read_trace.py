@@ -16,6 +16,9 @@ FW_LEN = 0x25000
 
 
 def run_foc(val=16384):
+    """The run_foc function of the script.
+    Функция run_foc скрипта.
+    """
     emu = McuEmu(max_insn=200000)
     emu.uc.mem_write(RAM, bytes(0x20000))
     r4 = RAM + 0x040
@@ -27,6 +30,9 @@ def run_foc(val=16384):
     emu.trace_periph = True
 
     def stop(uc_, addr, size, u):
+        """The stop function of the script.
+        Функция stop скрипта.
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + FW_LEN or
                 FLASH1 <= aa < FLASH1 + FW_LEN):
@@ -45,12 +51,21 @@ def run_foc(val=16384):
 
 
 def region(name, lo, hi):
+    """The region function of the script.
+    Функция region скрипта.
+    """
     def f(a):
+        """The f function of the script.
+        Функция f скрипта.
+        """
         return lo <= a < hi
     return name, f
 
 
 def main():
+    """The CLI entry point of the script.
+    Точка входа (CLI) скрипта.
+    """
     emu = run_foc(16384)
     # periph_reads = {addr: [pc,...]} ; periph_writes = [(pc, addr, size, value)]
     read_addrs = set(emu.periph_reads.keys())

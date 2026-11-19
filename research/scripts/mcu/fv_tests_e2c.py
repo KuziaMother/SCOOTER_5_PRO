@@ -6,6 +6,9 @@ from fv_core import _fresh_call, _intercept  # noqa: F401
 # --- E2-batch25: event-очередь push (stateful) ---
 @t(0x04BC0, 'E2-b25: 0x04bc0 — event-очередь push: если idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (через critsec). Вериф idx=2 (write) и idx=7 (skip).')
 def _(run, rng):
+    """Emulator test @ 0x4bc0: E2-b25: 0x04bc0 — event-очередь push: если idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (через critsec). Вериф idx=2 (write) и idx=7 (skip)..
+    Тест эмулятора @ 0x4bc0: E2-b25: 0x04bc0 — event-очередь push: если idx<6 -> u32@(0x164C+idx*16+8)=ptr, +0xC=val (через critsec). Вериф idx=2 (write) и idx=7 (skip)..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     r0, emu = _fresh_call(0x04BC0, args=(2, 0x1234, 0xABCD))
@@ -23,6 +26,9 @@ def _(run, rng):
 # --- E2-batch26: инициализация event-кольца ---
 @t(0x04BE8, 'E2-b26: 0x04be8 — init event-кольца. u32@0xB4C=0; для i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Вериф: pre-set -> все очищены.')
 def _(run, rng):
+    """Emulator test @ 0x4be8: E2-b26: 0x04be8 — init event-кольца. u32@0xB4C=0; для i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Вериф: pre-set -> все очищены..
+    Тест эмулятора @ 0x4be8: E2-b26: 0x04be8 — init event-кольца. u32@0xB4C=0; для i=0..5: byte@(0x164C+i*16)=0, u32@(0x164C+i*16+4)=0xFFFFFFFF, byte@(0x164C+i*16+1)=0. Вериф: pre-set -> все очищены..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     pre = [(_R + 0xB4C, b'\x11\x22\x33\x44'),
@@ -43,6 +49,9 @@ def _(run, rng):
 # --- E2-batch27: merge struct-полей (чистые arg-указатели) ---
 @t(0x04F70, 'E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Вериф OR-агрегация + copy (2 init).')
 def _(run, rng):
+    """Emulator test @ 0x4f70: E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Вериф OR-агрегация + copy (2 init)..
+    Тест эмулятора @ 0x4f70: E2-b27: 0x04f70 — merge: dst[0]=(dst[0]&~0x7FF0)|OR(src[+8,+10..+28]); dst[+4]=src[+0xC]; dst[+8]=src[0]. Вериф OR-агрегация + copy (2 init)..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     dst = _R + 0x100; src = _R + 0x200
@@ -68,6 +77,9 @@ def _(run, rng):
 # --- E2-batch28: u16-merge struct-полей (чистые arg-указатели) ---
 @t(0x10734, 'E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Вериф (2 init).')
 def _(run, rng):
+    """Emulator test @ 0x10734: E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Вериф (2 init)..
+    Тест эмулятора @ 0x10734: E2-b28: 0x10734 — u16-merge: dst[0]=(dst[0]&0x3040)|OR(src[+0..+0xe]); dst[+0x1C]&=0xF7FF; dst[+0x10]=src[+0x10]. Вериф (2 init)..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     dst = _R + 0x100; src = _R + 0x200
@@ -93,6 +105,9 @@ def _(run, rng):
 # --- E2-batch29: memcpy (word-fast-path + byte-tail) ---
 @t(0x19A68, 'E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy если оба 4-aligned, else byte; tail по байтам. Вериф len=0..64 (aligned+unaligned).')
 def _(run, rng):
+    """Emulator test @ 0x19a68: E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy если оба 4-aligned, else byte; tail по байтам. Вериф len=0..64 (aligned+unaligned)..
+    Тест эмулятора @ 0x19a68: E2-b29: 0x19a68 — memcpy(dst,src,len): word-copy если оба 4-aligned, else byte; tail по байтам. Вериф len=0..64 (aligned+unaligned)..
+    """
     from emulator.mcu_emu import RAM as _R
     for ln in (0, 1, 3, 4, 5, 7, 16, 17, 64):
         src = _R + 0x100; dst = _R + 0x300
@@ -106,10 +121,16 @@ def _(run, rng):
 # --- E2-batch30: bit-field containment check ---
 @t(0x09874, 'E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> поле u32@(ptr+0x18), mask=r1>>16; else поле u32@(ptr+0x14), mask=r1&0xFFFFFF. Вериф: 1 если (*field & mask)!=0 (7 кейсов).')
 def _(run, rng):
+    """Emulator test @ 0x9874: E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> поле u32@(ptr+0x18), mask=r1>>16; else поле u32@(ptr+0x14), mask=r1&0xFFFFFF. Вериф: 1 если (*field & mask)!=0 (7 кейсов)..
+    Тест эмулятора @ 0x9874: E2-b30: 0x09874 — bit-field check: top-nibble(r1)==0 -> поле u32@(ptr+0x18), mask=r1>>16; else поле u32@(ptr+0x14), mask=r1&0xFFFFFF. Вериф: 1 если (*field & mask)!=0 (7 кейсов)..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     ptr = _R + 0x200
     def chk(r1, f14, f18):
+        """The chk function of the script.
+        Функция chk скрипта.
+        """
         pre = [(ptr + 0x14, _st.pack('<I', f14)), (ptr + 0x18, _st.pack('<I', f18))]
         r0, _e = _fresh_call(0x09874, args=(ptr, r1), extra_ram=pre)
         return r0 & 1
@@ -127,10 +148,16 @@ def _(run, rng):
 # --- E2-batch31: two-part bit check ---
 @t(0x130F2, 'E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Вериф: 1 если оба бита set (6 кейсов).')
 def _(run, rng):
+    """Emulator test @ 0x130f2: E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Вериф: 1 если оба бита set (6 кейсов)..
+    Тест эмулятора @ 0x130f2: E2-b31: 0x130f2 — two-part bit check. group=(code>>5)&7: 1->+0xC, 2->+0x10, else->+0x14; maskA=1<<(code&0x1F). PartB: ptr[0], maskB=1<<(code>>8). Вериф: 1 если оба бита set (6 кейсов)..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     ptr = _R + 0x200
     def chk(code, f0, fc, f10, f14):
+        """The chk function of the script.
+        Функция chk скрипта.
+        """
         pre = [(ptr + 0, _st.pack('<H', f0)), (ptr + 0xC, _st.pack('<H', fc)),
                (ptr + 0x10, _st.pack('<H', f10)), (ptr + 0x14, _st.pack('<H', f14))]
         r0, _e = _fresh_call(0x130F2, args=(ptr, code), extra_ram=pre)
@@ -148,6 +175,9 @@ def _(run, rng):
 # --- E2-batch32: XOR 16-байт блоков ---
 @t(0x1A5FA, 'E2-b32: 0x1a5fa — XOR-блок: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 байт). Вериф idx=0,1,2.')
 def _(run, rng):
+    """Emulator test @ 0x1a5fa: E2-b32: 0x1a5fa — XOR-блок: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 байт). Вериф idx=0,1,2..
+    Тест эмулятора @ 0x1a5fa: E2-b32: 0x1a5fa — XOR-блок: dst[r3*4+i] ^= src[(4*idx+r3)*4+i], r3,i=0..3 (16 байт). Вериф idx=0,1,2..
+    """
     from emulator.mcu_emu import RAM as _R
     dst = _R + 0x100; src = _R + 0x300
     srcbuf = bytes((i * 5 + 1) & 0xFF for i in range(64))
@@ -165,6 +195,9 @@ def _(run, rng):
 # --- E2-batch33: exponent-ramp (2^(t-0x7F)) ---
 @t(0x1A010, 'E2-b33: 0x1a010 — exponent-ramp: для r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (линейный рост 2^0..2^23). Вериф sweep t=0x78..0x96.')
 def _(run, rng):
+    """Emulator test @ 0x1a010: E2-b33: 0x1a010 — exponent-ramp: для r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (линейный рост 2^0..2^23). Вериф sweep t=0x78..0x96..
+    Тест эмулятора @ 0x1a010: E2-b33: 0x1a010 — exponent-ramp: для r0=(t<<23): t<0x7F -> 0; else 1<<(t-0x7F) (линейный рост 2^0..2^23). Вериф sweep t=0x78..0x96..
+    """
     for t in range(0x78, 0x97):
         r0 = t << 23
         r, _e = _fresh_call(0x1A010, args=(r0,))
@@ -175,10 +208,16 @@ def _(run, rng):
 # --- E2-batch34: u16 bit-check + 24-bit field all-set check ---
 @t(0x10718, 'E2-b34: 0x10718 — u16 bit-check: 1 если (u16@(ptr+8) & mask)!=0. Вериф 3 кейса.')
 def _(run, rng):
+    """Emulator test @ 0x10718: E2-b34: 0x10718 — u16 bit-check: 1 если (u16@(ptr+8) & mask)!=0. Вериф 3 кейса..
+    Тест эмулятора @ 0x10718: E2-b34: 0x10718 — u16 bit-check: 1 если (u16@(ptr+8) & mask)!=0. Вериф 3 кейса..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     ptr = _R + 0x200
     def a(mask, val):
+        """The a function of the script.
+        Функция a скрипта.
+        """
         r0, _e = _fresh_call(0x10718, args=(ptr, mask), extra_ram=[(ptr + 8, _st.pack('<H', val))])
         return r0 & 1
     for mask, val, exp in [(0x0001, 0x0001, 1), (0x0001, 0x0000, 0), (0x0100, 0xFF00, 1)]:
@@ -187,10 +226,16 @@ def _(run, rng):
 
 @t(0x09794, 'E2-b34: 0x09794 — 24-битное поле (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 если (field&mask)==mask. Вериф 4 кейса.')
 def _(run, rng):
+    """Emulator test @ 0x9794: E2-b34: 0x09794 — 24-битное поле (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 если (field&mask)==mask. Вериф 4 кейса..
+    Тест эмулятора @ 0x9794: E2-b34: 0x09794 — 24-битное поле (u16@+0x14 | u16@+0x18<<16)&0xFFFFFF; 1 если (field&mask)==mask. Вериф 4 кейса..
+    """
     from emulator.mcu_emu import RAM as _R
     import struct as _st
     ptr = _R + 0x200
     def b(mask, f14, f18):
+        """The b function of the script.
+        Функция b скрипта.
+        """
         r0, _e = _fresh_call(0x09794, args=(ptr, mask),
                              extra_ram=[(ptr + 0x14, _st.pack('<H', f14)), (ptr + 0x18, _st.pack('<H', f18))])
         return r0 & 1
@@ -203,6 +248,9 @@ def _(run, rng):
 # --- E2-batch35: periph const-write / bit-set via pool pointers ---
 @t(0x05CC0, 'E2-b35: 0x05cc0 — пишет константу 0xAAAA в periph[0x40003000] (pool-указатель). Вериф значение после вызова.')
 def _(run, rng):
+    """Emulator test @ 0x5cc0: E2-b35: 0x05cc0 — пишет константу 0xAAAA в periph[0x40003000] (pool-указатель). Вериф значение после вызова..
+    Тест эмулятора @ 0x5cc0: E2-b35: 0x05cc0 — пишет константу 0xAAAA в periph[0x40003000] (pool-указатель). Вериф значение после вызова..
+    """
     import struct as _st
     r0, emu = _fresh_call(0x05CC0)
     got = _st.unpack('<I', bytes(emu.uc.mem_read(0x40003000, 4)))[0]
@@ -210,6 +258,9 @@ def _(run, rng):
 
 @t(0x1A5C4, 'E2-b35: 0x1a5c4 — ставит бит3 (0x8) в u32@periph[0x40012418] (pool-base 0x40012400). Вериф pre=0/0xFF.')
 def _(run, rng):
+    """Emulator test @ 0x1a5c4: E2-b35: 0x1a5c4 — ставит бит3 (0x8) в u32@periph[0x40012418] (pool-base 0x40012400). Вериф pre=0/0xFF..
+    Тест эмулятора @ 0x1a5c4: E2-b35: 0x1a5c4 — ставит бит3 (0x8) в u32@periph[0x40012418] (pool-base 0x40012400). Вериф pre=0/0xFF..
+    """
     import struct as _st
     for pre, exp in [(0, 0x8), (0xFF, 0xFF)]:
         r0, emu = _fresh_call(0x1A5C4, extra_mem=[(0x40012418, _st.pack('<I', pre))])
@@ -218,6 +269,9 @@ def _(run, rng):
 
 @t(0x1A5D4, 'E2-b35: 0x1a5d4 — ставит бит5 (0x20) в u32@periph[0x40012418]. Вериф pre=0/0x0F.')
 def _(run, rng):
+    """Emulator test @ 0x1a5d4: E2-b35: 0x1a5d4 — ставит бит5 (0x20) в u32@periph[0x40012418]. Вериф pre=0/0x0F..
+    Тест эмулятора @ 0x1a5d4: E2-b35: 0x1a5d4 — ставит бит5 (0x20) в u32@periph[0x40012418]. Вериф pre=0/0x0F..
+    """
     import struct as _st
     for pre, exp in [(0, 0x20), (0x0F, 0x2F)]:
         r0, emu = _fresh_call(0x1A5D4, extra_mem=[(0x40012418, _st.pack('<I', pre))])

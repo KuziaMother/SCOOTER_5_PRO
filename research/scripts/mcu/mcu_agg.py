@@ -33,6 +33,9 @@ SLOT = 0x96
 
 
 def run(frame_hex, state=0, off=0, slot_a=0, slot_b=0, max_insn=300000):
+    """The run function of the script.
+    Функция run скрипта.
+    """
     emu = McuEmu(trace=False, max_insn=max_insn)
     uc = emu.uc
     # периферия: status-биты готовы
@@ -60,6 +63,9 @@ def run(frame_hex, state=0, off=0, slot_a=0, slot_b=0, max_insn=300000):
     writes = []
 
     def on_w(uc_, access, address, size, value, user):
+        """The on_w function of the script.
+        Функция on_w скрипта.
+        """
         if 0x20000000 <= address < 0x20018000:
             pc = uc_.reg_read(UC_ARM_REG_PC)
             writes.append((pc, address - 0x20000000, size, value))

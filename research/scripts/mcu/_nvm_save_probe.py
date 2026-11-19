@@ -10,6 +10,9 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 SPI1 = 0x40013000
 
 def run_save():
+    """The run_save function of the script.
+    Функция run_save скрипта.
+    """
     emu = McuEmu(max_insn=200_000)
     uc = emu.uc
     uc.mem_write(RAM, bytes(0x20000))
@@ -22,11 +25,17 @@ def run_save():
 
     ram_reads = []
     def _rd(uc_, access, addr, size, value, user):
+        """The helper function (_rd).
+        Вспомогательная функция (_rd).
+        """
         if RAM <= addr < RAM + 0x20000:
             ram_reads.append((addr - RAM, size))
     rh = uc.hook_add(UC_HOOK_MEM_READ, _rd, None, RAM, RAM + 0x20000)
 
     def _st(uc_, addr, size, u):
+        """The helper function (_st).
+        Вспомогательная функция (_st).
+        """
         aa = addr & ~1
         if not (FLASH0 <= aa < FLASH0 + 0x23680 or FLASH1 <= aa < FLASH1 + 0x23680):
             uc_.emu_stop()

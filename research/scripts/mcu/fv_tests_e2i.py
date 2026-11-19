@@ -9,6 +9,9 @@ from fv_core import _fresh_call, _intercept  # noqa: F401
 @t(0x19A68, 'E2-b64: 0x19a68(dst,src,len) — memcpy: word-fast-path (оба ptr выровнены по 4) + byte-tail; '
             'ret = dst+len.')
 def _(run, rng):
+    """Emulator test @ 0x19a68: E2-b64: 0x19a68(dst,src,len) — memcpy: word-fast-path (оба ptr выровнены по 4) + byte-tail; ret = dst+len..
+    Тест эмулятора @ 0x19a68: E2-b64: 0x19a68(dst,src,len) — memcpy: word-fast-path (оба ptr выровнены по 4) + byte-tail; ret = dst+len..
+    """
     SRC, DST = 0x200, 0x300
     for _ in range(40):
         n = rng.randint(0, 40)
@@ -23,6 +26,9 @@ def _(run, rng):
 
 @t(0x19A8C, 'E2-b64: 0x19a8c(dst,count,byte) — memset: count байт = byte (uxtb); ret = dst+count.')
 def _(run, rng):
+    """Emulator test @ 0x19a8c: E2-b64: 0x19a8c(dst,count,byte) — memset: count байт = byte (uxtb); ret = dst+count..
+    Тест эмулятора @ 0x19a8c: E2-b64: 0x19a8c(dst,count,byte) — memset: count байт = byte (uxtb); ret = dst+count..
+    """
     DST = 0x300
     for _ in range(40):
         n = rng.randint(0, 40)
@@ -50,6 +56,9 @@ def ref_1a16a(lo, hi, lo2, hi2):
 @t(0x1A16A, 'E2-b64: 0x1a16a(lo,hi,lo2,hi2) — u64 signed-коррекция: hi2≥0 → passthrough; иначе (lo,hi)+=1, '
             '(lo2,hi2)*=2, при B==2^63 → lo&=~1. ret=(lo,hi). (каталог «u64 sub» — контракт уточнён эмпирически)')
 def _(run, rng):
+    """Emulator test @ 0x1a16a: E2-b64: 0x1a16a(lo,hi,lo2,hi2) — u64 signed-коррекция: hi2≥0 → passthrough; иначе (lo,hi)+=1, (lo2,hi2)*=2, при B==2^63 → lo&=~1. ret=(lo,hi). (каталог «u64 sub» — контракт уточнён эмпирически).
+    Тест эмулятора @ 0x1a16a: E2-b64: 0x1a16a(lo,hi,lo2,hi2) — u64 signed-коррекция: hi2≥0 → passthrough; иначе (lo,hi)+=1, (lo2,hi2)*=2, при B==2^63 → lo&=~1. ret=(lo,hi). (каталог «u64 sub» — контракт уточнён эмпирически).
+    """
     for _ in range(40):
         lo, hi = rng.getrandbits(32), rng.getrandbits(32)
         if rng.random() < 0.5:
@@ -78,6 +87,9 @@ def ref_17524(v, w):
 @t(0x17524, 'E2-b64: 0x17524() — boot-wait предикат (дыра данных §55): v=byte[RAM+0xFD3], w=u32[RAM+8]; '
             'v>0x1E → w:=0, ret 0; w<0x10E0 → ret 0 (w нетронут); иначе w:=0x10E0, ret 1.')
 def _(run, rng):
+    """Emulator test @ 0x17524: E2-b64: 0x17524() — boot-wait предикат (дыра данных §55): v=byte[RAM+0xFD3], w=u32[RAM+8]; v>0x1E → w:=0, ret 0; w<0x10E0 → ret 0 (w нетронут); иначе w:=0x10E0, ret 1..
+    Тест эмулятора @ 0x17524: E2-b64: 0x17524() — boot-wait предикат (дыра данных §55): v=byte[RAM+0xFD3], w=u32[RAM+8]; v>0x1E → w:=0, ret 0; w<0x10E0 → ret 0 (w нетронут); иначе w:=0x10E0, ret 1..
+    """
     cases = []
     for v in (0x1E, 0x1F, 0x20, 0x30, 0xFF):
         for w in (0x10DF, 0x10E0, 0x10E1, 0):
@@ -136,6 +148,9 @@ def _free3_case(run, off, S, state, cnt0, slots):
             'слот cnt: u16@P+2+152cnt=len, data@P+4+152cnt). state&7==0 → ret 0; иначе скан (cnt0+1)%3.. '
             'до заданного бита: byte[P+1]=cnt, u16[dst]=len, memcpy(dst+2, data, len), byte[P]&=~bit, ret 1.')
 def _(run, rng):
+    """Emulator test @ 0x12d04: E2-b64: 0x12d04(dst) — 3-слотовая очередь: free (база P=0x190D: state=P, counter=P+1, слот cnt: u16@P+2+152cnt=len, data@P+4+152cnt). state&7==0 → ret 0; иначе скан (cnt0+1)%3.. до заданного бита: byte[P+1]=cnt, u16[dst]=len, memcpy(dst+2, data, len), byte[P]&=~bit, ret 1..
+    Тест эмулятора @ 0x12d04: E2-b64: 0x12d04(dst) — 3-слотовая очередь: free (база P=0x190D: state=P, counter=P+1, слот cnt: u16@P+2+152cnt=len, data@P+4+152cnt). state&7==0 → ret 0; иначе скан (cnt0+1)%3.. до заданного бита: byte[P+1]=cnt, u16[dst]=len, memcpy(dst+2, data, len), byte[P]&=~bit, ret 1..
+    """
     S = 0x190D
     cases = [(0x00, 0), (0b010, 0), (0b101, 0), (0b110, 2), (0b001, 0), (0b111, 1)]
     rng.shuffle(cases)
@@ -147,6 +162,9 @@ def _(run, rng):
 @t(0x12F44, 'E2-b64: 0x12f44(dst) — 3-слотовая очередь: free #2 (твин 0x12d04, база S2=0x1D38, '
             'та же layout/стрид 152). Вериф тех же 6 state/cnt-сценариев.')
 def _(run, rng):
+    """Emulator test @ 0x12f44: E2-b64: 0x12f44(dst) — 3-слотовая очередь: free #2 (твин 0x12d04, база S2=0x1D38, та же layout/стрид 152). Вериф тех же 6 state/cnt-сценариев..
+    Тест эмулятора @ 0x12f44: E2-b64: 0x12f44(dst) — 3-слотовая очередь: free #2 (твин 0x12d04, база S2=0x1D38, та же layout/стрид 152). Вериф тех же 6 state/cnt-сценариев..
+    """
     S = 0x1D38
     for state, cnt0 in [(0x00, 0), (0b010, 0), (0b101, 0),
                         (0b110, 2), (0b001, 0), (0b111, 1)]:
@@ -166,6 +184,9 @@ def _prod_case(off, S, tail_w, state0, cnt0, ln, buf):
 
 
 def _prd(emu, off, n):
+    """The helper function (_prd).
+    Вспомогательная функция (_prd).
+    """
     return emu.uc.mem_read(RAM + off, n)
 
 
@@ -176,6 +197,9 @@ def _prd(emu, off, n):
             'byte[S]=2, byte[S+1]=1, byte[0xB76]=4, u16[0xB7C]=0, ret=0x2501491F; '
             'state0=0b001 → byte[S]=3, byte[S+1]=1, то же tail.')
 def _(run, rng):
+    """Emulator test @ 0x13284: E2-b64: 0x13284(arg0,buf,len) — 3-слотовая очередь: producer #1 (S=0x1B6E, стрид 152, узел 0x12e64). len>0x96 → ret=arg0; state&7==7 → ret=byte[S] (ldrb); иначе аллокация свободного бита (скан от (cnt0+1)%3): byte[S]|=bit, byte[S+1]=cnt, u16[S+2+152cnt]=len, memcpy(S+4+152cnt, buf, len), bl 0x12e64. Эмпирика (SP=STACK_TOP−0x40): zero-RAM → byte[S]=2, byte[S+1]=1, byte[0xB76]=4, u16[0xB7C]=0, ret=0x2501491F; state0=0b001 → byte[S]=3, byte[S+1]=1, то же tail..
+    Тест эмулятора @ 0x13284: E2-b64: 0x13284(arg0,buf,len) — 3-слотовая очередь: producer #1 (S=0x1B6E, стрид 152, узел 0x12e64). len>0x96 → ret=arg0; state&7==7 → ret=byte[S] (ldrb); иначе аллокация свободного бита (скан от (cnt0+1)%3): byte[S]|=bit, byte[S+1]=cnt, u16[S+2+152cnt]=len, memcpy(S+4+152cnt, buf, len), bl 0x12e64. Эмпирика (SP=STACK_TOP−0x40): zero-RAM → byte[S]=2, byte[S+1]=1, byte[0xB76]=4, u16[0xB7C]=0, ret=0x2501491F; state0=0b001 → byte[S]=3, byte[S+1]=1, то же tail..
+    """
     S = 0x1B6E
     buf = bytes(rng.getrandbits(8) for _ in range(8))
     # ранние выходы
@@ -205,6 +229,9 @@ def _(run, rng):
             'byte[S]=2, byte[S+1]=1, byte[0xB76]=1 (bit0), u16[0xB7A]=0, ret=0x78e073a0; '
             'state0=0b001 → byte[S]=3, остальное то же, ret=0x78e073a0.')
 def _(run, rng):
+    """Emulator test @ 0x131fc: E2-b64: 0x131fc(arg0,buf,len) — 3-слотовая очередь: producer #2 (S=0x1743, стрид 152, узел 0x12c24). Те же gates (len>0x96 → ret=arg0, state&7==7 → ret=byte[S]). Эмпирика: zero-RAM → byte[S]=2, byte[S+1]=1, byte[0xB76]=1 (bit0), u16[0xB7A]=0, ret=0x78e073a0; state0=0b001 → byte[S]=3, остальное то же, ret=0x78e073a0..
+    Тест эмулятора @ 0x131fc: E2-b64: 0x131fc(arg0,buf,len) — 3-слотовая очередь: producer #2 (S=0x1743, стрид 152, узел 0x12c24). Те же gates (len>0x96 → ret=arg0, state&7==7 → ret=byte[S]). Эмпирика: zero-RAM → byte[S]=2, byte[S+1]=1, byte[0xB76]=1 (bit0), u16[0xB7A]=0, ret=0x78e073a0; state0=0b001 → byte[S]=3, остальное то же, ret=0x78e073a0..
+    """
     S = 0x1743
     buf = bytes(rng.getrandbits(8) for _ in range(8))
     ret, r = _prod_case(0x131FC, S, 0xB76, 0, 0, 0x97, buf)
@@ -227,6 +254,9 @@ def _(run, rng):
             'byte[dst]=0; for i in 0..1: v=byte[B+8i+4]; if v>thr → skip; w=byte[u32[B+8i]+8]; '
             'if v+w<=thr → skip; иначе byte[dst]=1, ret=B+8i. Ничего не найдено → ret=0.')
 def _(run, rng):
+    """Emulator test @ 0xbefc: E2-b64: 0xbefc(thr, dst) — frame-copy helper: база B=RAM+0x7C4 (2×8-байт узлов). byte[dst]=0; for i in 0..1: v=byte[B+8i+4]; if v>thr → skip; w=byte[u32[B+8i]+8]; if v+w<=thr → skip; иначе byte[dst]=1, ret=B+8i. Ничего не найдено → ret=0..
+    Тест эмулятора @ 0xbefc: E2-b64: 0xbefc(thr, dst) — frame-copy helper: база B=RAM+0x7C4 (2×8-байт узлов). byte[dst]=0; for i in 0..1: v=byte[B+8i+4]; if v>thr → skip; w=byte[u32[B+8i]+8]; if v+w<=thr → skip; иначе byte[dst]=1, ret=B+8i. Ничего не найдено → ret=0..
+    """
     B = 0x7C4
     DST = 0x500
     for _ in range(30):
@@ -261,6 +291,9 @@ def _(run, rng):
             '01 00×11 01 01 00×6 (индекс0=1, индексы 12/13=1).')
 def _(run, rng):
     # fresh-emu (shared-Run не детерминирован: результат зависит от остатков u16@0xF20/byte[0xFA1])
+    """Emulator test @ 0xf694: E2-b64: 0xf694() — RLE-кодировщик (12-слотовый, state byte[0xFA1], табл. u16@0xF20, bytes @0x1264). Эмпирика zero-RAM: ret=0xC; byte[0xFA1]=0; bytes[0x1264..0x1279] = 01 00×11 01 01 00×6 (индекс0=1, индексы 12/13=1)..
+    Тест эмулятора @ 0xf694: E2-b64: 0xf694() — RLE-кодировщик (12-слотовый, state byte[0xFA1], табл. u16@0xF20, bytes @0x1264). Эмпирика zero-RAM: ret=0xC; byte[0xFA1]=0; bytes[0x1264..0x1279] = 01 00×11 01 01 00×6 (индекс0=1, индексы 12/13=1)..
+    """
     ret, emu = _fresh_call(0xF694, (), extra_ram=[
         (RAM + 0xFA1, bytes([0])),
         (RAM + 0x1264, bytes(0x20)),
@@ -278,6 +311,9 @@ def _(run, rng):
 @t(0x1A638, 'E2-b64: 0x1a638() — const-calc: читает 13 u32 @RAM+0x738..0x764, но ret = 0x429C0000 '
             'НЕЗАВИСИМО от содержимого (проверено на 3 разных сидах, 482 insn).')
 def _(run, rng):
+    """Emulator test @ 0x1a638: E2-b64: 0x1a638() — const-calc: читает 13 u32 @RAM+0x738..0x764, но ret = 0x429C0000 НЕЗАВИСИМО от содержимого (проверено на 3 разных сидах, 482 insn)..
+    Тест эмулятора @ 0x1a638: E2-b64: 0x1a638() — const-calc: читает 13 u32 @RAM+0x738..0x764, но ret = 0x429C0000 НЕЗАВИСИМО от содержимого (проверено на 3 разных сидах, 482 insn)..
+    """
     for _ in range(3):
         words = [rng.getrandbits(32) for _ in range(13)]
         seed = [(RAM + 0x738 + 4 * i, struct.pack('<I', w)) for i, w in enumerate(words)]
@@ -291,10 +327,16 @@ def ref_16d8e(v1, v2, xtab, ytab, grid, stride):
     n1, n2 = len(xtab), len(ytab)
 
     def slope(val, tab, i):
+        """The slope function of the script.
+        Функция slope скрипта.
+        """
         num, den = val - tab[i], tab[i + 1] - tab[i]
         return (num * 256) // den & 0xFFFF
 
     def interp(a, b, s):
+        """The interp function of the script.
+        Функция interp скрипта.
+        """
         if a > b:
             return (a - (((a - b) * s) >> 8)) & 0xFF
         return (a + (((b - a) * s) >> 8)) & 0xFF
@@ -326,6 +368,9 @@ def ref_16d8e(v1, v2, xtab, ytab, grid, stride):
             'clamp → slope 0x100; v1/v2 — регистры r0/r1 (функция читает их из push-зон), '
             'iA = idx2*stride+idx1; ret = result (byte).')
 def _(run, rng):
+    """Emulator test @ 0x16d8e: E2-b64: 0x16d8e — 2D-bilinear #2 (твин 0x16bd4): u32 x/y-таблицы (r2/r3), BYTE-grid, Q8-наклоны (0x161ea n=8), clamp → slope 0x100; аргументы caller-стек (SP=entry): clamp → slope 0x100; v1/v2 — регистры r0/r1 (функция читает их из push-зон), iA = idx2*stride+idx1; ret = result (byte)..
+    Тест эмулятора @ 0x16d8e: E2-b64: 0x16d8e — 2D-bilinear #2 (твин 0x16bd4): u32 x/y-таблицы (r2/r3), BYTE-grid, Q8-наклоны (0x161ea n=8), clamp → slope 0x100; аргументы caller-стек (SP=entry): clamp → slope 0x100; v1/v2 — регистры r0/r1 (функция читает их из push-зон), iA = idx2*stride+idx1; ret = result (byte)..
+    """
     for _ in range(20):
         n1 = rng.randint(2, 6)
         n2 = rng.randint(2, 5)
@@ -364,6 +409,9 @@ def _(run, rng):
         run.emu.insn = 0
 
         def stop(uc_, a, s, usr):
+            """The stop function of the script.
+            Функция stop скрипта.
+            """
             if not (FLASH0 <= a < FLASH0 + FW_LEN or FLASH1 <= a < FLASH1 + FW_LEN):
                 uc_.emu_stop()
         sh = uc.hook_add(UC_HOOK_CODE, stop)

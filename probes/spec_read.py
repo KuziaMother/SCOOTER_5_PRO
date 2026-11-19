@@ -1,5 +1,29 @@
 #!/usr/bin/env python3
 """
+The reading of the scooter telemetry via the MIoT spec over the BLE (the battery, the
+speed, the mileage, the SOH).
+
+The protocol is confirmed by the snoop of the real Mi Home session
+(logs/btsnoop_hci.log):
+  request  -> the 0x001a: the CTR [0000][00][ch=0][fc u16] -> the ACK [0000][01][01]
+                      the DATA [seq u16][counter u16 LE][ct] -> the ACK [0000][01][00]
+  response <- the 0x001b: [0000][02][00][counter u16 LE][ct]
+  confirm  -> the 0x001b: [0000][03][00]
+
+The encryption (the reverse of the BleSecurityChipEncrypt / _m_j/au0->OooO0OO):
+  app->dev: the key=sk[16:32], the iv=sk[36:40]   dev->app: the key=sk[0:16], the
+  iv=sk[32:36]
+  the nonce = the iv || 00 00 00 00 || counterBytes(4);  the AES-CCM, the tag 4 B
+
+The spec frame (the reverse of the _m_j/n14->buildBytes):
+  [u16 LE len|0x2000][u16 LE id][u8 0][u8 count]
+  the object: [u8 siid][u16 LE piid][u16 LE (typeCode<<12)|valueLen][value]
+
+READ ONLY: the valueLen=0, not a single set request is sent.
+
+Usage:  python probes/spec_read.py                    # the telemetry set
+        python probes/spec_read.py --siid 1 --piid 2   # one property
+
 Чтение телеметрии самоката по MIoT-spec поверх BLE (батарея, скорость, пробег, SOH).
 
 Протокол подтверждён снупом реальной сессии Mi Home (logs/btsnoop_hci.log):
@@ -57,6 +81,8 @@ DEFAULT_SET = [(1, 2), (1, 4), (1, 5), (1, 7), (2, 6), (3, 2)]
 
 
 def counter_bytes(cnt):
+    """The 32-bit counter into 4 bytes (the 2x u16 LE, the little-endian within).
+    32-bit счётчик в 4 байта (2x u16 LE, little-endian внутри)."""
     low, high = cnt & 0xFFFF, (cnt >> 16) & 0xFFFF
     return bytes([low & 0xFF, low >> 8, high & 0xFF, high >> 8])
 
@@ -71,12 +97,17 @@ def build_frame(objects, tid=1, type_code=0, op=2):
 
 
 def enc_app(sk, cnt, frame):
+    """Encrypt the app->dev frame (the AES-CCM, the key=sk[16:32]) + the counter
+    prefix.
+    Зашифровать app->dev кадр (AES-CCM, key=sk[16:32]) + префикс счётчика."""
     nonce = sk[36:40] + b"\x00\x00\x00\x00" + counter_bytes(cnt)
     ct = AESCCM(sk[16:32], tag_length=4).encrypt(nonce, frame, None)
     return struct.pack("<H", cnt & 0xFFFF) + ct
 
 
 def dec_dev(sk, cnt, ct):
+    """Decrypt the dev->app ciphertext (the AES-CCM, the key=sk[0:16]).
+    Расшифровать dev->app шифртекст (AES-CCM, key=sk[0:16])."""
     nonce = sk[32:36] + b"\x00\x00\x00\x00" + counter_bytes(cnt)
     return AESCCM(sk[0:16], tag_length=4).decrypt(nonce, ct, None)
 
@@ -103,7 +134,9 @@ UNITS = {
 
 
 def decode_value(tcode, val):
-    """Значение по коду типа. type 9 = FLOAT32 (иначе целое читается мусором)."""
+    """The value by the type code. The type 9 = the FLOAT32 (otherwise the integer is
+    read as the junk).
+    Значение по коду типа. type 9 = FLOAT32 (иначе целое читается мусором)."""
     if not val:
         return None
     if tcode == 9 and len(val) == 4:
@@ -116,6 +149,8 @@ def decode_value(tcode, val):
 
 
 def fmt_value(siid, piid, tcode, val):
+    """The human-readable line of the property (the name/type/value/units/raw).
+    Человекочитаемая строка свойства (имя/тип/значение/единицы/raw)."""
     name = NAMES.get((siid, piid), "?")
     tname = TYPES.get(tcode, f"type{tcode}")
     if not val:
@@ -134,6 +169,10 @@ def fmt_value(siid, piid, tcode, val):
 
 
 def parse_reply(pt):
+    """Parse the response frame into the lines (the header + the objects; the error
+    records are 5 bytes, the ok ones are 7+len).
+    Разобрать кадр ответа в строки (заголовок + объекты; ошибочные записи 5 байт,
+    ок — 7+len)."""
     if len(pt) < 6:
         return [f"кадр короче заголовка: {pt.hex()}"]
     lenflag, tid, b2, count = struct.unpack("<HHBB", pt[:6])
@@ -169,7 +208,11 @@ def parse_reply(pt):
 
 
 async def spec_request(t, sk, objects, app_cnt, tid=1, frame_size=18, timeout=8.0, type_code=0, op=2):
-    """Один запрос с pull-циклом (ACK 05 = «пришли кадр N», как в DFU).
+    """One request with the pull cycle (the ACK 05 = "send the frame N", as in the
+    DFU).
+
+    IMPORTANT: exactly one attempt, without the repeats — so as not to spam the device.
+    Один запрос с pull-циклом (ACK 05 = «пришли кадр N», как в DFU).
 
     ВАЖНО: ровно одна попытка, без повторов — чтобы не спамить устройство.
     """
@@ -184,6 +227,8 @@ async def spec_request(t, sk, objects, app_cnt, tid=1, frame_size=18, timeout=8.
     await t.write(CH_WRITE, ctr)
 
     async def send_seq(n):
+        """Send the n-th DATA frame of the request payload.
+        Отправить n-й DATA-кадр запроса."""
         if 1 <= n <= len(frames):
             await t.write(CH_WRITE, struct.pack("<H", n) + frames[n - 1])
 
@@ -246,6 +291,9 @@ async def spec_request(t, sk, objects, app_cnt, tid=1, frame_size=18, timeout=8.
 
 
 async def run(mac, objects, frame_size=18, app_cnt=0, op=2, type_code=0):
+    """The run: the login + the request of the objects (the default set or the custom
+    ones).
+    Прогон: логин + запрос объектов (набор по умолчанию или свой)."""
     ltmk = bytes.fromhex(open(da.LTMK_HEX).read().strip())
     t = da.Transport(mac)
     try:
