@@ -2308,6 +2308,24 @@ PENDSV_V14 = 0x3173         # вектор [14] = PendSV
 SYSTICK_V15 = 0x13CAD       # вектор [15] = SysTick
 FOC_ISR_V22 = 0x7875        # вектор [22] = FOC/моторный timer-ISR
 
+# Phase ④ (§97): C-старт + main + task-цепь (коррекция §74.1)
+BOOT_C_START = 0x1148       # C-старт: ldr.w sp,[=0x20004E40]; bl 0x14c4; bl 0x1150
+BOOT_SP_LIT = 0x1158        # литерал SP=0x20004E40 для C-старта
+BOOT_C_MAIN_LIT = 0x1154    # литерал main-адреса = 0x0801907B
+BOOT_MAIN = 0x1907A         # main() — bx [0x1154]
+BOOT_CONSTRUCT_WALKER = 0x14C4  # конструктор-тейбл (ldm r4!,{r0-r2}; blx [r4+0xc]|1)
+BOOT_CONSTRUCT_TABLE = 0x1AD28  # таблица в FLASH: 2×16Б {a0,a1,a2,fn}
+BOOT_CONSTRUCT_END = 0x1AD48
+BOOT_CONSTRUCT_FN1 = 0x20000040  # desc1.fn — код в RAM (live, даёт ROM)
+BOOT_CONSTRUCT_FN2 = 0x9E38      # desc2.fn — flash-инициализация (исполняется)
+ADC_ISR_TICK = 0x1A31C    # ADC-ISR = системный тик (~1 кГц): статическая task-цепь
+ADC_TASK_FOC = 0x1A938        # bl @0x1A49E
+ADC_TASK_D3D0 = 0x1D3D0       # bl @0x1A514
+ADC_TASK_SCHED = 0x1F600      # bl @0x1A518 (планировщик/TX USART3)
+ADC_TASK_UART4 = 0x216E4      # bl @0x1A51C
+ADC_TASK_SWSTART = 0x1A5C4    # bl @0x1A520 (SWSTART ADC)
+APP_CFG_REGION = 0x0EE80000   # регион app-config, который main dereference (live)
+
 
 class MainLoopHarness:
     """The autonomous main-loop tick harness (Phase 2, section 94; no hardware).
@@ -2533,6 +2551,11 @@ class BootHarness:
       (SWD GD32), либо полной реконструкции C-runtime-стека. Main-loop dispatch —
       через runtime function-pointer (потолок §74.1, прямых `bl 0x1f600` нет).
     `run()` детерминированно доводит boot до TRAMP2 (~6314 insn, periph=0xFF).
+    **Phase ④ (§97):** `reset(c_start=True)` сидит [SP+12]=0x1149 (C-старт) —
+    реальная цепочка: 0x1148 (SP из литерала 0x1158, bl 0x14C4 конструктор-
+    тейбл) → desc2 0x9E38 (flash-инит) → bl 0x1150 → **bx main=0x1907A**;
+    `run(patch_ram_callback=True)` перенаправляет live RAM-callback (desc1.fn=
+    0x20000040, blob от ROM) в конец walker — детерминированно до main.
     """
 
     def __init__(self, emu=None, max_insn=500000):
@@ -2544,30 +2567,46 @@ class BootHarness:
         self.final_pc = 0
         self.reached = set()
 
-    def reset(self, seed_stage2=BOOT_STAGE2):
-        """Zero the RAM, SP=SP_INIT, seed the initial stack [SP+12]=stage2|Thumb.
-        Занулить RAM, SP=SP_INIT, seed initial stack [SP+12]=stage2|Thumb."""
+    def reset(self, seed_stage2=BOOT_STAGE2, c_start=False):
+        """Zero the RAM, SP=SP_INIT, seed the initial stack [SP+12]=stage2|Thumb
+        (or the C-start 0x1149 when c_start — the Phase 4 entry, section 97).
+        Занулить RAM, SP=SP_INIT, seed initial stack [SP+12]=stage2|Thumb
+        (или C-старт 0x1149 при c_start — вход Phase ④, §97)."""
         uc = self.emu.uc
         uc.mem_write(RAM, bytes(0x20000))
         self.emu.hook_periph_ready()
-        uc.mem_write(SP_INIT, struct.pack('<4I', 0, 0, 0, (seed_stage2 | 1)))
+        seed = BOOT_C_START if c_start else seed_stage2
+        uc.mem_write(SP_INIT, struct.pack('<4I', 0, 0, 0, (seed | 1)))
         uc.reg_write(UC_ARM_REG_SP, SP_INIT)
         uc.reg_write(UC_ARM_REG_LR, 0xFFFFFFFF)
         self.insn = 0
         self.final_pc = 0
         self.reached = set()
 
-    def run(self):
+    def run(self, patch_ram_callback=False):
         """Run the boot from RESET_VECTOR. Returns (insn, final_pc, reached).
-        Прогнать boot от RESET_VECTOR. Возвращает (insn, final_pc, reached)."""
+        patch_ram_callback: the live RAM-code callback (0x20000040, the ROM-supplied
+        blob) is rerouted to the walker end (r4=desc2, 0x14DB) — the Phase 4
+        "reconstructed cold boot" to main. Прогнать boot от RESET_VECTOR.
+        patch_ram_callback: live RAM-callback (0x20000040, blob от ROM) перенаправляется
+        в конец walker (r4=desc2, 0x14DB) — реконструированный cold-boot до main."""
         uc = self.emu.uc
         last = [0]
-        marks = {BOOT_STAGE1_INIT: 'stage1', BOOT_STAGE2: 'stage2', BOOT_TRAMP2: 'tramp2'}
+        patched = [0]
+        marks = {BOOT_STAGE1_INIT: 'stage1', BOOT_STAGE2: 'stage2',
+                 BOOT_TRAMP2: 'tramp2', BOOT_C_START: 'cstart',
+                 BOOT_MAIN: 'main'}
 
         def hc(u, a, s, ud):
-            """CODE hook: remember the last PC (without the Thumb bit) + mark the boot stage.
-            CODE-хук: запомнить последний PC (без Thumb-бита) + отметить boot-стадию."""
-            b = a & ~1
+            """CODE hook: the live-callback patch + the last PC + the boot marks.
+            CODE-хук: патч live-callback + последний PC + отметки boot."""
+            b = (a & ~1) & ~0x08000000
+            if patch_ram_callback and not patched[0] \
+                    and BOOT_CONSTRUCT_FN1 <= b < BOOT_CONSTRUCT_FN1 + 0x40:
+                patched[0] = 1
+                u.reg_write(UC_ARM_REG_R4, 0x08000000 + BOOT_CONSTRUCT_TABLE + 0x10)
+                u.reg_write(UC_ARM_REG_PC, 0x14DB)
+                return
             last[0] = b
             for m, name in marks.items():
                 if m <= b < m + 0x40:

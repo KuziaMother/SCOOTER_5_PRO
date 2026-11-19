@@ -111,8 +111,10 @@ _(оригинальный список завершён — см. таблиц�
       - **(A) startup-state:** warm-start (прогнать init → прыгнуть в main-loop, обойти
         trampolines; ~0.5–1 день) **vs** cold-boot (реконструкция initial-RAM/stack всех
         trampoline — высокая/неопределённая; снимает live-дамп RAM при reset → класс C «SWD GD32»).
-        **Статич. проверка (Фаза ④):** сначала проверить, пишет ли init-цепочка trampoline-цели
-        `[SP_init+12..]` из flash (→ cold-boot без SWD) — см. Фаза ③ ниже.
+        **Статич. проверка (Фаза ④) — Готово (§97):** init-цепочка НЕ пишет trampoline-цели
+        `[SP_init+12..]` (runtime-данные ROM/загрузчика → SWD для полного cold-boot); но входная
+        цепочка найдена и реконструирована до main (C-старт 0x1148 → main 0x1907A),
+        task-диспетч статический (ADC-ISR 0x1A31C, коррекция §74.1).
       - **(B) main-loop entry + slot-table:** найти точный entry (функция, гоняющая 0x1f600 в
         цикле) + заполнить slot-descriptors task-указателями (~0.5–1 день).
       - **(C) tick/прерывания-harness — ГЛАВНОЕ: Готово (§94).** `MainLoopHarness`
@@ -133,22 +135,25 @@ _(оригинальный список завершён — см. таблиц�
             target (калибровка plant/PID → live). Тест @t(0x1D078) ControlLoop, 165/165 PASS.
       - [ ] ② **периферия под задачи** (GPIO/UART/SPI-flash/RTC, сейчас `0xFF`) + точная сходимость
             контура (live-калибровка plant v_max/tau + FOC-gains). →~60–70%.
-      - [◐] ③ **полный cold-boot: статич. часть Готово (§95).** **Векторная таблица
+      - [x] ③ **полный cold-boot: статич. часть Готово (§95 + §97).** **Векторная таблица
             НАЙДЕНА @0x1000** (коррекция «отсутствует/OTA»): [0]=SP_INIT 0x20004E40,
             [1]=reset|1, [14]=PendSV, [15]=SysTick, **[22]=FOC-ISR 0x7875** (подтверждение
             «вектор [22]»). Startup-цепочка live verified: reset 0x315c → 0xcd0c (stage1)
-            → TRAMP1 pop@0x3166 (pc=RAM[SP+12]=stage2|Thumb) → stage2 0x3168 (0xcc68/
-            0xc9dc/0x5970/0xcb40) → TRAMP2 pop@0x31c6. `BootHarness` (emulator/mcu_emu.py)
-            детерминированно до TRAMP2 (insn=6314, final_pc=0xcd78). Тесты fv_tests_e3k.py
-            (2), сьют 792/792 PASS. **Остаток без железа (Фаза ④):** статич. проверка
-            init-цепочки (0xcd0c stage1, 0xcc68/0xc9dc/0x5970/0xcb40 stage2) — пишет ли она
-            trampoline-цели `[SP_init+12..]` и task function-pointer таблицы (слоты @0xA43)
-            **из flash-данных** (реконструируемо → полный cold-boot без SWD) или только
-            runtime-вычисляемо (тогда SWD-потолок). **Остаток (live):** полный cold-boot до работающего
-            main-loop — **SWD-дамп RAM при reset** (initial stack = C-runtime runtime RAM;
-            main-loop dispatch через runtime function-pointer, 0 стат. `bl 0x1f600`).
-            Дамп должен захватить: начальный стек @SP_init=`0x20004e40` (trampoline-цели
-            [SP+12] и др.) + task function-pointer таблицы (RAM).
+            → TRAMP1 pop@0x3166 (pc=RAM[SP+12]) → stage2 0x3168 (0xcc68/
+            0xc9dc/0x5970/0xcb40) → TRAMP2 pop@0x31c6. **§97 (Phase ④):** [SP+12]=runtime
+            (SWD) — код не пишет его (zero-RAM стоп на TRAMP1, insn=3138); **входная цепочка
+            найдена и реконструирована до main**: [SP+12]=0x1149 → C-старт 0x1148 (SP из
+            литерала 0x1158; конструктор-тейбл 0x14C4: 2×16Б в FLASH @0x1AD28, desc1.fn=
+            0x20000040 код в RAM от ROM (live), desc2.fn=0x9E38 flash) → bx [0x1154]=
+            0x0801907B → **main=0x1907A** (~50 insn на zero-RAM). **Task-диспетч СТАТИЧЕСКИЙ
+            (коррекция §74.1)**: ADC-ISR 0x1A31C (тик ~1 кГц) = bl-цепь 0x1A938/0x1D3D0/
+            0x1F600/0x216E4/0x1A5C4 («0 стат. вызывающих» = артефакт capstone). BootHarness:
+            reset(c_start=True)+run(patch_ram_callback=True) → insn=3282, final_pc=0x1912C,
+            reached={stage1,cstart,main}, детерминированно. Тесты fv_tests_e3k.py (5),
+            сьют 803/803 PASS. **Остаток (live):** RAM-code blob @0x20000040 (ROM),
+            app-config 0x0EE8xxxx, данные main-loop после ~50 insn → **SWD-дамп RAM при
+            reset** (захватить: начальный стек @SP_init=0x20004e40 (trampoline-цели
+            [SP+12] и др.) + 0x0EE8xxxx + RAM-blob 0x20000000..0x20000400).
       - [◐] ④ **BLE co-proc** (отдельно, `emulator/ble_emu.py`, сейчас на статическом потолке §65).
       **§96: тривиальные статик закрыты** — setter-семья 0x06008..0x060e4 (6×44Б) = единый trampoline-паттерн
       (push{r4,r5,lr}→save{lr,r5,r4}→cbz→blx r4→bx r3); глубокая логика = callback/RAM-трамплины (live).
@@ -161,7 +166,7 @@ _(оригинальный список завершён — см. таблиц�
       (дамп NVM). Всё ниже — чистая статика. Текущее: 25+ моделей (Tim/Adc/Speed/Motor/
       Battery/Range/ControlLoop/Gpio/SpiFlash(Miso)/UsartRx/TxAggregator/UsartTxSender/
       CmdControl/Scheduler/Lut/FocPipeline/SysTick/Time/I2c/NvmZone/BootHarness/MainLoop),
-      сьют **800/800 PASS** (seeds 42/7, iters 3), `--list` 693/693 (100%).
+      сьют **803/803 PASS** (seeds 42/7, iters 3), `--list` 693/693 (100%).
       **A. Периферийные модели (Phase ②, статич. часть; сейчас читают `0xFF`):**
       - [x] A1 **GPIO model — ГОТОВО (§76).** Кастомный блок «портов» @0x48000000 (4 порта ×
             0x400): режимы ВСЕХ 16 пинов в +0x2c по 2 бита/пин; драйвер 0x22000(r0=port,
@@ -297,8 +302,9 @@ _(оригинальный список завершён — см. таблиц�
             data-driven вызовом» — повторить попыткой с crafted-кадрами и seeds (как §80
             для остальных 15); если не выйдет — live-снуп.
       **Порядок:** A1→A3 (разблокируют задачи) → B1→B2 (управляющий слой) → E1 параллельно
-      → C1/C2 → D1 (самый рискованный, но скачок к ~60–70%). **§96-остаток: F1→F3 (+ Фаза ④
-      cold-boot, см. выше) — последние без-железные задачи.**
+      → C1/C2 → D1 (самый рискованный, но скачок к ~60–70%). **Остаток без железа:
+      Фаза ④ закрыта (§97: входная цепочка до main, task-диспетч статический) →
+      F1→F3 — последние без-железные задачи.**
 
 ## B. Живое устройство (снуп USART3 / I2C2 / Mi Home)
 
