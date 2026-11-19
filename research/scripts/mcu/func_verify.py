@@ -66,6 +66,7 @@ import fv_tests_e3i  # noqa: F401,E402  (§93 A7-карта регистров �
 import fv_tests_e3j  # noqa: F401,E402  (§94 Phase② main-loop tick-harness)
 import fv_tests_e3k  # noqa: F401,E402  (§95 Phase③ cold-boot: векторная таблица + startup)
 import fv_tests_e3m  # noqa: F401,E402  (§96 BLE: app-протокол Mi Home + co-proc статик)
+import fv_tests_e3n  # noqa: F401,E402  (§98 F1: 5+2 ID-записи каталога закрыты)
 
 if __name__ == '__main__':
     sys.exit(main())
