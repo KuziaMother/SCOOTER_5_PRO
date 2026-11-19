@@ -68,6 +68,7 @@ import fv_tests_e3k  # noqa: F401,E402  (§95 Phase③ cold-boot: векторн
 import fv_tests_e3m  # noqa: F401,E402  (§96 BLE: app-протокол Mi Home + co-proc статик)
 import fv_tests_e3n  # noqa: F401,E402  (§98 F1: 5+2 ID-записи каталога закрыты)
 import fv_tests_e3o  # noqa: F401,E402  (§99 F2: siid/piid-таблица + OTA-формат)
+import fv_tests_e3p  # noqa: F401,E402  (§100 F3: RX группа A 0x40/0x47/0x63)
 
 if __name__ == '__main__':
     sys.exit(main())

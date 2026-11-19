@@ -131,15 +131,16 @@ ruff check .                      # линтер (E9+F — codebase это resea
 
 ### Состояние реверса прошивок (`research/`)
 
-Статический реверс обоих чипов — `research/REPORT.md` (96 разделов):
+Статический реверс обоих чипов — `research/REPORT.md` (100 разделов):
 
 - **MCU (GD32, `mcu_0007.bin`):** 678 функций, 99.7% декомпилировано; каталог
-  «разобран» 693/693 **верифицирован на эмуляторе** (800 функциональных тестов);
+  «разобран» 700/700 **верифицирован на эмуляторе** (815 функциональных тестов);
   25+ моделей периферии (TIM/ADC/GPIO/SPI-flash/I2C2/USART3/NVM, планировщик RX/TX,
-  контур PID+FOC, SysTick/clock).
+  контур PID+FOC, SysTick/clock, cold-boot до main).
 - **BLE (RTL8762C, `ble_2.7.0_0015.bin`):** bootloader/flash-драйвер разобраны;
   app-логика зашифрована (79.2%); Mi Home app-протокол разобран из APK+snoop
-  (фрейм `[siid][piid][len:2][data]`, siid/piid-карта).
+  (фрейм `[siid][piid][len:2][data]`, полная siid/piid-таблица 73 свойства из плагина,
+  формат OTA-фреймов siid=0xF5).
 
 Функциональный тест-сьют MCU (без железа):
 
@@ -148,8 +149,8 @@ python research/scripts/mcu/func_verify.py --list         # покрытие к�
 python research/scripts/mcu/func_verify.py --only 0x1F600 # одна функция
 ```
 
-Без железа осталось: завершение эмуляторного cold-boot (Фаза ④), 5 функций
-каталога «ID», углубление BLE-протокола (APK). Железо: SWD-дамп RAM GD32 при reset,
+Без железа **всё закрыто** (Фаза ④ cold-boot до main, каталог «ID»=0, BLE-протокол,
+RX-группа A; §97–§100). Дальше — только железо: SWD-дамп RAM GD32 при reset,
 live-снуп USART3/I2C2, дампы NVM, калибровка контура. Трекер —
 `research/TODO_RESEARCH.md`, лог работ — `research/PROGRESS.md`.
 
